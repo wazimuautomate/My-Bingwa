@@ -251,3 +251,30 @@ destinations.
   before that gate regardless.
 - **Next:** Watch the new run; if the APK assembles, merge to `main`; capture any
   test/lint failure without weakening tests.
+
+### 2026-07-24 22:25 EAT — Phase 0 follow-up: debug APK builds; fixed template tests
+
+- **Objective:** Green CI + debug APK.
+- **Result:** **Debug APK assembled and uploaded successfully** in CI (run
+  `30108343324`, commit `dec2b24`): steps assemble → stage → upload all passed.
+  A transient Gradle-CDN `504` on the prior attempt was cleared by a rerun. Only
+  the `test`/`lint` gate was red, from broken template test code (not app code).
+- **Root cause (test gate):** leftover default-template unit tests:
+  `GreetingScreenshotTest.kt` referenced non-existent `MyApplicationTheme` /
+  `Greeting` (→ `compileDebugUnitTestKotlin` failed), and
+  `ExampleRobolectricTest` asserted the template app name "My Application".
+- **Changed (genuine test corrections, not weakening):** removed
+  `GreetingScreenshotTest.kt` + orphaned `greeting.png`; corrected
+  `ExampleRobolectricTest` expected app name to "My Bingwa". Kept
+  `ExampleUnitTest` (2+2). `ExampleInstrumentedTest` (androidTest) not run in CI;
+  flagged for Phase 1 (asserts `com.example` package).
+- **Verification:** proven working in CI — JDK 17, Android SDK for
+  `compileSdk 36 (minorApiLevel 1)`, Gradle 9.3.1 wrapper, `assembleDebug`,
+  debug APK artifact upload. Pushing the test fix to confirm a fully green run.
+- **Git:** committed on `feature/bootstrap-generated-ui`; push auto-triggers CI.
+  `main` merged only after a fully green run.
+- **Risks/blockers:** `lint` result still unconfirmed (build stopped at the test
+  compile before lint completed). If lint reports fatal errors, capture exact IDs
+  and fix or baseline them honestly.
+- **Next:** Watch the run; if fully green, merge `feature/bootstrap-generated-ui`
+  → `main` and report the exact APK artifact.
