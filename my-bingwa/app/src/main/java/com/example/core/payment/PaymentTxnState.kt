@@ -64,7 +64,7 @@ enum class PaymentTxnState(
 
     // --- Terminal states --------------------------------------------------------
     PAYMENT_CONFIRMED(
-        heading = "Payment received",
+        heading = "Purchase Successful",
         explanation = "The purchase was received; ask the customer to wait for the bundle",
         isOnline = true,
         isTerminal = true

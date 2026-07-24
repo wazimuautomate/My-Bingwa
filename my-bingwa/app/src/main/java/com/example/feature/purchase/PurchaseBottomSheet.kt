@@ -694,7 +694,7 @@ private fun ReceivedResult(
     ) {
         Icon(
             imageVector = Icons.Outlined.Check,
-            contentDescription = "Payment received",
+            contentDescription = "Purchase Successful",
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(36.dp)
         )
@@ -703,7 +703,7 @@ private fun ReceivedResult(
     Spacer(modifier = Modifier.height(16.dp))
 
     Text(
-        text = "Payment received",
+        text = "Purchase Successful",
         style = TypographyPageHeading.copy(fontSize = 24.sp),
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurface

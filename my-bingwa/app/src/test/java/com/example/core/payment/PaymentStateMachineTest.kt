@@ -124,7 +124,7 @@ class PaymentStateMachineTest {
     @Test
     fun customerCopy_matchesPlanExactly() {
         assertEquals("Check your phone", PaymentTxnState.PAYMENT_REQUESTED.heading)
-        assertEquals("Payment received", PaymentTxnState.PAYMENT_CONFIRMED.heading)
+        assertEquals("Purchase Successful", PaymentTxnState.PAYMENT_CONFIRMED.heading)
         assertEquals("Request expired", PaymentTxnState.TIMED_OUT.heading)
         assertEquals("We could not verify this payment", PaymentTxnState.COULD_NOT_VERIFY.heading)
         assertEquals("Waiting to verify", PaymentTxnState.WAITING_TO_VERIFY.heading)
