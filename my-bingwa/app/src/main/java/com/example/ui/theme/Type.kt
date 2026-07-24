@@ -2,37 +2,42 @@ package com.example.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.googlefonts.Font
-import androidx.compose.ui.text.googlefonts.GoogleFont
 import androidx.compose.ui.unit.sp
 import com.example.R
 
-val provider = GoogleFont.Provider(
-    providerAuthority = "com.google.android.gms.fonts",
-    providerPackage = "com.google.android.gms",
-    certificates = R.array.com_google_android_gms_fonts_certs
+// My Bingwa typography (design.md §8).
+//
+// Both families are bundled locally under res/font — the app must never depend
+// on the downloadable-fonts provider (that path required real Google certs and
+// silently fell back to the system font). Outfit ships as a single variable
+// font driven by weight axis variations; Poppins ships as static weights.
+// Every Material 3 typography role is mapped so no role can fall back to Roboto.
+
+private fun outfit(weight: FontWeight) = Font(
+    resId = R.font.outfit,
+    weight = weight,
+    variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight))
 )
 
-val OutfitFont = GoogleFont("Outfit")
-val PoppinsFont = GoogleFont("Poppins")
-
 val OutfitFontFamily = FontFamily(
-    Font(googleFont = OutfitFont, fontProvider = provider, weight = FontWeight.Normal),
-    Font(googleFont = OutfitFont, fontProvider = provider, weight = FontWeight.Medium),
-    Font(googleFont = OutfitFont, fontProvider = provider, weight = FontWeight.SemiBold),
-    Font(googleFont = OutfitFont, fontProvider = provider, weight = FontWeight.Bold)
+    outfit(FontWeight.Normal),
+    outfit(FontWeight.Medium),
+    outfit(FontWeight.SemiBold),
+    outfit(FontWeight.Bold)
 )
 
 val PoppinsFontFamily = FontFamily(
-    Font(googleFont = PoppinsFont, fontProvider = provider, weight = FontWeight.Normal),
-    Font(googleFont = PoppinsFont, fontProvider = provider, weight = FontWeight.Medium),
-    Font(googleFont = PoppinsFont, fontProvider = provider, weight = FontWeight.SemiBold),
-    Font(googleFont = PoppinsFont, fontProvider = provider, weight = FontWeight.Bold)
+    Font(R.font.poppins_regular, FontWeight.Normal),
+    Font(R.font.poppins_medium, FontWeight.Medium),
+    Font(R.font.poppins_semibold, FontWeight.SemiBold),
+    Font(R.font.poppins_bold, FontWeight.Bold)
 )
 
-// Custom Styles matching section 7
+// Custom brand styles matching design.md §8.2.
 val TypographyDisplay = TextStyle(
     fontFamily = OutfitFontFamily,
     fontWeight = FontWeight.Bold,
@@ -75,6 +80,14 @@ val TypographyCardTitle = TextStyle(
     lineHeight = 24.sp
 )
 
+// title small — Poppins 14/20/600 (rows and dense titles).
+val TypographyRowTitle = TextStyle(
+    fontFamily = PoppinsFontFamily,
+    fontWeight = FontWeight.SemiBold,
+    fontSize = 14.sp,
+    lineHeight = 20.sp
+)
+
 val TypographyBody = TextStyle(
     fontFamily = PoppinsFontFamily,
     fontWeight = FontWeight.Normal,
@@ -89,11 +102,27 @@ val TypographySupporting = TextStyle(
     lineHeight = 21.sp
 )
 
+// body small — Poppins 12/16/400 (short metadata paragraphs).
+val TypographyBodySmall = TextStyle(
+    fontFamily = PoppinsFontFamily,
+    fontWeight = FontWeight.Normal,
+    fontSize = 12.sp,
+    lineHeight = 16.sp
+)
+
 val TypographyButton = TextStyle(
     fontFamily = PoppinsFontFamily,
     fontWeight = FontWeight.SemiBold,
     fontSize = 16.sp,
-    lineHeight = 24.sp
+    lineHeight = 22.sp
+)
+
+// label medium — Poppins 14/20/600 (controls and chips).
+val TypographyControlLabel = TextStyle(
+    fontFamily = PoppinsFontFamily,
+    fontWeight = FontWeight.SemiBold,
+    fontSize = 14.sp,
+    lineHeight = 20.sp
 )
 
 val TypographyMetadata = TextStyle(
@@ -119,13 +148,18 @@ val TypographyReviewTotal = TextStyle(
 
 val Typography = Typography(
     displayLarge = TypographyDisplay,
+    displayMedium = TypographyPageHeading,
+    displaySmall = TypographySectionHeading,
     headlineLarge = TypographyPageHeading,
     headlineMedium = TypographySectionHeading,
     headlineSmall = TypographySheetHeading,
     titleLarge = TypographySectionTitle,
     titleMedium = TypographyCardTitle,
+    titleSmall = TypographyRowTitle,
     bodyLarge = TypographyBody,
     bodyMedium = TypographySupporting,
+    bodySmall = TypographyBodySmall,
     labelLarge = TypographyButton,
+    labelMedium = TypographyControlLabel,
     labelSmall = TypographyMetadata
 )

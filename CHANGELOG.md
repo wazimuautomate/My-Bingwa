@@ -39,11 +39,17 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 - Debug build no longer references a non-existent, git-ignored
   `debug.keystore`; it now uses AGP's auto-generated debug signing config, which
   unblocks `assembleDebug` in a clean CI environment.
+- Corrected `ExampleRobolectricTest` to expect the real app name "My Bingwa"
+  (was the template default "My Application"), so the unit-test gate passes
+  truthfully.
 
 ### Removed
 
 - Empty stray `firebase-debug.log` from the repository root.
 - Broken custom `debugConfig` signing config from `app/build.gradle.kts`.
+- Orphaned template `GreetingScreenshotTest.kt` (and its `greeting.png`) that
+  referenced deleted template symbols (`MyApplicationTheme`, `Greeting`) and
+  could not compile.
 
 ### Security
 
