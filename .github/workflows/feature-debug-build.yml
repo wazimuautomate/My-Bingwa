@@ -32,6 +32,13 @@ jobs:
     defaults:
       run:
         working-directory: my-bingwa
+    # Non-secret payment config baked into the debug APK. The URL + app-key point
+    # the app at the cPanel payment API; NO Daraja credentials are here (those stay
+    # on the server). If these repo secrets are unset, both are empty and the app
+    # falls back to the built-in simulation.
+    env:
+      PAYMENTS_BASE_URL: ${{ secrets.PAYMENTS_BASE_URL }}
+      PAYMENTS_APP_KEY: ${{ secrets.PAYMENTS_APP_KEY }}
 
     steps:
       - name: Check out repository

@@ -685,3 +685,44 @@ destinations.
   compile error on-branch, then install the debug APK artifact and run the phone
   acceptance loop. Decide with the owner how to integrate to main given the
   divergence.
+
+### 2026-07-24 (later) EAT — Daraja via owner's cPanel PHP (no separate backend)
+
+- **Objective:** Owner rejected a standalone backend and rejected baking Daraja
+  secrets into the APK. Decided: a tiny PHP API on the owner's existing **cPanel**
+  holds the Daraja creds and runs STK; the app calls it. Build the PHP + wire the app.
+- **Result:** **Implemented (source complete; unverified locally — no JDK; CI is the
+  gate).** Backend not yet hosted by owner.
+- **Why cPanel PHP:** Daraja STK can run without our own server (OAuth + STK + status
+  poll), but the creds would be extractable from the APK. GitHub secrets hide creds
+  from the repo, NOT from the shipped APK. The owner already has cPanel + MySQL, so a
+  4-file PHP API keeps the Daraja key/secret/passkey on the server and gives a real
+  CallbackURL. No backend "system" — ~5 short PHP files.
+- **Changed (new):** `server/mybingwa-api/` — `stk.php` (OAuth→STK, server recomputes
+  price from offerId, idempotent on clientRequestId), `callback.php` (Daraja posts
+  result → DB), `status.php` (poll; falls back to Daraja stkpushquery if the callback
+  is slow), `lib.php`/`db.php`/`offers.php`/`config.php` (placeholders, `.htaccess`
+  blocks internal files), `schema.sql`, and a beginner **README.md** cPanel walkthrough
+  (subdomain, AutoSSL, MySQL, phpMyAdmin import, File Manager upload, Daraja callback,
+  GitHub secrets, testing).
+- **Changed (app):** `PaymentApi` paths → `stk.php`/`status.php`; `BackendPaymentGateway`
+  + provider now attach an `X-App-Key` header from a new non-secret `PAYMENTS_APP_KEY`
+  BuildConfig field (shared app token, NOT a Daraja credential); repo STK loop now
+  waits `POLL_INTERVAL_MILLIS` (3s) between up to 10 polls for real confirmation;
+  CI workflow injects `PAYMENTS_BASE_URL` + `PAYMENTS_APP_KEY` from GitHub secrets (empty
+  → app uses the simulation). The Kotlin payment contract was already shaped for this,
+  so the change was mostly config + paths + the app-key header.
+- **Decisions/assumptions:** Buy-for-myself → real Till STK via cPanel; buy-for-another
+  stays the simulation (owner will add it to cPanel later, plus manage offer prices there).
+  `offers.php` mirrors the catalogue prices for now (server is price-authoritative).
+- **Verification:** No local build (no JDK). Existing payment unit tests unchanged and
+  still pure/virtual-time (poll delay auto-advances under runTest). CI to confirm.
+- **Git:** Branch `feature/activity-support-settings`. Committing only my files (server/
+  + payment wiring + CI); owner's other WIP untouched. `main` not pushed.
+- **Risks/blockers:** (1) Owner must host the PHP + fill creds + set the Daraja callback
+  + add the two GitHub secrets before real STK works; until then the app simulates.
+  (2) For a Till, `business_shortcode` must be the HO/store code tied to the till with a
+  matching passkey — owner to confirm from the Daraja portal. (3) Go-Live required for
+  production (sandbox first).
+- **Next:** Push branch, watch CI. Walk the owner through cPanel using
+  `server/mybingwa-api/README.md`; then phone-test a real STK to own number.

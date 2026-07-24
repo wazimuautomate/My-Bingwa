@@ -68,20 +68,30 @@ class BackendPaymentGateway(
 
     companion object {
         /**
-         * Builds a gateway for [baseUrl] (which must end with `/`). The base URL is
-         * a non-secret configuration value injected via BuildConfig; it is never a
-         * credential.
+         * Builds a gateway for [baseUrl] (which must end with `/`). The base URL and
+         * [appKey] are non-secret configuration injected via BuildConfig — the app-key
+         * is only a shared token that lets the app call our own endpoint; it is NOT a
+         * Daraja credential (those never leave the server).
          */
-        fun create(baseUrl: String, enableLogging: Boolean): BackendPaymentGateway {
+        fun create(baseUrl: String, appKey: String, enableLogging: Boolean): BackendPaymentGateway {
             val logging = HttpLoggingInterceptor().apply {
                 // Body logging is fine in debug only; never log payloads in release
                 // builds (CLAUDE.md §10 "do not log complete payment payloads").
                 level = if (enableLogging) HttpLoggingInterceptor.Level.BASIC
                 else HttpLoggingInterceptor.Level.NONE
             }
+            // Attach the shared app-key header so only our app can trigger an STK push.
+            val appKeyInterceptor = okhttp3.Interceptor { chain ->
+                chain.proceed(
+                    chain.request().newBuilder()
+                        .header("X-App-Key", appKey)
+                        .build()
+                )
+            }
             val client = OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
+                .addInterceptor(appKeyInterceptor)
                 .addInterceptor(logging)
                 .build()
             val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()

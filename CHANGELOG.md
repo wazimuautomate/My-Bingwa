@@ -47,11 +47,16 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
     device-first transitions as a pure, unit-tested machine with the exact
     customer-facing copy; illegal transitions throw so a payment is never
     optimistically confirmed.
-  - **Daraja via a backend proxy** (`data/payment`): the app calls our backend
-    (`POST payments/stk`, `GET payments/status`) over Retrofit; the backend holds the
-    Daraja consumer key/secret + STK passkey and owns the CallbackURL. **No Daraja
-    secrets in the APK.** The backend base URL is a non-secret `BuildConfig`
-    field (`PAYMENTS_BASE_URL`), empty by default.
+  - **Daraja via the owner's cPanel PHP API** (`server/mybingwa-api/`): a tiny
+    4-endpoint PHP API (`stk.php`, `status.php`, `callback.php` + shared `lib/db/
+    offers/config`) that holds the Daraja consumer key/secret + passkey and owns the
+    CallbackURL, so **no Daraja secrets ship in the APK**. `stk.php` recomputes the
+    price from `offerId` and is idempotent on `clientRequestId`; `status.php` falls
+    back to Daraja `stkpushquery` if the callback is slow. Ships with `schema.sql`
+    and a beginner cPanel walkthrough README. The app calls it over Retrofit
+    (`stk.php`/`status.php`) with an `X-App-Key` header; base URL + app-key are
+    non-secret `BuildConfig` fields (`PAYMENTS_BASE_URL`, `PAYMENTS_APP_KEY`) injected
+    from GitHub secrets, empty by default.
   - A clearly-labelled local **simulation** gateway used when no backend URL is
     configured (and for the still-mocked buy-for-another path), so the app stays
     testable on a phone without ever faking a real success.
