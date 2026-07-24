@@ -40,8 +40,6 @@ import com.example.feature.activity.ActivityScreen
 import com.example.feature.help.HelpScreen
 import com.example.feature.home.CatalogueViewModel
 import com.example.feature.home.HomeScreen
-import com.example.feature.home.OfferDetailsSheet
-import com.example.feature.home.dailyStateFor
 import com.example.feature.notifications.NotificationsScreen
 import com.example.feature.offers.OffersScreen
 import com.example.feature.onboarding.OnboardingScreen
@@ -136,7 +134,6 @@ fun MyBingwaApp(
     val currentRoute = navBackStackEntry?.destination?.route ?: if (startOnboarding) "onboarding" else "home"
 
     var activeOfferForPurchase by remember { mutableStateOf<OfferItem?>(null) }
-    var detailsOffer by remember { mutableStateOf<OfferItem?>(null) }
     var prefilledReportRef by remember { mutableStateOf<String?>(null) }
 
     val showBottomBar = currentRoute in listOf("home", "offers", "activity", "help", "settings")
@@ -151,7 +148,7 @@ fun MyBingwaApp(
         when (promo.kind) {
             PromotionKind.OFFER -> {
                 val target = promo.linkedOfferId?.let { id -> offers.find { it.id == id } }
-                if (target != null) detailsOffer = target
+                if (target != null) activeOfferForPurchase = target
             }
             PromotionKind.ANNOUNCEMENT -> {
                 promo.linkedCategory?.let { repository.setCategoryFilter(it) }
@@ -231,13 +228,14 @@ fun MyBingwaApp(
                                 restoreState = true
                             }
                         },
-                        onOfferSelect = { offer -> detailsOffer = offer },
+                        onOfferSelect = { offer -> activeOfferForPurchase = offer },
+                        onOfferBuy = { offer -> activeOfferForPurchase = offer },
                         onFavouriteToggle = { offer -> repository.setFavourite(offer.id, !offer.isFavourite) },
                         onUndoFavourite = onUndoFavourite,
                         onPromotionAction = onPromotionAction,
                         onNotifClick = { navController.navigate("notifications") },
                         onProfileClick = { navController.navigate("settings") },
-                        onSearchClick = {
+                        onOfflineClick = {
                             navController.navigate("offers") {
                                 popUpTo("home") { saveState = true }
                                 launchSingleTop = true
@@ -255,7 +253,8 @@ fun MyBingwaApp(
                         onCategorySelect = { repository.setCategoryFilter(it) },
                         onFilterStateChange = { repository.setFilterState(it) },
                         onClearFilters = { repository.clearFilters() },
-                        onOfferSelect = { offer -> detailsOffer = offer },
+                        onOfferSelect = { offer -> activeOfferForPurchase = offer },
+                        onOfferBuy = { offer -> activeOfferForPurchase = offer },
                         onFavouriteToggle = { offer -> repository.setFavourite(offer.id, !offer.isFavourite) },
                         onUndoFavourite = onUndoFavourite
                     )
@@ -314,23 +313,6 @@ fun MyBingwaApp(
                         }
                     )
                 }
-            }
-
-            // Offer details sheet — opens from any offer card / promotion, hands
-            // the actual purchase to the checkout sheet.
-            detailsOffer?.let { snapshot ->
-                val offer = liveOffer(snapshot)
-                OfferDetailsSheet(
-                    offer = offer,
-                    dailyState = dailyStateFor(offer, purchases, userProfile.primaryNumber, System.currentTimeMillis()),
-                    isOffline = isOffline,
-                    onBuy = {
-                        detailsOffer = null
-                        activeOfferForPurchase = offer
-                    },
-                    onToggleFavourite = { repository.setFavourite(offer.id, !offer.isFavourite) },
-                    onDismiss = { detailsOffer = null }
-                )
             }
 
             // Purchase flow bottom sheet overlay (Phase 4 owns the state machine).

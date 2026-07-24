@@ -73,7 +73,6 @@ import com.example.data.fake.OfferFilterState
 import com.example.data.fake.SortOption
 import com.example.data.fake.ValidityFilter
 import com.example.feature.home.OffersUiState
-import com.example.feature.home.dailyStateFor
 import com.example.ui.theme.BottomSheetTopShape
 import com.example.ui.theme.FieldButtonShape
 import com.example.ui.theme.TagShape
@@ -98,6 +97,7 @@ fun OffersScreen(
     onFilterStateChange: (OfferFilterState) -> Unit,
     onClearFilters: () -> Unit,
     onOfferSelect: (OfferItem) -> Unit,
+    onOfferBuy: (OfferItem) -> Unit,
     onFavouriteToggle: (OfferItem) -> Unit,
     onUndoFavourite: (String) -> Unit
 ) {
@@ -277,9 +277,9 @@ fun OffersScreen(
                     items(state.results, key = { it.id }) { offer ->
                         OfferCard(
                             offer = offer,
-                            dailyState = dailyStateFor(offer, state.purchases, state.recipientNumber, state.nowMillis),
                             isOffline = state.isOffline,
                             onCardClick = { onOfferSelect(offer) },
+                            onBuyClick = { onOfferBuy(offer) },
                             onFavouriteToggle = { favouriteToggle(offer) }
                         )
                     }

@@ -13,9 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -23,14 +24,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SignalCellularAlt
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -50,19 +51,15 @@ import com.example.core.ui.OfferCard
 import com.example.core.ui.OfferCardSkeleton
 import com.example.core.ui.OfflineStatusStrip
 import com.example.ui.theme.CardShape
-import com.example.ui.theme.FieldButtonShape
 import com.example.ui.theme.categoryColors
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
 /**
- * Home (Plan.md §5.2 / design.md §14.3). Renders the cached catalogue from
- * [HomeUiState] with the ordered sections: greeting, search, category
- * shortcuts, one restrained promotion billboard, Popular, Bought today, More
- * offers, Buy again, Favourites and a restrained "You might also like".
- *
- * The screen keeps honest language, never claims delivery, and preserves list
- * position across configuration changes via [listState].
+ * Home — deliberately simple. After the promotion billboard the page shows only
+ * two things: **Your favourites** (a vertical list) and **You may also like**
+ * (a horizontally swipeable row of similar offers). There is no search bar and
+ * no Popular / Bought today / Buy again sections.
  */
 @Composable
 fun HomeScreen(
@@ -72,18 +69,17 @@ fun HomeScreen(
     listState: LazyListState = rememberLazyListState(),
     onCategoryClick: (OfferCategory) -> Unit,
     onOfferSelect: (OfferItem) -> Unit,
+    onOfferBuy: (OfferItem) -> Unit,
     onFavouriteToggle: (OfferItem) -> Unit,
     onUndoFavourite: (String) -> Unit,
     onPromotionAction: (Promotion) -> Unit,
     onNotifClick: () -> Unit,
     onProfileClick: () -> Unit,
-    onSearchClick: () -> Unit
+    onOfflineClick: () -> Unit
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    // Greeting is personalised once (design.md §14.3): compute the time band here,
-    // the name comes from the profile.
     val greeting = remember {
         when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
             in 0..11 -> "Good morning"
@@ -92,6 +88,7 @@ fun HomeScreen(
         }
     }
 
+    // Toggle favourite; if it was a removal, offer a snackbar Undo.
     val favouriteToggle: (OfferItem) -> Unit = { offer ->
         val wasFavourite = offer.isFavourite
         onFavouriteToggle(offer)
@@ -119,7 +116,7 @@ fun HomeScreen(
                 isOffline = state.isOffline,
                 onNotifClick = onNotifClick,
                 onProfileClick = onProfileClick,
-                onOfflineClick = onSearchClick
+                onOfflineClick = onOfflineClick
             )
 
             LazyColumn(
@@ -128,7 +125,7 @@ fun HomeScreen(
                     .fillMaxSize()
                     .testTag("home_scroll"),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item(key = "greeting") {
                     Text(
@@ -142,17 +139,13 @@ fun HomeScreen(
                     )
                 }
 
-                item(key = "search") {
-                    HomeSearchEntry(onClick = onSearchClick)
-                }
-
                 item(key = "categories") {
                     CategoryShortcutRow(onCategoryClick = onCategoryClick)
                 }
 
                 if (state.isOffline) {
                     item(key = "offline_strip") {
-                        OfflineStatusStrip(onDetailsClick = onSearchClick)
+                        OfflineStatusStrip(onDetailsClick = onOfflineClick)
                     }
                 }
 
@@ -161,7 +154,7 @@ fun HomeScreen(
                     return@LazyColumn
                 }
 
-                // One restrained promotion (design.md §14.3 item 5).
+                // One promotion billboard.
                 if (state.promotions.isNotEmpty()) {
                     item(key = "billboard") {
                         PromotionBillboard(
@@ -172,59 +165,49 @@ fun HomeScreen(
                     }
                 }
 
-                offerSection(
-                    key = "popular",
-                    title = "Popular offers",
-                    offers = state.sections.popular.take(4),
-                    state = state,
-                    onOfferSelect = onOfferSelect,
-                    onFavouriteToggle = favouriteToggle
-                )
+                // Your favourites — vertical list.
+                item(key = "favourites_header") {
+                    SectionHeader("Your favourites")
+                }
+                if (state.sections.favourites.isEmpty()) {
+                    item(key = "favourites_empty") { FavouritesEmpty() }
+                } else {
+                    items(state.sections.favourites, key = { "fav_${it.id}" }) { offer ->
+                        OfferCard(
+                            offer = offer,
+                            isOffline = state.isOffline,
+                            onCardClick = { onOfferSelect(offer) },
+                            onBuyClick = { onOfferBuy(offer) },
+                            onFavouriteToggle = { favouriteToggle(offer) }
+                        )
+                    }
+                }
 
-                offerSection(
-                    key = "bought_today",
-                    title = "Bought today",
-                    offers = state.sections.boughtToday,
-                    state = state,
-                    onOfferSelect = onOfferSelect,
-                    onFavouriteToggle = favouriteToggle
-                )
-
-                offerSection(
-                    key = "more_offers",
-                    title = "More offers you can buy",
-                    offers = state.sections.moreOffers.take(4),
-                    state = state,
-                    onOfferSelect = onOfferSelect,
-                    onFavouriteToggle = favouriteToggle
-                )
-
-                offerSection(
-                    key = "buy_again",
-                    title = "Buy again",
-                    offers = state.sections.buyAgain.take(4),
-                    state = state,
-                    onOfferSelect = onOfferSelect,
-                    onFavouriteToggle = favouriteToggle
-                )
-
-                offerSection(
-                    key = "favourites",
-                    title = "Your favourites",
-                    offers = state.sections.favourites,
-                    state = state,
-                    onOfferSelect = onOfferSelect,
-                    onFavouriteToggle = favouriteToggle
-                )
-
-                offerSection(
-                    key = "suggestions",
-                    title = "You might also like",
-                    offers = state.sections.suggestions,
-                    state = state,
-                    onOfferSelect = onOfferSelect,
-                    onFavouriteToggle = favouriteToggle
-                )
+                // You may also like — horizontally swipeable row.
+                if (state.sections.suggestions.isNotEmpty()) {
+                    item(key = "suggestions_header") {
+                        SectionHeader("You may also like")
+                    }
+                    item(key = "suggestions_row") {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(vertical = 2.dp),
+                            modifier = Modifier.testTag("suggestions_row")
+                        ) {
+                            items(state.sections.suggestions, key = { "sug_${it.id}" }) { offer ->
+                                Box(modifier = Modifier.width(300.dp)) {
+                                    OfferCard(
+                                        offer = offer,
+                                        isOffline = state.isOffline,
+                                        onCardClick = { onOfferSelect(offer) },
+                                        onBuyClick = { onOfferBuy(offer) },
+                                        onFavouriteToggle = { favouriteToggle(offer) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
 
                 item(key = "footer_spacer") { Spacer(Modifier.height(24.dp)) }
             }
@@ -239,61 +222,30 @@ fun HomeScreen(
     }
 }
 
-/**
- * Adds a titled section of offer cards to the Home list — only when [offers] is
- * non-empty, so sections stay silent rather than showing empty placeholders.
- */
-private fun androidx.compose.foundation.lazy.LazyListScope.offerSection(
-    key: String,
-    title: String,
-    offers: List<OfferItem>,
-    state: HomeUiState,
-    onOfferSelect: (OfferItem) -> Unit,
-    onFavouriteToggle: (OfferItem) -> Unit
-) {
-    if (offers.isEmpty()) return
-    item(key = "header_$key") {
-        Spacer(Modifier.height(8.dp))
-        SectionHeader(title)
-    }
-    items(offers, key = { "${key}_${it.id}" }) { offer ->
-        OfferCard(
-            offer = offer,
-            dailyState = dailyStateFor(offer, state.purchases, state.recipientNumber, state.nowMillis),
-            isOffline = state.isOffline,
-            onCardClick = { onOfferSelect(offer) },
-            onFavouriteToggle = { onFavouriteToggle(offer) }
-        )
-    }
-}
-
 @Composable
-private fun HomeSearchEntry(onClick: () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = FieldButtonShape,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(FieldButtonShape)
-            .clickable { onClick() }
-            .testTag("home_search_entry")
+private fun FavouritesEmpty() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        shape = CardShape
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Search,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(Modifier.size(12.dp))
             Text(
-                text = "Search data, SMS or minutes",
-                style = MaterialTheme.typography.bodyLarge,
+                text = "No favourite offers saved yet",
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "Tap the heart icon on any offer to add it here",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
         }
     }
