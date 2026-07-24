@@ -422,10 +422,14 @@ class FakeBingwaRepositoryImpl(
         }
         _activeOrder.update { it?.copy(state = result.state, orderReference = result.orderReference) }
 
-        // Poll until a terminal result or the polling window is exhausted.
+        // Poll until a terminal result or the polling window is exhausted. Wait
+        // between polls so the real backend/Daraja query isn't hammered while the
+        // customer is entering their PIN (~POLL_INTERVAL_MILLIS x MAX_STATUS_POLLS
+        // total). Under test the delay is virtual (runTest advances it instantly).
         var attempts = 0
         while (!result.state.isTerminal && attempts < MAX_STATUS_POLLS) {
             attempts++
+            delay(POLL_INTERVAL_MILLIS)
             result = try {
                 gatewayForRoute.queryStatus(StkStatusQuery(clientRequestId, result.orderReference))
             } catch (e: PaymentTransportException) {
@@ -579,6 +583,9 @@ class FakeBingwaRepositoryImpl(
 
     private companion object {
         /** Max status polls before falling back to an honest "still checking" result. */
-        const val MAX_STATUS_POLLS = 6
+        const val MAX_STATUS_POLLS = 10
+
+        /** Wait between STK status polls (real backend + Daraja query take seconds). */
+        const val POLL_INTERVAL_MILLIS = 3000L
     }
 }

@@ -20,11 +20,12 @@ object PaymentGatewayProvider {
 
     fun create(
         baseUrl: String?,
+        appKey: String,
         debugLogging: Boolean,
         simulatedOutcome: () -> PaymentTxnState = { PaymentTxnState.PAYMENT_CONFIRMED }
     ): PaymentGateway =
         if (isBackendConfigured(baseUrl)) {
-            BackendPaymentGateway.create(normaliseBaseUrl(baseUrl!!), enableLogging = debugLogging)
+            BackendPaymentGateway.create(normaliseBaseUrl(baseUrl!!), appKey = appKey, enableLogging = debugLogging)
         } else {
             SimulatedPaymentGateway(terminalOutcome = simulatedOutcome)
         }

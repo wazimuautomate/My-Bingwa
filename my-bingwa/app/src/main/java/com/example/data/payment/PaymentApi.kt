@@ -8,19 +8,19 @@ import retrofit2.http.POST
 import retrofit2.http.Query
 
 /**
- * Retrofit contract for the My Bingwa payment backend proxy. The backend owns the
- * Daraja credentials, the STK passkey and the Daraja CallbackURL; this app only
- * calls these two endpoints. No secrets appear here.
+ * Retrofit contract for the My Bingwa payment API (the cPanel PHP endpoints). The
+ * server owns the Daraja credentials, the STK passkey and the Daraja CallbackURL;
+ * this app only calls these two endpoints. No secrets appear here.
  *
- * The backend author must implement these two routes to match. Kept intentionally
- * small: create-order-and-STK, then poll status until terminal.
+ * Paths map to the PHP files at the base URL root: `stk.php` and `status.php`.
+ * Kept intentionally small: create-order-and-STK, then poll status until terminal.
  */
 interface PaymentApi {
 
-    @POST("payments/stk")
+    @POST("stk.php")
     suspend fun initiateStk(@Body body: StkRequestDto): StkResponseDto
 
-    @GET("payments/status")
+    @GET("status.php")
     suspend fun status(
         @Query("clientRequestId") clientRequestId: String,
         @Query("orderReference") orderReference: String?

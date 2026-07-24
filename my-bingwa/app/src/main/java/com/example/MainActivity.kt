@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
         gateway = if (PaymentGatewayProvider.isBackendConfigured(BuildConfig.PAYMENTS_BASE_URL)) {
             PaymentGatewayProvider.create(
                 baseUrl = BuildConfig.PAYMENTS_BASE_URL,
+                appKey = BuildConfig.PAYMENTS_APP_KEY,
                 debugLogging = BuildConfig.DEBUG
             )
         } else {

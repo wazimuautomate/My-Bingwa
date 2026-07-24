@@ -27,6 +27,14 @@ android {
       ?: System.getenv("PAYMENTS_BASE_URL")
       ?: ""
     buildConfigField("String", "PAYMENTS_BASE_URL", "\"$paymentsBaseUrl\"")
+
+    // Shared app-key sent as the X-App-Key header so only our app can call the
+    // payment API. NOT a Daraja credential (those stay on the server). Injected from
+    // the `paymentsAppKey` Gradle property or the PAYMENTS_APP_KEY env var.
+    val paymentsAppKey = (project.findProperty("paymentsAppKey") as String?)
+      ?: System.getenv("PAYMENTS_APP_KEY")
+      ?: ""
+    buildConfigField("String", "PAYMENTS_APP_KEY", "\"$paymentsAppKey\"")
   }
 
   signingConfigs {
