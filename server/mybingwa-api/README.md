@@ -113,10 +113,30 @@ falls back to the built-in simulation.
 - **Sandbox** uses Safaricom test credentials and test phone numbers (no real money).
 - Switch `daraja_env` to `production` and use your live credentials only after Go Live.
 
-## Managing offers later
-`offers.php` is the price list the server trusts. When you want to manage prices from
-cPanel, replace its array with a `SELECT` from an `offers` table — the endpoints don't
-change. Buy-for-another can be added the same way later.
+## Admin panel (manage everything from your browser)
+The `admin/` folder is a password-protected dashboard to manage **offers**,
+**payment & support details**, and **notification templates** — no code, no rebuild.
+
+1. It's already uploaded with the other files (the `admin/` subfolder).
+2. In `config.php`, set `admin_user` and a strong `admin_pass`.
+3. Open `https://mybingwa.blazetechscope.com/admin/` and sign in.
+4. The dashboard **creates its own tables** on first load — no SQL import needed.
+   (Optional: import `offers.sql` to pre-fill the current catalogue, and
+   `settings.sql` to seed Till/Paybill/support.)
+
+Changes you make go live on the app's **next online sync**:
+- The app fetches `get_config.php` (Till/Paybill/support) and `get_offers.php`
+  (catalogue) whenever it's online, and caches both so they still work offline.
+- `stk.php` still recomputes the price from `offers.php` for now; once you're happy
+  managing offers in the admin, that can read the `offers` table too (same endpoints).
+
+## Endpoints summary
+- `POST stk.php` — start STK (app).
+- `GET status.php` — poll payment result (app).
+- `POST callback.php` — Daraja result in.
+- `GET get_config.php` — Till/Paybill/support (app sync).
+- `GET get_offers.php` — catalogue (app sync).
+- `admin/` — the management dashboard (browser).
 
 ## If something fails
 - `TOKEN_FAILED` → wrong consumer key/secret, or wrong `daraja_env`.

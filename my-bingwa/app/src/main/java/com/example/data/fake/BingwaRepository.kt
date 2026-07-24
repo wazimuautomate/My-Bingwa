@@ -143,6 +143,13 @@ interface BingwaRepository {
     /** Fetch fresh seller config from the server and update [appConfig]; safe to call when online. */
     suspend fun syncRemoteConfig()
 
+    /**
+     * Fetch the catalogue from the server and replace the offers when a non-empty
+     * list is returned (preserving local favourite/bought-today state). On failure
+     * the local catalogue is kept, so the app always has offers offline (Phase 7).
+     */
+    suspend fun syncCatalogue()
+
     fun deletePurchaseRecord(recordId: String)
     fun deletePurchaseRecords(recordIds: List<String>)
     fun undoDeletePurchaseRecord(record: PurchaseRecord)
