@@ -1,29 +1,18 @@
 package com.example.core.model
 
-import androidx.compose.ui.graphics.Color
-import com.example.ui.theme.DataCategoryBlue
-import com.example.ui.theme.DataCategoryContainer
-import com.example.ui.theme.LightPrimaryText
-import com.example.ui.theme.MinutesCategoryContainer
-import com.example.ui.theme.MinutesCategoryGreen
-import com.example.ui.theme.SmsCategoryContainer
-import com.example.ui.theme.SmsCategoryDarkContent
-import com.example.ui.theme.SmsCategoryPurple
-import com.example.ui.theme.SpecialCategoryContainer
-import com.example.ui.theme.SpecialCategoryDarkContent
-import com.example.ui.theme.SpecialCategoryOrange
-
+// Offer categories carry only semantic identity (label + canonical Material
+// Symbol name). Visual colours are resolved from the active theme via
+// com.example.ui.theme.categoryColors(...) so light and dark both stay on
+// design.md §7.3 — colours are never baked into the model (that previously
+// forced light-theme category chips into dark mode).
 enum class OfferCategory(
     val label: String,
-    val iconName: String,
-    val accentColor: Color,
-    val containerColor: Color,
-    val contentColor: Color
+    val iconName: String
 ) {
-    ALL("All offers", "grid_view", DataCategoryBlue, DataCategoryContainer, LightPrimaryText),
-    DATA("Data", "signal_cellular_alt", DataCategoryBlue, DataCategoryContainer, LightPrimaryText),
-    SMS("SMS", "chat_bubble_outline", SmsCategoryPurple, SmsCategoryContainer, SmsCategoryDarkContent),
-    MINUTES("Minutes", "call", MinutesCategoryGreen, MinutesCategoryContainer, LightPrimaryText),
-    SPECIAL("Special", "auto_awesome", SpecialCategoryOrange, SpecialCategoryContainer, SpecialCategoryDarkContent),
-    FAVOURITES("Favourites", "favorite", SpecialCategoryOrange, SpecialCategoryContainer, LightPrimaryText)
+    ALL("All offers", "grid_view"),
+    DATA("Data", "signal_cellular_alt"),
+    SMS("SMS", "chat_bubble_outline"),
+    MINUTES("Minutes", "call"),
+    SPECIAL("Special", "auto_awesome"),
+    FAVOURITES("Favourites", "favorite")
 }

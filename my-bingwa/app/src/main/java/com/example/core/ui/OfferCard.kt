@@ -46,6 +46,7 @@ import com.example.ui.theme.CardShape
 import com.example.ui.theme.FieldButtonShape
 import com.example.ui.theme.PrimaryActionGreen
 import com.example.ui.theme.TagShape
+import com.example.ui.theme.categoryColors
 import com.example.ui.theme.TypographyOfferPrice
 
 @Composable
@@ -82,14 +83,15 @@ fun OfferCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                val categoryColors = categoryColors(offer.category)
                 Surface(
-                    color = offer.category.containerColor,
+                    color = categoryColors.container,
                     shape = TagShape
                 ) {
                     Text(
                         text = offer.category.label,
                         style = MaterialTheme.typography.labelSmall,
-                        color = offer.category.contentColor,
+                        color = categoryColors.onContainer,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                     )

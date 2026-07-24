@@ -55,6 +55,7 @@ import com.example.ui.theme.CardShape
 import com.example.ui.theme.FieldButtonShape
 import com.example.ui.theme.PromotionStatusShape
 import com.example.ui.theme.TagShape
+import com.example.ui.theme.categoryColors
 import java.util.Calendar
 
 @Composable
@@ -235,17 +236,18 @@ private fun CategoryShortcutTile(
             .padding(8.dp)
             .testTag("category_tile_${category.name.lowercase()}")
     ) {
+        val colors = categoryColors(category)
         Box(
             modifier = Modifier
                 .size(56.dp)
                 .clip(CircleShape)
-                .background(category.containerColor),
+                .background(colors.container),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = category.accentColor,
+                tint = colors.accent,
                 modifier = Modifier.size(26.dp)
             )
         }

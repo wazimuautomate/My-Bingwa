@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Monochrome silhouette of the My Bingwa symbol for the Android 13+ themed
+  ("monochrome") launcher layer and any single-colour brand use. The launcher
+  recolours this shape with the system theme, so every path is a flat black
+  fill; do not add brand colours here.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="512dp"
+    android:height="512dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Outer crescent arc -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M175,250 C125,290 95,355 125,395 C165,445 265,435 345,385 C410,345 435,275 433,210 C428,270 395,340 325,380 C250,420 155,420 115,370 C90,340 100,290 175,250 Z" />
+
+    <!-- Head circle -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M256,120 A38,38 0 1,1 256,196 A38,38 0 1,1 256,120 Z" />
+
+    <!-- Body / arms reaching up -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M145,185 C185,210 220,230 256,265 C310,225 350,175 385,135 C370,185 340,255 280,325 C220,385 175,390 175,390 C215,320 250,260 215,225 C185,205 155,195 145,185 Z" />
+
+    <!-- Card / phone held in hand -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M312,82 L382,122 C387,125 387,132 382,137 L342,197 C337,202 330,202 325,197 L255,157 C250,154 250,147 255,142 L295,82 C300,77 307,77 312,82 Z" />
+</vector>
