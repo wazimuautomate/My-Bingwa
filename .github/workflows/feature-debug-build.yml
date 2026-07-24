@@ -51,8 +51,6 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          build-root-directory: my-bingwa
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew

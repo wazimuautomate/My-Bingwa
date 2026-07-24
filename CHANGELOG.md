@@ -12,7 +12,7 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Added
 
-- Checked-in Gradle wrapper (Gradle 9.1.0) under `my-bingwa/gradle/wrapper/`
+- Checked-in Gradle wrapper (Gradle 9.3.1) under `my-bingwa/gradle/wrapper/`
   with `gradlew`/`gradlew.bat`, so the project builds from the command line and
   CI without Android Studio. Distribution is pinned with a SHA-256 checksum.
 - Root `.gitignore` covering build output, `local.properties`, `.env`,
