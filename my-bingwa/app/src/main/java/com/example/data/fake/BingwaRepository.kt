@@ -131,6 +131,10 @@ interface BingwaRepository {
 
     fun markNotificationRead(id: String)
     fun markAllNotificationsRead()
+    /** Remove a single notification from the local centre (customer "clear"). */
+    fun deleteNotification(id: String)
+    /** Remove every notification from the local centre (customer "clear all"). */
+    fun clearAllNotifications()
 
     fun clearAllLocalData()
 }

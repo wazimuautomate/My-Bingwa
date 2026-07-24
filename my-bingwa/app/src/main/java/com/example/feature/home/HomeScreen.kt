@@ -74,7 +74,6 @@ fun HomeScreen(
     onUndoFavourite: (String) -> Unit,
     onPromotionAction: (Promotion) -> Unit,
     onNotifClick: () -> Unit,
-    onProfileClick: () -> Unit,
     onOfflineClick: () -> Unit
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -115,7 +114,6 @@ fun HomeScreen(
                 unreadNotifCount = unreadNotifCount,
                 isOffline = state.isOffline,
                 onNotifClick = onNotifClick,
-                onProfileClick = onProfileClick,
                 onOfflineClick = onOfflineClick
             )
 

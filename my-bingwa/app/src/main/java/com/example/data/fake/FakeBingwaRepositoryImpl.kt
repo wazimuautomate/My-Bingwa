@@ -560,6 +560,14 @@ class FakeBingwaRepositoryImpl(
         _notifications.update { list -> list.map { it.copy(isRead = true) } }
     }
 
+    override fun deleteNotification(id: String) {
+        _notifications.update { list -> list.filterNot { it.id == id } }
+    }
+
+    override fun clearAllNotifications() {
+        _notifications.value = emptyList()
+    }
+
     override fun clearAllLocalData() {
         _userProfile.value = UserProfile()
         _purchases.value = emptyList()
