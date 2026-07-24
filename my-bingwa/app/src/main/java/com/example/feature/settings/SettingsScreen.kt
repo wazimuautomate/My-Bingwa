@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SettingsSuggest
+import androidx.compose.material.icons.outlined.Sms
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -74,13 +75,30 @@ fun SettingsScreen(
     currentTheme: AppThemeSetting,
     onUpdateProfile: (String, String) -> Unit,
     onThemeSelect: (AppThemeSetting) -> Unit,
-    onClearLocalData: () -> Unit
+    onClearLocalData: () -> Unit,
+    // Triggered after the in-app explanation when the customer opts into push
+    // notifications. MainActivity owns the actual POST_NOTIFICATIONS runtime
+    // request (Android 13+) or a no-op on older versions. Defaulted so existing
+    // call sites / tests keep compiling.
+    onEnablePushNotifications: () -> Unit = {},
+    // Triggered after the rationale when the customer opts into Safaricom SMS
+    // bundle/balance detection. MainActivity owns the RECEIVE_SMS request.
+    onEnableSmsDetection: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var showEditProfileSheet by remember { mutableStateOf(false) }
     var showClearDataDialog by remember { mutableStateOf(false) }
     var checkingUpdates by remember { mutableStateOf(false) }
     var updateMessage by remember { mutableStateOf<String?>(null) }
+
+    // Notification / SMS preference state (declared here so the rationale dialogs
+    // near the bottom of this composable can also read and update them).
+    var notificationsEnabled by remember(profile.notificationsEnabled) { mutableStateOf(profile.notificationsEnabled) }
+    var showPushRationale by remember { mutableStateOf(false) }
+    // Local opt-in for Safaricom SMS detection. The OS RECEIVE_SMS grant is
+    // authoritative; this only tracks the customer's in-app choice.
+    var smsAlertsEnabled by remember { mutableStateOf(false) }
+    var showSmsRationale by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -187,8 +205,6 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         // Notification Permissions Section
-        var notificationsEnabled by remember(profile.notificationsEnabled) { mutableStateOf(profile.notificationsEnabled) }
-
         SettingsGroupTitle("Push Notifications")
         Surface(
             shape = FieldButtonShape,
@@ -230,7 +246,71 @@ fun SettingsScreen(
 
                 Switch(
                     checked = notificationsEnabled,
-                    onCheckedChange = { notificationsEnabled = it },
+                    onCheckedChange = { desired ->
+                        // Explain before requesting the OS permission (CLAUDE.md §9).
+                        if (desired) showPushRationale = true else notificationsEnabled = false
+                    },
+                    modifier = Modifier.testTag("push_notifications_switch"),
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Bundle & balance alerts (optional Safaricom SMS reading) Section
+        SettingsGroupTitle("Bundle & balance alerts")
+        Surface(
+            shape = FieldButtonShape,
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Sms,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Reads Safaricom SMS",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (smsAlertsEnabled) {
+                                "Confirms delivery and suggests top-ups"
+                            } else {
+                                "Off — no SMS is read"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Switch(
+                    checked = smsAlertsEnabled,
+                    onCheckedChange = { desired ->
+                        if (desired) showSmsRationale = true else smsAlertsEnabled = false
+                    },
+                    modifier = Modifier.testTag("sms_alerts_switch"),
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                         checkedTrackColor = MaterialTheme.colorScheme.primary
@@ -411,6 +491,97 @@ fun SettingsScreen(
                 }
             }
         )
+    }
+
+    // Push notifications rationale (shown before the OS permission prompt, §9).
+    if (showPushRationale) {
+        AlertDialog(
+            onDismissRequest = { showPushRationale = false },
+            title = { Text("Turn on notifications?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "My Bingwa will notify you about your payment status and the offers you " +
+                        "choose to follow. You can turn this off any time in system settings."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showPushRationale = false
+                        notificationsEnabled = true
+                        onEnablePushNotifications()
+                    },
+                    modifier = Modifier.testTag("push_rationale_allow")
+                ) {
+                    Text("Allow", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                Column {
+                    TextButton(onClick = { showPushRationale = false }) {
+                        Text("Not now")
+                    }
+                    TextButton(onClick = {
+                        showPushRationale = false
+                        openAppSettings(context)
+                    }) {
+                        Text("Open app settings")
+                    }
+                }
+            }
+        )
+    }
+
+    // Safaricom SMS detection rationale (shown before the RECEIVE_SMS prompt).
+    if (showSmsRationale) {
+        AlertDialog(
+            onDismissRequest = { showSmsRationale = false },
+            title = { Text("Read Safaricom bundle SMS?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "My Bingwa reads Safaricom bundle and balance messages on this phone only, " +
+                        "to confirm your bundle arrived and suggest top-ups. Nothing is uploaded."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSmsRationale = false
+                        smsAlertsEnabled = true
+                        onEnableSmsDetection()
+                    },
+                    modifier = Modifier.testTag("sms_rationale_allow")
+                ) {
+                    Text("Allow", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                Column {
+                    TextButton(onClick = { showSmsRationale = false }) {
+                        Text("Not now")
+                    }
+                    TextButton(onClick = {
+                        showSmsRationale = false
+                        openAppSettings(context)
+                    }) {
+                        Text("Open app settings")
+                    }
+                }
+            }
+        )
+    }
+}
+
+/** Opens this app's system settings page so the customer can review a denied permission. */
+private fun openAppSettings(context: android.content.Context) {
+    val intent = Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        android.net.Uri.fromParts("package", context.packageName, null)
+    ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+    try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        // No settings activity available; nothing else to do.
     }
 }
 

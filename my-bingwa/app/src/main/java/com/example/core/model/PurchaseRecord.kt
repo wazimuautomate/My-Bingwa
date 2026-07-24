@@ -34,5 +34,12 @@ data class PurchaseRecord(
      */
     val clientRequestId: String = "",
     /** My Bingwa order reference for support ("Ref" shown in Activity), when known. */
-    val orderReference: String = ""
+    val orderReference: String = "",
+    /**
+     * True only when Safaricom itself messaged the device confirming this bundle
+     * (matched by SmsDeliveryReceiver). This app never delivers or activates
+     * bundles, so Activity may show a carrier-attributed line — never a
+     * "delivered by us" claim (CLAUDE.md §7). Default false; backward compatible.
+     */
+    val isDeliveryConfirmed: Boolean = false
 )

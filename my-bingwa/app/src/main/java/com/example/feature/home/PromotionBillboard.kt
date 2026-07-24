@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -143,7 +144,9 @@ private fun PromotionSlide(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(190.dp)
+            // A minimum (not fixed) height keeps the classic billboard proportions
+            // but lets the slide grow instead of clipping at large font scales.
+            .heightIn(min = 190.dp)
             .clip(PromotionStatusShape)
             .background(palette.background)
             .testTag("promotion_slide_${promotion.id}")
@@ -164,65 +167,72 @@ private fun PromotionSlide(
             )
         }
 
-        // Start-aligned text block. It reserves roughly the left 62% of the slide
-        // so long headlines/subheads wrap before reaching the right-side CTA and
-        // never sit underneath it.
-        Column(
+        // The text and the CTA are real siblings in a Row, so each reserves its
+        // own space. The text column takes the remaining width via weight(1f) and
+        // wraps/truncates BEFORE the button — it can never run underneath the CTA.
+        // The Row's minimum height matches the slide so its contents stay centred.
+        Row(
             modifier = Modifier
-                .fillMaxSize()
-                .fillMaxWidth(0.62f)
+                .fillMaxWidth()
+                .heightIn(min = 190.dp)
                 .padding(20.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.Start
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Tag chip.
-            Surface(
-                color = palette.chipContainer,
-                shape = TagShape
+            // Start-aligned text block. weight(1f) makes it yield space to the CTA.
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.Start
             ) {
+                // Tag chip.
+                Surface(
+                    color = palette.chipContainer,
+                    shape = TagShape
+                ) {
+                    Text(
+                        text = promotion.tag,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = palette.chipContent,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 Text(
-                    text = promotion.tag,
-                    style = MaterialTheme.typography.labelSmall,
+                    text = promotion.headline,
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = palette.chipContent,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    color = palette.content,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = promotion.subhead,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = palette.content.copy(alpha = 0.9f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            // Clear gap between the text and the CTA so they never touch or collide.
+            Spacer(modifier = Modifier.width(16.dp))
 
-            Text(
-                text = promotion.headline,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = palette.content,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = promotion.subhead,
-                style = MaterialTheme.typography.bodyMedium,
-                color = palette.content.copy(alpha = 0.9f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+            // CTA on the right, vertically centred by the Row. It occupies its own
+            // reserved column — nothing is drawn on top of the text.
+            BreathingCtaButton(
+                label = promotion.ctaLabel,
+                palette = palette,
+                reducedMotion = reducedMotion,
+                onClick = { onPromotionAction(promotion) },
+                modifier = Modifier.testTag("promotion_cta_${promotion.id}")
             )
         }
-
-        // CTA lives on the right, vertically centred (visually higher than the old
-        // bottom position) with room to breathe on all sides so nothing clips.
-        BreathingCtaButton(
-            label = promotion.ctaLabel,
-            palette = palette,
-            reducedMotion = reducedMotion,
-            onClick = { onPromotionAction(promotion) },
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 20.dp)
-                .testTag("promotion_cta_${promotion.id}")
-        )
     }
 }
 

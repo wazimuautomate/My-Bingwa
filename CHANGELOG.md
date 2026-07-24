@@ -10,7 +10,64 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ## [Unreleased]
 
+### Added
+
+- **Activity-aware notification system (owner request).** A new
+  `core/notifications` subsystem plus the integration to drive it:
+  - **Brand-styled, non-noisy system notifications** via `AppNotifier` using the
+    monochrome status icon (`ic_stat_my_bingwa`) and brand-green accent, on
+    separated channels (Transactions default importance; Offers/Reminders/Updates
+    low importance, silent) — transaction updates kept apart from promotions (§9).
+  - **Notification permission on opt-in:** enabling **Push Notifications** in
+    Settings shows an in-app rationale, then requests `POST_NOTIFICATIONS`
+    (Android 13+); a denied state links to app settings.
+  - **Connection-state awareness** (`ConnectivityObserver`): Wi-Fi / mobile data /
+    both / none, fed into the offer-suggestion logic.
+  - **Safaricom SMS watching (delivery + low balance)**, opt-in behind a separate
+    "Bundle & balance alerts" toggle that requests `RECEIVE_SMS` after a clear
+    rationale. A `SMS_RECEIVED` receiver classifies messages with a **pure,
+    server-syncable template + parser** (`SmsTemplates`/`DefaultTemplates`/
+    `SafaricomSmsParser`) seeded from the real Safaricom formats (data/SMS/minutes
+    delivery from `Safaricom`/`SAF_OfaMOTO`; low-balance from `SAF_Balance`).
+    Templates are data, not code — a `RemoteTemplateSync` seam is left for the
+    future server.
+  - **Honest delivery reconciliation:** a matched delivery SMS flips the newest
+    matching purchase's new `PurchaseRecord.isDeliveryConfirmed` flag and adds a
+    quiet, **Safaricom-attributed** in-app note (never a loud "bundle received"
+    every time, never a "we delivered/activated" claim — §7). Activity shows a
+    small "Safaricom confirmed delivery" line when confirmed.
+  - **Low-balance nudges + suggestions** (`OfferSuggestionEngine`) use only §8
+    allowed language ("More … offers for you", "Top up with these deals") — never
+    "you are running out / you need more data".
+  - Unit tests: SMS parser (all four real samples + negatives), suggestion engine,
+    and delivery/low-balance reconciliation.
+
+### Fixed
+
+- **Launch splash now uses the approved brand mark.** The Android 12+ splash was
+  showing a crude hand-drawn vector (`ic_splash_logo.xml`) instead of the real
+  logo. Replaced it with the approved `my-bingwa-splash-mark-512.png` asset
+  (`drawable-nodpi/ic_splash_logo.png`); the launcher and onboarding logos were
+  already correct.
+- **Promotion billboard CTA no longer overlaps the text.** The "Buy now" button
+  was absolutely positioned over the subhead and hid it. The slide is now a
+  `Row` with the text taking `weight(1f)` and the CTA reserving its own space, so
+  they can't overlap — robust at small width and 200% font scale.
+
+### Security
+
+- **`RECEIVE_SMS` is Google Play-restricted.** It is declared for the opt-in
+  bundle/balance detection and is intended for the **direct-APK** distribution;
+  the Play (AAB) build should exclude it. SMS logic is isolated behind a receiver
+  + in-memory signal bus; full SMS bodies and phone numbers are never logged.
+
 ### Changed
+
+- **Offers filter reverted to the classic compact styling (owner feedback).** The
+  Phase-3 filter-sheet redesign (bold green price flourish, rounded highlight
+  rows, "Filter & sort") was reverted to the classic look ("Filter Offers", calm
+  values, `FieldButtonShape` rows) while keeping all functionality — category,
+  price range, validity and the five sort orders.
 
 - **Notification centre is now an in-app slide-up overlay (per owner request),
   not a standalone page.** Tapping the Home header bell opens a `ModalBottomSheet`
