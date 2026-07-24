@@ -621,3 +621,67 @@ destinations.
   and `GET payments/status` (status strings PAYMENT_REQUESTED/AWAITING_APPROVAL/
   PAYMENT_CONFIRMED/CANCELLED/PAYMENT_FAILED/TIMED_OUT) to switch buy-for-myself to
   real Daraja STK.
+
+---
+
+## 2026-07-24 ~23:32 EAT (Africa/Nairobi) — Phase 5 (partial): notification overlay + Settings in bottom nav
+
+- **Request/objective:** Owner-directed subset of Phase 5. (1) The notification
+  page opened as a standalone route with no app chrome — convert it to an in-app
+  slide-up overlay modal; notifications must be readable, copyable and clearable.
+  (2) On Home the top-right had both a notification bell and a profile avatar
+  (→ Settings); remove the avatar, keep the bell there, and move Settings into
+  the bottom navigation as a real, navigable destination. Explicit constraint:
+  **no UI redesign** of any screen; Help and Activity left untouched.
+- **What changed:**
+  - `feature/notifications/NotificationsScreen.kt`: `NotificationsScreen(...onBack)`
+    replaced by `NotificationsSheet(...)` built on `ModalBottomSheet`
+    (`BottomSheetTopShape`, 0.9f height). Same visual rows/sections/empty/disabled
+    states as before (no redesign) plus per-row **Copy** (clipboard + "Copied"
+    toast) and **Clear** (delete) icon buttons, a header **Clear all**, and
+    deep-link routing (`onDeepLink` + auto-dismiss) for notifications that carry a
+    route. Test tags added (`notifications_sheet`, `notification_row/copy/delete_*`,
+    `clear_all_button`).
+  - `core/ui/MyBingwaTopAppBar.kt`: removed the profile avatar block and
+    `onProfileClick` param; the bell is now the only trailing control.
+  - `core/ui/MyBingwaBottomNav.kt`: added `SETTINGS("settings", …, Icons.Outlined.Settings)`
+    as a 5th destination; tightened row/item horizontal padding (12→6 / 16→10 dp)
+    so five labelled tabs fit small-width phones.
+  - `feature/home/HomeScreen.kt`: dropped `onProfileClick` (param + top-bar wiring).
+  - `MainActivity.kt`: removed the `composable("notifications")` route; added
+    `showNotifications` state; bell + `PromotionKind.UPDATE` now open the overlay;
+    rendered `NotificationsSheet` above the scaffold body; Settings continues to
+    be a route (now also reached via the bottom nav). `showBottomBar` already
+    included "settings".
+  - `data/fake/BingwaRepository.kt` + `FakeBingwaRepositoryImpl.kt`: added
+    `deleteNotification(id)` and `clearAllNotifications()`.
+  - Tests: `data/fake/NotificationRepositoryTest.kt` (read / mark-all / delete /
+    clear-all); `core/ui/MyBingwaBottomNavComposeTest.kt` (Settings renders +
+    routes); `HomeScreenComposeTest.kt` updated for the removed `onProfileClick`.
+- **Files changed:** the eight above + `CHANGELOG.md`, `memory.md`.
+- **Decisions/assumptions:** A `ModalBottomSheet` is the "overlay up modal" — its
+  scrim intentionally dims the shell; dismissing returns to the same screen with
+  the bottom nav intact (fixes the "standalone page, no navigation" complaint).
+  Adding Settings as a 5th bottom-nav item overrides design.md §12.1 "exactly
+  four" — done under the owner's explicit current instruction (source-of-truth #1)
+  and recorded here. `userName` param left on the top bar (now unused) to avoid
+  extra call-site churn. Deep-link seeds are currently all null, so that path is
+  wired but inert until notifications carry routes.
+- **Verification:** No local build possible (this PC has no JDK — CI-first).
+  Static self-review only: icons (`ContentCopy`, `DeleteOutline`, `Settings`) are
+  in `material-icons-extended` (already a dependency); no `allWarningsAsErrors`/
+  lint-abort config; grep confirms no lingering `NotificationsScreen`/
+  `onProfileClick` references. New unit + Compose tests written, not yet run.
+- **Git:** Branch `feature/activity-support-settings` off
+  `feature/checkout-state-machine` HEAD (`2f676f9`) — that base carries the
+  Phase-3/4 deps this work needs. Feature branch to be pushed to trigger CI.
+- **Risks/blockers:** (1) CI unverified — first push may surface a compile error
+  to fix on-branch. (2) Physical-phone acceptance pending (light/dark/small-width/
+  200%-text/reduced-motion of the overlay + 5-tab bar). (3) **`main` is diverged**
+  from this line (origin/main integrated Phase 3 differently; HEAD has 14 commits
+  incl. checkout not in main) — a direct merge to main would drag in unreviewed
+  work and risk conflicts, so main was NOT pushed; coordinator/integration owns it.
+- **Next:** Push `feature/activity-support-settings`, watch GitHub Actions, fix any
+  compile error on-branch, then install the debug APK artifact and run the phone
+  acceptance loop. Decide with the owner how to integrate to main given the
+  divergence.

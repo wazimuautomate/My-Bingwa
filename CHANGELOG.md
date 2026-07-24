@@ -12,6 +12,16 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Changed
 
+- **Notification centre is now an in-app slide-up overlay (per owner request),
+  not a standalone page.** Tapping the Home header bell opens a `ModalBottomSheet`
+  above the app shell instead of navigating to a disconnected full-screen route,
+  so context and the bottom navigation are preserved. Each notification can be
+  read (tap), copied (to clipboard) and cleared (single or "Clear all"); a
+  notification carrying a deep-link route routes to it and closes the overlay.
+- **Settings moved to the bottom navigation (per owner request).** The Home
+  header no longer shows a profile avatar; that space now holds only the
+  notification bell. Settings is a fifth primary bottom-nav destination and is
+  reached and highlighted like every other tab.
 - **Home simplified (per owner feedback):** removed the Home search bar and the
   Popular / Bought today / Buy again sections. After the promotion billboard the
   Home now shows only **Your favourites** (vertical list) and **You may also
