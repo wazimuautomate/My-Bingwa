@@ -1,6 +1,6 @@
 # Block the web from downloading internal files. The public endpoints
 # (stk.php, status.php, callback.php) stay reachable.
-<FilesMatch "^(config|db|lib|offers)\.php$">
+<FilesMatch "^(config|config\.sample|db|lib|offers)\.php$">
     Require all denied
 </FilesMatch>
 <FilesMatch "\.(sql|md)$">

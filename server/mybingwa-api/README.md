@@ -70,7 +70,9 @@ cPanel → **File Manager** → open your subdomain's Document Root (from Step 1
 
 ## Step 6 — Fill in config.php
 
-In File Manager, right-click `config.php` → **Edit**. Replace every `PUT_...`:
+Copy `config.sample.php` to `config.php` (File Manager → right-click → Copy), then
+edit `config.php` → **Edit**. `config.php` is git-ignored and holds your secrets;
+`config.sample.php` is the safe template. Replace every `PUT_...`:
 - `app_key` → invent a long random string (keep it; the app needs the same one).
 - `daraja_env` → `sandbox` to test, later `production`.
 - `consumer_key`, `consumer_secret`, `passkey`, `business_shortcode` → from Daraja.
