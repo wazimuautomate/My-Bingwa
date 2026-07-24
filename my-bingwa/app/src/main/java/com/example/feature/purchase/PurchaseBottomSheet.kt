@@ -1,5 +1,11 @@
 package com.example.feature.purchase
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -160,7 +167,9 @@ fun PurchaseBottomSheet(
                         },
                         onRecipientChange = { recipientNumber = it },
                         onPayerChange = { payerNumber = it },
-                        onNext = { purchaseStep = STEP_REVIEW }
+                        // Offline goes straight to the manual M-Pesa steps (no online
+                        // review); online goes through the price/total review first.
+                        onNext = { purchaseStep = if (isOffline) STEP_OFFLINE else STEP_REVIEW }
                     )
 
                     STEP_REVIEW -> ReviewPurchaseStep(
@@ -825,9 +834,13 @@ private fun OfflinePaymentInstructionsStep(
         return
     }
 
+    val context = LocalContext.current
     var receipt by rememberSaveable { mutableStateOf("") }
     val till = config.tillNumber
     val paybill = config.paybillNumber
+    // The value copied for one-tap paste: Till for own number, Paybill for another.
+    val copyLabel = if (isTill) "Till number" else "Paybill number"
+    val copyValue = if (isTill) till else paybill
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -851,17 +864,27 @@ private fun OfflinePaymentInstructionsStep(
                 .padding(14.dp)
         ) {
             Text(
-                text = "No internet needed for these steps",
+                text = "No internet needed",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "Use the exact business number and amount shown below. Do not change the amount.",
+                text = "Tap below to copy the ${if (isTill) "Till" else "Paybill"} and open M-Pesa. Use the exact amount and do not change it.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Primary offline action: copy the number and open the SIM Toolkit / M-Pesa
+        // menu so the customer can pay manually (Phase 6 offline behaviour).
+        PrimaryButton(
+            text = "Copy $copyLabel & open M-Pesa",
+            onClick = { copyAndOpenMpesa(context, copyLabel, copyValue) },
+            testTag = "open_mpesa_button"
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -946,6 +969,24 @@ private fun OfflinePaymentInstructionsStep(
             onClick = onCancel,
             testTag = "cancel_offline_button"
         )
+    }
+}
+
+/**
+ * Offline manual payment: copy the Till/Paybill to the clipboard, confirm with a
+ * toast, then open the SIM Toolkit (M-Pesa menu). Falls back to dialling the STK
+ * USSD if the SIM Toolkit app is unavailable. Mirrors HelpScreen's opener.
+ */
+private fun copyAndOpenMpesa(context: Context, label: String, value: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
+    Toast.makeText(context, "$label $value copied — opening M-Pesa", Toast.LENGTH_SHORT).show()
+    try {
+        val stkIntent = context.packageManager.getLaunchIntentForPackage("com.android.stk")
+            ?: Intent(Intent.ACTION_DIAL, Uri.parse("tel:*234%23"))
+        context.startActivity(stkIntent)
+    } catch (e: Exception) {
+        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:*234%23")))
     }
 }
 
