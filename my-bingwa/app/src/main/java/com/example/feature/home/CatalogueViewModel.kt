@@ -2,6 +2,7 @@ package com.example.feature.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.core.model.OfferDailyState
 import com.example.core.model.OfferItem
 import com.example.core.model.Promotion
 import com.example.core.model.PurchaseRecord
