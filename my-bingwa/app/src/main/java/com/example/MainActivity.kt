@@ -40,7 +40,7 @@ import com.example.feature.activity.ActivityScreen
 import com.example.feature.help.HelpScreen
 import com.example.feature.home.CatalogueViewModel
 import com.example.feature.home.HomeScreen
-import com.example.feature.notifications.NotificationsScreen
+import com.example.feature.notifications.NotificationsSheet
 import com.example.feature.offers.OffersScreen
 import com.example.feature.onboarding.OnboardingScreen
 import com.example.feature.purchase.PurchaseBottomSheet
@@ -135,6 +135,9 @@ fun MyBingwaApp(
 
     var activeOfferForPurchase by remember { mutableStateOf<OfferItem?>(null) }
     var prefilledReportRef by remember { mutableStateOf<String?>(null) }
+    // Notification centre is an in-app slide-up overlay, not a standalone route,
+    // so the bottom navigation stays visible behind it.
+    var showNotifications by remember { mutableStateOf(false) }
 
     val showBottomBar = currentRoute in listOf("home", "offers", "activity", "help", "settings")
 
@@ -158,7 +161,7 @@ fun MyBingwaApp(
                     restoreState = true
                 }
             }
-            PromotionKind.UPDATE -> navController.navigate("notifications")
+            PromotionKind.UPDATE -> showNotifications = true
         }
     }
 
@@ -233,8 +236,7 @@ fun MyBingwaApp(
                         onFavouriteToggle = { offer -> repository.setFavourite(offer.id, !offer.isFavourite) },
                         onUndoFavourite = onUndoFavourite,
                         onPromotionAction = onPromotionAction,
-                        onNotifClick = { navController.navigate("notifications") },
-                        onProfileClick = { navController.navigate("settings") },
+                        onNotifClick = { showNotifications = true },
                         onOfflineClick = {
                             navController.navigate("offers") {
                                 popUpTo("home") { saveState = true }
@@ -288,17 +290,6 @@ fun MyBingwaApp(
                     )
                 }
 
-                composable("notifications") {
-                    NotificationsScreen(
-                        notifications = notifications,
-                        notificationsEnabled = userProfile.notificationsEnabled,
-                        onMarkRead = { id -> repository.markNotificationRead(id) },
-                        onMarkAllRead = { repository.markAllNotificationsRead() },
-                        onEnableNotifications = { repository.updateProfile(userProfile.name, userProfile.primaryNumber) },
-                        onBack = { navController.popBackStack() }
-                    )
-                }
-
                 composable("settings") {
                     SettingsScreen(
                         profile = userProfile,
@@ -339,6 +330,28 @@ fun MyBingwaApp(
                             restoreState = true
                         }
                     }
+                )
+            }
+
+            // Notification-centre overlay (slide-up modal). Rendered above the
+            // scaffold body so the bottom navigation remains visible/accessible.
+            if (showNotifications) {
+                NotificationsSheet(
+                    notifications = notifications,
+                    notificationsEnabled = userProfile.notificationsEnabled,
+                    onMarkRead = { id -> repository.markNotificationRead(id) },
+                    onMarkAllRead = { repository.markAllNotificationsRead() },
+                    onDeleteNotification = { id -> repository.deleteNotification(id) },
+                    onClearAll = { repository.clearAllNotifications() },
+                    onEnableNotifications = { repository.updateProfile(userProfile.name, userProfile.primaryNumber) },
+                    onDeepLink = { route ->
+                        navController.navigate(route) {
+                            popUpTo("home") { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onDismiss = { showNotifications = false }
                 )
             }
         }

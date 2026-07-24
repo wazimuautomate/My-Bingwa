@@ -80,7 +80,6 @@ class HomeScreenComposeTest {
                     onUndoFavourite = {},
                     onPromotionAction = {},
                     onNotifClick = {},
-                    onProfileClick = {},
                     onOfflineClick = {}
                 )
             }

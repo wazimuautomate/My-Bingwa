@@ -39,7 +39,6 @@ fun MyBingwaTopAppBar(
     unreadNotifCount: Int = 1,
     isOffline: Boolean = false,
     onNotifClick: () -> Unit = {},
-    onProfileClick: () -> Unit = {},
     onOfflineClick: () -> Unit = {}
 ) {
     Row(
@@ -93,7 +92,8 @@ fun MyBingwaTopAppBar(
             Spacer(modifier = Modifier.width(8.dp))
         }
 
-        // Notification Icon with Badge
+        // Notification Icon with Badge (opens the notification-centre overlay).
+        // Settings moved to the bottom navigation, so no profile avatar here.
         Box(contentAlignment = Alignment.TopEnd) {
             IconButton(
                 onClick = onNotifClick,
@@ -113,27 +113,6 @@ fun MyBingwaTopAppBar(
                         .background(BrandGreen, CircleShape)
                 )
             }
-        }
-
-        Spacer(modifier = Modifier.width(4.dp))
-
-        // Profile Avatar
-        val initial = userName.trim().take(1).uppercase().ifEmpty { "M" }
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .clickable { onProfileClick() }
-                .testTag("profile_avatar_button"),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = initial,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                fontWeight = FontWeight.Bold
-            )
         }
     }
 }
