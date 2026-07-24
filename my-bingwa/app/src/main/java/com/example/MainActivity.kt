@@ -35,6 +35,7 @@ import com.example.core.model.PromotionKind
 import com.example.core.ui.MyBingwaBottomNav
 import com.example.data.fake.BingwaRepository
 import com.example.data.fake.FakeBingwaRepositoryImpl
+import com.example.data.payment.PaymentGatewayProvider
 import com.example.feature.activity.ActivityScreen
 import com.example.feature.help.HelpScreen
 import com.example.feature.home.CatalogueViewModel
@@ -51,7 +52,19 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
-    private val repository = FakeBingwaRepositoryImpl()
+    // Buy-for-myself uses the real backend proxy when a base URL is configured
+    // (BuildConfig.PAYMENTS_BASE_URL, a non-secret value); otherwise a clearly
+    // labelled local simulation. Daraja credentials never live in this app.
+    private val repository = FakeBingwaRepositoryImpl(
+        gateway = if (PaymentGatewayProvider.isBackendConfigured(BuildConfig.PAYMENTS_BASE_URL)) {
+            PaymentGatewayProvider.create(
+                baseUrl = BuildConfig.PAYMENTS_BASE_URL,
+                debugLogging = BuildConfig.DEBUG
+            )
+        } else {
+            null
+        }
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Install the system splash before super/setContent so the branded
@@ -328,9 +341,14 @@ fun MyBingwaApp(
                     userPrimaryNumber = userProfile.primaryNumber,
                     recentRecipients = recentRecipients,
                     isOffline = isOffline,
-                    onExecuteStkPush = { off, rec, pay -> repository.executeMpesaStkPush(off, rec, pay) },
-                    onExecuteOfflinePayment = { off, rec, pay, till -> repository.executeOfflinePayment(off, rec, pay, till) },
-                    onDismiss = { activeOfferForPurchase = null },
+                    onExecuteStkPush = { off, rec, pay, crid, self -> repository.executeMpesaStkPush(off, rec, pay, crid, self) },
+                    onExecuteOfflinePayment = { off, rec, pay, till, receipt -> repository.executeOfflinePayment(off, rec, pay, till, receipt) },
+                    offlineEligibility = { off, self -> repository.offlineEligibility(off, self) },
+                    offlineConfig = { repository.offlineConfig() },
+                    onDismiss = {
+                        repository.clearActiveOrder()
+                        activeOfferForPurchase = null
+                    },
                     onViewActivity = {
                         activeOfferForPurchase = null
                         navController.navigate("activity") {

@@ -22,29 +22,27 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.HourglassEmpty
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,17 +55,30 @@ import androidx.compose.ui.unit.sp
 import com.example.core.model.OfferItem
 import com.example.core.model.PaymentStatus
 import com.example.core.model.PurchaseRecord
+import com.example.core.payment.KenyanPhone
 import com.example.core.ui.CopyableValueBlock
 import com.example.core.ui.LabelledPhoneField
 import com.example.core.ui.PrimaryButton
 import com.example.core.ui.SecondaryButton
+import com.example.data.payment.OfflineEligibility
+import com.example.data.payment.OfflinePaymentConfig
 import com.example.ui.theme.BottomSheetTopShape
 import com.example.ui.theme.FieldButtonShape
-import com.example.ui.theme.PromotionStatusShape
 import com.example.ui.theme.TypographyPageHeading
 import com.example.ui.theme.TypographyReviewTotal
 import com.example.ui.theme.TypographySheetHeading
+import java.util.UUID
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+private const val STEP_RECIPIENT = 1
+private const val STEP_REVIEW = 2
+private const val STEP_PROCESSING = 3
+private const val STEP_RESULT = 4
+private const val STEP_OFFLINE = 5
+
+/** Reveal "Resend prompt" only after this controlled delay (Plan.md §5.7). */
+private const val RESEND_DELAY_MILLIS = 12_000L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,20 +87,42 @@ fun PurchaseBottomSheet(
     userPrimaryNumber: String,
     recentRecipients: List<String>,
     isOffline: Boolean,
-    onExecuteStkPush: suspend (OfferItem, String, String) -> PurchaseRecord,
-    onExecuteOfflinePayment: suspend (OfferItem, String, String, Boolean) -> PurchaseRecord,
+    onExecuteStkPush: suspend (OfferItem, String, String, String, Boolean) -> PurchaseRecord,
+    onExecuteOfflinePayment: suspend (OfferItem, String, String, Boolean, String?) -> PurchaseRecord,
+    offlineEligibility: (OfferItem, Boolean) -> OfflineEligibility,
+    offlineConfig: () -> OfflinePaymentConfig?,
     onDismiss: () -> Unit,
     onViewActivity: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var purchaseStep by remember { mutableIntStateOf(1) } // 1: Recipient, 2: Review, 3: Processing STK, 4: Result, 5: Offline Steps
-
-    var isForSelf by remember { mutableStateOf(true) }
-    var recipientNumber by remember { mutableStateOf(userPrimaryNumber) }
-    var payerNumber by remember { mutableStateOf(userPrimaryNumber) }
+    // rememberSaveable so a rotation mid-checkout keeps the step and typed numbers.
+    var purchaseStep by rememberSaveable { mutableStateOf(STEP_RECIPIENT) }
+    var isForSelf by rememberSaveable { mutableStateOf(true) }
+    var recipientNumber by rememberSaveable { mutableStateOf(userPrimaryNumber) }
+    var payerNumber by rememberSaveable { mutableStateOf(userPrimaryNumber) }
 
     var lastRecord by remember { mutableStateOf<PurchaseRecord?>(null) }
     var isLoading by remember { mutableStateOf(false) }
+    // Airtight double-tap guard: a second Pay tap while a request is in flight (or
+    // already launched this attempt) is ignored; the repository is also idempotent
+    // on clientRequestId so no second charge can occur (CLAUDE.md §7).
+    var payInFlight by remember { mutableStateOf(false) }
+
+    val runStkPush: () -> Unit = {
+        if (!payInFlight) {
+            payInFlight = true
+            isLoading = true
+            purchaseStep = STEP_PROCESSING
+            coroutineScope.launch {
+                val clientRequestId = UUID.randomUUID().toString()
+                val record = onExecuteStkPush(offer, recipientNumber, payerNumber, clientRequestId, isForSelf)
+                lastRecord = record
+                isLoading = false
+                payInFlight = false
+                purchaseStep = STEP_RESULT
+            }
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -109,8 +142,7 @@ fun PurchaseBottomSheet(
                 label = "purchase_flow_step"
             ) { step ->
                 when (step) {
-                    1 -> RecipientSelectionStep(
-                        offer = offer,
+                    STEP_RECIPIENT -> RecipientSelectionStep(
                         isForSelf = isForSelf,
                         recipientNumber = recipientNumber,
                         payerNumber = payerNumber,
@@ -128,57 +160,53 @@ fun PurchaseBottomSheet(
                         },
                         onRecipientChange = { recipientNumber = it },
                         onPayerChange = { payerNumber = it },
-                        onNext = { purchaseStep = 2 }
+                        onNext = { purchaseStep = STEP_REVIEW }
                     )
 
-                    2 -> ReviewPurchaseStep(
+                    STEP_REVIEW -> ReviewPurchaseStep(
                         offer = offer,
                         recipientNumber = recipientNumber,
                         payerNumber = payerNumber,
                         isOffline = isOffline,
-                        onPayClick = {
-                            if (isOffline) {
-                                purchaseStep = 5
-                            } else {
-                                purchaseStep = 3
-                                coroutineScope.launch {
-                                    isLoading = true
-                                    val record = onExecuteStkPush(offer, recipientNumber, payerNumber)
-                                    lastRecord = record
-                                    isLoading = false
-                                    purchaseStep = 4
-                                }
-                            }
-                        },
-                        onChangeDetails = { purchaseStep = 1 }
+                        offlineEligibility = if (isOffline) offlineEligibility(offer, isForSelf) else null,
+                        onPayOnline = runStkPush,
+                        onViewOfflineSteps = { purchaseStep = STEP_OFFLINE },
+                        onChangeDetails = { purchaseStep = STEP_RECIPIENT }
                     )
 
-                    3 -> StkProcessingStep(
+                    STEP_PROCESSING -> StkProcessingStep(
                         payerNumber = payerNumber,
-                        onChangeNumber = { purchaseStep = 1 }
+                        onResend = runStkPush,
+                        onChangeNumber = {
+                            payInFlight = false
+                            isLoading = false
+                            purchaseStep = STEP_RECIPIENT
+                        }
                     )
 
-                    4 -> PaymentResultStep(
+                    STEP_RESULT -> PaymentResultStep(
                         record = lastRecord,
                         onDone = onDismiss,
                         onViewActivity = {
                             onDismiss()
                             onViewActivity()
                         },
-                        onTryAgain = { purchaseStep = 2 }
+                        onTryAgain = { purchaseStep = STEP_REVIEW }
                     )
 
-                    5 -> OfflinePaymentInstructionsStep(
+                    STEP_OFFLINE -> OfflinePaymentInstructionsStep(
                         offer = offer,
                         isTill = isForSelf,
                         recipientNumber = recipientNumber,
-                        onPaidConfirmed = {
+                        config = offlineConfig(),
+                        onSubmitOffline = { receipt ->
                             coroutineScope.launch {
-                                onExecuteOfflinePayment(offer, recipientNumber, payerNumber, isForSelf)
+                                onExecuteOfflinePayment(offer, recipientNumber, payerNumber, isForSelf, receipt)
                                 onDismiss()
                                 onViewActivity()
                             }
-                        }
+                        },
+                        onCancel = { purchaseStep = STEP_REVIEW }
                     )
                 }
             }
@@ -188,7 +216,6 @@ fun PurchaseBottomSheet(
 
 @Composable
 private fun RecipientSelectionStep(
-    offer: OfferItem,
     isForSelf: Boolean,
     recipientNumber: String,
     payerNumber: String,
@@ -209,10 +236,9 @@ private fun RecipientSelectionStep(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Large Option 1: For my number
         SelectableRecipientCard(
             title = "For my number",
-            subtitle = userPrimaryNumber,
+            subtitle = KenyanPhone.toDisplay(userPrimaryNumber),
             isSelected = isForSelf,
             onClick = { onOptionSelect(true) },
             testTag = "recipient_for_my_number"
@@ -220,7 +246,6 @@ private fun RecipientSelectionStep(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Large Option 2: For another number
         SelectableRecipientCard(
             title = "For another number",
             subtitle = "Buy data or SMS for family and friends",
@@ -232,8 +257,9 @@ private fun RecipientSelectionStep(
         Spacer(modifier = Modifier.height(20.dp))
 
         if (!isForSelf) {
+            // design.md §13.3: the recipient field label is explicit.
             LabelledPhoneField(
-                label = "Bundle recipient number",
+                label = "Bundle recipient",
                 value = recipientNumber,
                 onValueChange = onRecipientChange,
                 placeholder = "0712 345 678",
@@ -243,7 +269,7 @@ private fun RecipientSelectionStep(
             if (recentRecipients.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Recent Recipients",
+                    text = "Recent recipients",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -256,7 +282,7 @@ private fun RecipientSelectionStep(
                             modifier = Modifier.clickable { onRecipientChange(rec) }
                         ) {
                             Text(
-                                text = rec,
+                                text = KenyanPhone.toDisplay(rec),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
@@ -269,20 +295,22 @@ private fun RecipientSelectionStep(
             Spacer(modifier = Modifier.height(16.dp))
 
             LabelledPhoneField(
-                label = "M-Pesa payment number (payer)",
+                label = "M-Pesa payment number",
                 value = payerNumber,
                 onValueChange = onPayerChange,
-                placeholder = userPrimaryNumber,
+                placeholder = KenyanPhone.toDisplay(userPrimaryNumber),
                 testTag = "payer_number_field"
             )
         }
 
         Spacer(modifier = Modifier.height(28.dp))
 
+        val recipientValid = KenyanPhone.isValid(recipientNumber)
+        val payerValid = KenyanPhone.isValid(payerNumber)
         PrimaryButton(
             text = "Confirm",
             onClick = onNext,
-            enabled = recipientNumber.isNotBlank() && payerNumber.isNotBlank(),
+            enabled = recipientValid && payerValid,
             testTag = "review_purchase_button"
         )
     }
@@ -339,7 +367,9 @@ private fun ReviewPurchaseStep(
     recipientNumber: String,
     payerNumber: String,
     isOffline: Boolean,
-    onPayClick: () -> Unit,
+    offlineEligibility: OfflineEligibility?,
+    onPayOnline: () -> Unit,
+    onViewOfflineSteps: () -> Unit,
     onChangeDetails: () -> Unit
 ) {
     Column(
@@ -347,7 +377,7 @@ private fun ReviewPurchaseStep(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Confirm Purchase",
+            text = "Review purchase",
             style = TypographySheetHeading,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
@@ -355,7 +385,6 @@ private fun ReviewPurchaseStep(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Big Offer Name & Validity Banner
         Surface(
             color = MaterialTheme.colorScheme.primaryContainer,
             shape = FieldButtonShape,
@@ -385,7 +414,8 @@ private fun ReviewPurchaseStep(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Summary Group
+        // Payer and recipient are always distinct, fully readable and clearly
+        // labelled (Plan.md §3.2, design.md §14.7). Start-aligned values.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -394,16 +424,15 @@ private fun ReviewPurchaseStep(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            SummaryRow(label = "Recipient", value = recipientNumber)
-            SummaryRow(label = "Daily Rule", value = offer.dailyRule.displayText)
-            SummaryRow(label = "Amount", value = "KSh ${offer.priceKsh}")
+            SummaryRow(label = "Bundle recipient", value = KenyanPhone.toDisplay(recipientNumber))
+            SummaryRow(label = "M-Pesa payment number", value = KenyanPhone.toDisplay(payerNumber))
+            SummaryRow(label = "Daily rule", value = offer.dailyRule.displayText)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Total Price (Strongest hierarchy)
         Text(
-            text = "Total Amount",
+            text = "Total",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -416,11 +445,25 @@ private fun ReviewPurchaseStep(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        PrimaryButton(
-            text = if (isOffline) "Confirm & Pay Offline" else "Confirm & Pay KSh ${offer.priceKsh}",
-            onClick = onPayClick,
-            testTag = "pay_now_button"
-        )
+        if (isOffline) {
+            val eligible = offlineEligibility is OfflineEligibility.Eligible
+            if (!eligible && offlineEligibility != null) {
+                OfflineNotice(offlineEligibility)
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            PrimaryButton(
+                text = "View offline payment steps",
+                onClick = onViewOfflineSteps,
+                enabled = eligible,
+                testTag = "pay_now_button"
+            )
+        } else {
+            PrimaryButton(
+                text = "Pay KSh ${offer.priceKsh}",
+                onClick = onPayOnline,
+                testTag = "pay_now_button"
+            )
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -428,6 +471,43 @@ private fun ReviewPurchaseStep(
             text = "Change details",
             onClick = onChangeDetails,
             testTag = "change_details_button"
+        )
+    }
+}
+
+/** Explains why an offer cannot be paid offline right now (Plan.md §5.8/§5.12). */
+@Composable
+private fun OfflineNotice(eligibility: OfflineEligibility) {
+    val message = when (eligibility) {
+        is OfflineEligibility.Expired ->
+            "These offline instructions have expired. Connect to the internet to refresh them before paying."
+        is OfflineEligibility.ConfigUnavailable ->
+            "Offline payment details are not available right now. Connect to the internet to refresh them."
+        is OfflineEligibility.HardLimitBlocked ->
+            "This offer is limited to once per day and cannot be paid offline. Connect to the internet to buy it."
+        is OfflineEligibility.AmbiguousAmount ->
+            "This offer shares its price with another, so it cannot be safely identified offline. Connect to the internet to buy it."
+        is OfflineEligibility.Eligible -> return
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(FieldButtonShape)
+            .background(MaterialTheme.colorScheme.tertiaryContainer)
+            .padding(14.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Info,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onTertiaryContainer
         )
     }
 }
@@ -455,14 +535,23 @@ private fun SummaryRow(label: String, value: String) {
 @Composable
 private fun StkProcessingStep(
     payerNumber: String,
+    onResend: () -> Unit,
     onChangeNumber: () -> Unit
 ) {
+    var showResend by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        showResend = false
+        delay(RESEND_DELAY_MILLIS)
+        showResend = true
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // Indeterminate only — never a fake percentage (Plan.md §5.7, design.md §11).
         CircularProgressIndicator(
             modifier = Modifier.size(56.dp),
             color = MaterialTheme.colorScheme.primary,
@@ -481,7 +570,7 @@ private fun StkProcessingStep(
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "We sent an M-Pesa prompt to $payerNumber. Enter your M-Pesa PIN on that phone.",
+            text = "We sent an M-Pesa request to ${KenyanPhone.toDisplay(payerNumber)}. Enter your M-Pesa PIN on that phone to approve it.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
@@ -489,9 +578,19 @@ private fun StkProcessingStep(
 
         Spacer(modifier = Modifier.height(28.dp))
 
+        if (showResend) {
+            PrimaryButton(
+                text = "Resend prompt",
+                onClick = onResend,
+                testTag = "resend_prompt_button"
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+
         SecondaryButton(
             text = "Change payment number",
-            onClick = onChangeNumber
+            onClick = onChangeNumber,
+            testTag = "change_payment_number_button"
         )
     }
 }
@@ -512,120 +611,176 @@ private fun PaymentResultStep(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         when (record.status) {
-            PaymentStatus.RECEIVED -> {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Check,
-                        contentDescription = "Success",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
+            PaymentStatus.RECEIVED -> ReceivedResult(record, onDone, onViewActivity)
 
-                Spacer(modifier = Modifier.height(16.dp))
+            PaymentStatus.CANCELLED -> SimpleResult(
+                icon = Icons.Outlined.ErrorOutline,
+                tint = MaterialTheme.colorScheme.error,
+                heading = "Payment cancelled",
+                body = "No payment was completed. Your details are still here.",
+                primaryText = "Try again",
+                onPrimary = onTryAgain
+            )
 
-                Text(
-                    text = "Purchase successful",
-                    style = TypographyPageHeading.copy(fontSize = 24.sp),
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+            PaymentStatus.FAILED -> SimpleResult(
+                icon = Icons.Outlined.ErrorOutline,
+                tint = MaterialTheme.colorScheme.error,
+                heading = "Payment failed",
+                body = "No money was deducted. Check your M-Pesa balance or signal and try again.",
+                primaryText = "Try again",
+                onPrimary = onTryAgain
+            )
 
-                Spacer(modifier = Modifier.height(8.dp))
+            PaymentStatus.EXPIRED -> SimpleResult(
+                icon = Icons.Outlined.HourglassEmpty,
+                tint = MaterialTheme.colorScheme.error,
+                heading = "Request expired",
+                body = "The request expired before it was approved. You can safely send it again.",
+                primaryText = "Try again",
+                onPrimary = onTryAgain
+            )
 
-                Text(
-                    text = "Your bundle will be received in a few minutes.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
+            PaymentStatus.WAITING_VERIFY -> SimpleResult(
+                icon = Icons.Outlined.HourglassEmpty,
+                tint = MaterialTheme.colorScheme.tertiary,
+                heading = "Still checking payment",
+                body = "This is taking longer than usual. You can check Activity or contact support.",
+                primaryText = "View activity",
+                onPrimary = onViewActivity
+            )
 
-                Spacer(modifier = Modifier.height(16.dp))
+            PaymentStatus.NOT_CONFIRMED -> SimpleResult(
+                icon = Icons.Outlined.HourglassEmpty,
+                tint = MaterialTheme.colorScheme.tertiary,
+                heading = "Payment not confirmed",
+                body = "Enter the M-Pesa receipt when you have it, or check again online.",
+                primaryText = "View activity",
+                onPrimary = onViewActivity
+            )
 
-                // Summary Box
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(FieldButtonShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SummaryRow(label = "Offer bought", value = record.offerName)
-                    SummaryRow(label = "Recipient", value = record.recipientNumber)
-                    SummaryRow(label = "Amount", value = "KSh ${record.priceKsh}")
-                    SummaryRow(label = "M-Pesa Code", value = record.mpesaCode)
-                }
-
-                Spacer(modifier = Modifier.height(28.dp))
-
-                PrimaryButton(
-                    text = "Done",
-                    onClick = onDone,
-                    testTag = "payment_done_button"
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                SecondaryButton(
-                    text = "View activity",
-                    onClick = onViewActivity,
-                    testTag = "view_activity_button"
-                )
-            }
-
-            PaymentStatus.CANCELLED -> {
-                Icon(
-                    imageVector = Icons.Outlined.ErrorOutline,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(56.dp)
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Payment cancelled", style = TypographyPageHeading.copy(fontSize = 22.sp), fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("No payment was completed. Your details are still here.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-                Spacer(modifier = Modifier.height(24.dp))
-                PrimaryButton(text = "Try again", onClick = onTryAgain)
-            }
-
-            PaymentStatus.FAILED -> {
-                Icon(
-                    imageVector = Icons.Outlined.ErrorOutline,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(56.dp)
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("We couldn't complete the payment", style = TypographyPageHeading.copy(fontSize = 22.sp), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Please check your M-Pesa balance or signal and try again.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-                Spacer(modifier = Modifier.height(24.dp))
-                PrimaryButton(text = "Try again", onClick = onTryAgain)
-            }
-
-            PaymentStatus.WAITING_VERIFY -> {
-                Icon(
-                    imageVector = Icons.Outlined.HourglassEmpty,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.size(56.dp)
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Still checking payment", style = TypographyPageHeading.copy(fontSize = 22.sp), fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("This is taking longer than usual. You can return to Activity or contact support.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-                Spacer(modifier = Modifier.height(24.dp))
-                PrimaryButton(text = "View activity", onClick = onViewActivity)
-            }
+            PaymentStatus.COULD_NOT_VERIFY -> SimpleResult(
+                icon = Icons.Outlined.ErrorOutline,
+                tint = MaterialTheme.colorScheme.error,
+                heading = "We could not verify this payment",
+                body = "Check the receipt and payment details, or contact support with your reference.",
+                primaryText = "View activity",
+                onPrimary = onViewActivity
+            )
         }
     }
+}
+
+@Composable
+private fun ReceivedResult(
+    record: PurchaseRecord,
+    onDone: () -> Unit,
+    onViewActivity: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(64.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Check,
+            contentDescription = "Payment received",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(36.dp)
+        )
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Text(
+        text = "Payment received",
+        style = TypographyPageHeading.copy(fontSize = 24.sp),
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    // Honest fulfilment language: confirm payment only, never delivery
+    // (CLAUDE.md §7, Plan.md §3.3). No delivery timeframe.
+    Text(
+        text = "Your purchase was received. Please wait for the bundle on ${KenyanPhone.toDisplay(record.recipientNumber)}.",
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(FieldButtonShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        SummaryRow(label = "Offer", value = record.offerName)
+        SummaryRow(label = "Bundle recipient", value = KenyanPhone.toDisplay(record.recipientNumber))
+        SummaryRow(label = "Amount", value = "KSh ${record.priceKsh}")
+        if (record.mpesaCode.isNotBlank() && record.mpesaCode != "-") {
+            SummaryRow(label = "M-Pesa receipt", value = record.mpesaCode)
+        }
+        if (record.orderReference.isNotBlank()) {
+            SummaryRow(label = "Reference", value = record.orderReference)
+        }
+    }
+
+    Spacer(modifier = Modifier.height(28.dp))
+
+    PrimaryButton(
+        text = "Done",
+        onClick = onDone,
+        testTag = "payment_done_button"
+    )
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    SecondaryButton(
+        text = "View activity",
+        onClick = onViewActivity,
+        testTag = "view_activity_button"
+    )
+}
+
+@Composable
+private fun SimpleResult(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: androidx.compose.ui.graphics.Color,
+    heading: String,
+    body: String,
+    primaryText: String,
+    onPrimary: () -> Unit
+) {
+    Icon(
+        imageVector = icon,
+        contentDescription = null,
+        tint = tint,
+        modifier = Modifier.size(56.dp)
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+    Text(
+        text = heading,
+        style = TypographyPageHeading.copy(fontSize = 22.sp),
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+        textAlign = TextAlign.Center
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        text = body,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center
+    )
+    Spacer(modifier = Modifier.height(24.dp))
+    PrimaryButton(text = primaryText, onClick = onPrimary, testTag = "result_primary_button")
 }
 
 @Composable
@@ -633,8 +788,47 @@ private fun OfflinePaymentInstructionsStep(
     offer: OfferItem,
     isTill: Boolean,
     recipientNumber: String,
-    onPaidConfirmed: () -> Unit
+    config: OfflinePaymentConfig?,
+    onSubmitOffline: (String?) -> Unit,
+    onCancel: () -> Unit
 ) {
+    // Guard: if config is missing/expired at this point, do not show payable
+    // numbers — explain that internet is needed instead (Plan.md §5.8).
+    if (config == null) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Offline steps unavailable",
+                style = TypographySheetHeading,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "We could not load valid payment details. Connect to the internet to refresh them and try again.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            SecondaryButton(text = "Back", onClick = onCancel)
+        }
+        return
+    }
+
+    var receipt by rememberSaveable { mutableStateOf("") }
+    val till = config.tillNumber
+    val paybill = config.paybillNumber
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -646,23 +840,47 @@ private fun OfflinePaymentInstructionsStep(
             color = MaterialTheme.colorScheme.onSurface
         )
 
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Calm offline context banner (design.md §14.9).
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(FieldButtonShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(14.dp)
+        ) {
+            Text(
+                text = "No internet needed for these steps",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "Use the exact business number and amount shown below. Do not change the amount.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Copyable values from the signed config — single source of truth.
         if (isTill) {
-            CopyableValueBlock(label = "M-Pesa Till Number", value = "4953696")
+            CopyableValueBlock(label = "M-Pesa Till number", value = till)
         } else {
-            CopyableValueBlock(label = "Paybill Business Number", value = "40450595")
+            CopyableValueBlock(label = "Paybill business number", value = paybill)
             Spacer(modifier = Modifier.height(10.dp))
-            CopyableValueBlock(label = "Account Number (Recipient)", value = recipientNumber)
+            CopyableValueBlock(label = "Account number (recipient)", value = KenyanPhone.toDisplay(recipientNumber))
         }
 
         Spacer(modifier = Modifier.height(10.dp))
-        CopyableValueBlock(label = "Exact Amount", value = "KSh ${offer.priceKsh}")
+        CopyableValueBlock(label = "Exact amount", value = "KSh ${offer.priceKsh}")
 
         Spacer(modifier = Modifier.height(20.dp))
 
         Text(
-            text = "Numbered Instructions:",
+            text = "Steps",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -675,21 +893,58 @@ private fun OfflinePaymentInstructionsStep(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            InstructionLine("1", "Open M-Pesa menu on your phone")
-            InstructionLine("2", "Choose Lipa na M-Pesa")
-            InstructionLine("3", if (isTill) "Choose Buy Goods and Services" else "Choose Paybill")
-            InstructionLine("4", if (isTill) "Enter Till number 4953696" else "Enter Business number 40450595")
-            if (!isTill) InstructionLine("5", "Enter $recipientNumber as the account number")
-            InstructionLine(if (isTill) "5" else "6", "Enter exact amount KSh ${offer.priceKsh}")
-            InstructionLine(if (isTill) "6" else "7", "Enter your M-Pesa PIN and confirm")
+            if (isTill) {
+                InstructionLine("1", "Go to M-Pesa")
+                InstructionLine("2", "Choose Lipa na M-Pesa")
+                InstructionLine("3", "Choose Buy Goods and Services")
+                InstructionLine("4", "Enter Till number $till")
+                InstructionLine("5", "Enter the exact amount KSh ${offer.priceKsh}")
+                InstructionLine("6", "Complete payment using the same number that should receive the bundle")
+            } else {
+                InstructionLine("1", "Go to M-Pesa")
+                InstructionLine("2", "Choose Lipa na M-Pesa")
+                InstructionLine("3", "Choose Pay Bill")
+                InstructionLine("4", "Enter business number $paybill")
+                InstructionLine("5", "Enter ${KenyanPhone.toDisplay(recipientNumber)} as the account number")
+                InstructionLine("6", "Enter the exact amount KSh ${offer.priceKsh}")
+                InstructionLine("7", "Complete payment from the buyer's M-Pesa number")
+            }
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Optional receipt capture. With a code → Waiting to verify; without → Payment not confirmed.
+        Text(
+            text = "Enter the M-Pesa receipt code (optional)",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        OutlinedTextField(
+            value = receipt,
+            onValueChange = { receipt = it.uppercase() },
+            placeholder = { Text("e.g. RHK82910AZ") },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("offline_receipt_field")
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
 
         PrimaryButton(
             text = "I've paid",
-            onClick = onPaidConfirmed,
+            onClick = { onSubmitOffline(receipt.trim().ifEmpty { null }) },
             testTag = "ive_paid_button"
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        SecondaryButton(
+            text = "Cancel offline purchase",
+            onClick = onCancel,
+            testTag = "cancel_offline_button"
         )
     }
 }

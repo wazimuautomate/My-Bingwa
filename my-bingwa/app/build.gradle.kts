@@ -16,6 +16,17 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    // Base URL of the My Bingwa payment backend proxy (owns Daraja + the STK
+    // callback). This is a NON-SECRET configuration value, never a credential —
+    // Daraja consumer key/secret and the passkey live only on that backend
+    // (CLAUDE.md §2/§10). Injected from the `paymentsBaseUrl` Gradle property or
+    // the PAYMENTS_BASE_URL env var; empty by default, in which case the app uses a
+    // clearly-labelled local simulation instead of a real STK call.
+    val paymentsBaseUrl = (project.findProperty("paymentsBaseUrl") as String?)
+      ?: System.getenv("PAYMENTS_BASE_URL")
+      ?: ""
+    buildConfigField("String", "PAYMENTS_BASE_URL", "\"$paymentsBaseUrl\"")
   }
 
   signingConfigs {

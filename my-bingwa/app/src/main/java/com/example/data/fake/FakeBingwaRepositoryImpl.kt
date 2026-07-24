@@ -13,6 +13,20 @@ import com.example.core.model.PromotionKind
 import com.example.core.model.PurchasePolicy
 import com.example.core.model.PurchaseRecord
 import com.example.core.model.UserProfile
+import com.example.core.payment.KenyanPhone
+import com.example.core.payment.PaymentTxnState
+import com.example.data.payment.ActiveOrder
+import com.example.data.payment.CachedOfflineConfigProvider
+import com.example.data.payment.OfflineConfigResult
+import com.example.data.payment.OfflineEligibility
+import com.example.data.payment.OfflineEligibilityChecker
+import com.example.data.payment.OfflinePaymentConfig
+import com.example.data.payment.OfflinePaymentConfigProvider
+import com.example.data.payment.PaymentGateway
+import com.example.data.payment.PaymentTransportException
+import com.example.data.payment.SimulatedPaymentGateway
+import com.example.data.payment.StkPushRequest
+import com.example.data.payment.StkStatusQuery
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +34,29 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.util.UUID
 
-class FakeBingwaRepositoryImpl : BingwaRepository {
+/**
+ * In-memory app-readable data source. [gateway] handles online M-Pesa (real backend
+ * proxy in a configured build, a labelled simulation otherwise); [configProvider]
+ * supplies the signed offline Till/Paybill config. When no gateway is injected, a
+ * dev [SimulatedPaymentGateway] is wired to [devStkOutcome] so every result screen
+ * can be exercised on a phone.
+ */
+class FakeBingwaRepositoryImpl(
+    gateway: PaymentGateway? = null,
+    private val configProvider: OfflinePaymentConfigProvider = CachedOfflineConfigProvider()
+) : BingwaRepository {
+
+    // Buy-for-myself gateway: the real backend proxy when configured, otherwise a
+    // dev simulation wired to the DevStkOutcome switch.
+    private val selfGateway: PaymentGateway = gateway ?: SimulatedPaymentGateway(
+        terminalOutcome = { devOutcomeToState(_devStkOutcome.value) }
+    )
+
+    // Buy-for-another stays mocked in this phase (product decision), so it always
+    // uses a simulation even once the backend base URL is set for self-purchases.
+    private val anotherNumberGateway: PaymentGateway = SimulatedPaymentGateway(
+        terminalOutcome = { devOutcomeToState(_devStkOutcome.value) }
+    )
 
     private val defaultProfile = UserProfile(
         name = "Bonke",
@@ -374,6 +410,9 @@ class FakeBingwaRepositoryImpl : BingwaRepository {
     private val _devStkOutcome = MutableStateFlow(DevStkOutcome.SUCCESS)
     override val devStkOutcome: StateFlow<DevStkOutcome> = _devStkOutcome.asStateFlow()
 
+    private val _activeOrder = MutableStateFlow<ActiveOrder?>(null)
+    override val activeOrder: StateFlow<ActiveOrder?> = _activeOrder.asStateFlow()
+
     override fun updateProfile(name: String, primaryNumber: String) {
         _userProfile.update { it.copy(name = name, primaryNumber = primaryNumber) }
     }
@@ -444,44 +483,147 @@ class FakeBingwaRepositoryImpl : BingwaRepository {
         _devStkOutcome.value = outcome
     }
 
+    private fun devOutcomeToState(outcome: DevStkOutcome): PaymentTxnState = when (outcome) {
+        DevStkOutcome.SUCCESS -> PaymentTxnState.PAYMENT_CONFIRMED
+        DevStkOutcome.CANCELLED -> PaymentTxnState.CANCELLED
+        DevStkOutcome.FAILED -> PaymentTxnState.PAYMENT_FAILED
+        // A delayed prompt never reaches a terminal result within the polling
+        // window; the honest outcome is "still checking" (Waiting to verify).
+        DevStkOutcome.DELAYED -> PaymentTxnState.AWAITING_APPROVAL
+    }
+
     override suspend fun executeMpesaStkPush(
         offer: OfferItem,
         recipientNumber: String,
-        payerNumber: String
+        payerNumber: String,
+        clientRequestId: String,
+        isForSelf: Boolean
     ): PurchaseRecord {
-        delay(1800) // Simulate M-Pesa STK push network processing
-        val outcome = _devStkOutcome.value
-        val recordId = "pur_" + UUID.randomUUID().toString().take(8)
-        val mpesaCode = "R" + (100000..999999).random() + "MB"
+        // Idempotency: a repeated clientRequestId (double-tap, retry) returns the
+        // existing record instead of charging again (Plan.md §API idempotency).
+        _purchases.value.firstOrNull { it.clientRequestId == clientRequestId }?.let { return it }
 
-        val status = when (outcome) {
-            DevStkOutcome.SUCCESS -> PaymentStatus.RECEIVED
-            DevStkOutcome.CANCELLED -> PaymentStatus.CANCELLED
-            DevStkOutcome.FAILED -> PaymentStatus.FAILED
-            DevStkOutcome.DELAYED -> PaymentStatus.WAITING_VERIFY
+        val gatewayForRoute = if (isForSelf) selfGateway else anotherNumberGateway
+
+        val payerMsisdn = KenyanPhone.toMsisdn(payerNumber)
+        val recipientMsisdn = KenyanPhone.toMsisdn(recipientNumber)
+        if (payerMsisdn == null || recipientMsisdn == null) {
+            return settle(
+                offer, recipientNumber, payerNumber, clientRequestId,
+                PaymentStatus.FAILED, PaymentMethod.STK_PUSH, mpesaCode = "-", orderReference = ""
+            )
         }
 
+        _activeOrder.value = ActiveOrder(
+            clientRequestId = clientRequestId,
+            offerId = offer.id,
+            offerName = offer.name,
+            priceKsh = offer.priceKsh,
+            recipientNumber = recipientNumber,
+            payerNumber = payerNumber,
+            isForSelf = recipientNumber == payerNumber,
+            state = PaymentTxnState.DRAFT
+        )
+
+        val request = StkPushRequest(
+            offerId = offer.id,
+            amountKsh = offer.priceKsh,
+            payerMsisdn = payerMsisdn,
+            recipientMsisdn = recipientMsisdn,
+            clientRequestId = clientRequestId
+        )
+
+        var result = try {
+            gatewayForRoute.initiateStkPush(request)
+        } catch (e: PaymentTransportException) {
+            _activeOrder.value = null
+            return settle(
+                offer, recipientNumber, payerNumber, clientRequestId,
+                PaymentStatus.FAILED, PaymentMethod.STK_PUSH, mpesaCode = "-", orderReference = ""
+            )
+        }
+        _activeOrder.update { it?.copy(state = result.state, orderReference = result.orderReference) }
+
+        // Poll until a terminal result or the polling window is exhausted.
+        var attempts = 0
+        while (!result.state.isTerminal && attempts < MAX_STATUS_POLLS) {
+            attempts++
+            result = try {
+                gatewayForRoute.queryStatus(StkStatusQuery(clientRequestId, result.orderReference))
+            } catch (e: PaymentTransportException) {
+                break
+            }
+            _activeOrder.update { it?.copy(state = result.state, orderReference = result.orderReference) }
+        }
+
+        val status = if (result.state.isTerminal) {
+            result.state.toRecordStatus() ?: PaymentStatus.WAITING_VERIFY
+        } else {
+            // Non-terminal after polling → honest "still checking" (Waiting to verify).
+            PaymentStatus.WAITING_VERIFY
+        }
+        _activeOrder.value = null
+
+        return settle(
+            offer, recipientNumber, payerNumber, clientRequestId,
+            status, PaymentMethod.STK_PUSH,
+            mpesaCode = result.mpesaReceipt?.takeIf { status == PaymentStatus.RECEIVED } ?: "-",
+            orderReference = result.orderReference ?: ""
+        )
+    }
+
+    override suspend fun executeOfflinePayment(
+        offer: OfferItem,
+        recipientNumber: String,
+        payerNumber: String,
+        isTill: Boolean,
+        receipt: String?
+    ): PurchaseRecord {
+        delay(400)
+        val trimmed = receipt?.trim().orEmpty()
+        // With a receipt → Waiting to verify; without one → Payment not confirmed.
+        val status = if (trimmed.isNotEmpty()) PaymentStatus.WAITING_VERIFY else PaymentStatus.NOT_CONFIRMED
+        return settle(
+            offer, recipientNumber, payerNumber,
+            clientRequestId = "off_" + UUID.randomUUID().toString().take(8),
+            status = status,
+            method = if (isTill) PaymentMethod.TILL else PaymentMethod.PAYBILL,
+            mpesaCode = trimmed.ifEmpty { "OFFLINE_PENDING" },
+            orderReference = ""
+        )
+    }
+
+    /** Builds, persists and cross-updates a settled record (bought-today, notifications, recents). */
+    private fun settle(
+        offer: OfferItem,
+        recipientNumber: String,
+        payerNumber: String,
+        clientRequestId: String,
+        status: PaymentStatus,
+        method: PaymentMethod,
+        mpesaCode: String,
+        orderReference: String
+    ): PurchaseRecord {
         val record = PurchaseRecord(
-            id = recordId,
+            id = "pur_" + UUID.randomUUID().toString().take(8),
             offerId = offer.id,
             offerName = offer.name,
             allowance = offer.allowance,
             priceKsh = offer.priceKsh,
             recipientNumber = recipientNumber,
             payerNumber = payerNumber,
-            mpesaCode = if (status == PaymentStatus.RECEIVED) mpesaCode else "-",
+            mpesaCode = mpesaCode,
             timestampMillis = System.currentTimeMillis(),
             status = status,
-            paymentMethod = PaymentMethod.STK_PUSH
+            paymentMethod = method,
+            clientRequestId = clientRequestId,
+            orderReference = orderReference
         )
-
         _purchases.update { listOf(record) + it }
 
         if (status == PaymentStatus.RECEIVED && offer.dailyRule == DailyRule.ONCE_PER_DAY) {
             _offers.update { list ->
-                list.map { item ->
-                    if (item.id == offer.id) item.copy(isBoughtToday = true) else item
-                }
+                list.map { item -> if (item.id == offer.id) item.copy(isBoughtToday = true) else item }
             }
         }
 
@@ -496,37 +638,26 @@ class FakeBingwaRepositoryImpl : BingwaRepository {
             _notifications.update { listOf(newNotif) + it }
         }
 
-        // Add recipient to recent recipients if unique
         if (recipientNumber.isNotBlank() && !_recentRecipients.value.contains(recipientNumber)) {
             _recentRecipients.update { listOf(recipientNumber) + it }
         }
-
         return record
     }
 
-    override suspend fun executeOfflinePayment(
-        offer: OfferItem,
-        recipientNumber: String,
-        payerNumber: String,
-        isTill: Boolean
-    ): PurchaseRecord {
-        delay(600)
-        val recordId = "pur_" + UUID.randomUUID().toString().take(8)
-        val record = PurchaseRecord(
-            id = recordId,
-            offerId = offer.id,
-            offerName = offer.name,
-            allowance = offer.allowance,
-            priceKsh = offer.priceKsh,
-            recipientNumber = recipientNumber,
-            payerNumber = payerNumber,
-            mpesaCode = "OFFLINE_PENDING",
-            timestampMillis = System.currentTimeMillis(),
-            status = PaymentStatus.WAITING_VERIFY,
-            paymentMethod = if (isTill) PaymentMethod.TILL else PaymentMethod.PAYBILL
+    override fun offlineEligibility(offer: OfferItem, isForSelf: Boolean): OfflineEligibility =
+        OfflineEligibilityChecker.check(
+            offer = offer,
+            isForSelf = isForSelf,
+            catalogue = _offers.value,
+            config = configProvider.load(System.currentTimeMillis()),
+            nowMillis = System.currentTimeMillis()
         )
-        _purchases.update { listOf(record) + it }
-        return record
+
+    override fun offlineConfig(): OfflinePaymentConfig? =
+        (configProvider.load(System.currentTimeMillis()) as? OfflineConfigResult.Valid)?.config
+
+    override fun clearActiveOrder() {
+        _activeOrder.value = null
     }
 
     override fun deletePurchaseRecord(recordId: String) {
@@ -557,5 +688,11 @@ class FakeBingwaRepositoryImpl : BingwaRepository {
         _offers.update { list -> list.map { it.copy(isFavourite = false, isBoughtToday = false) } }
         _notifications.value = emptyList()
         _recentRecipients.value = emptyList()
+        _activeOrder.value = null
+    }
+
+    private companion object {
+        /** Max status polls before falling back to an honest "still checking" result. */
+        const val MAX_STATUS_POLLS = 6
     }
 }
