@@ -194,16 +194,25 @@ fun NotificationsSheet(
             }
 
             if (notifications.isEmpty()) {
-                EmptyStateView(
-                    icon = Icons.Outlined.NotificationsNone,
-                    title = "No notifications yet",
-                    description = "Updates about your purchases and special offers will appear here."
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    EmptyStateView(
+                        icon = Icons.Outlined.NotificationsNone,
+                        title = "No notifications yet",
+                        description = "Updates about your purchases and special offers will appear here."
+                    )
+                }
             } else {
                 LazyColumn(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
                 ) {
                     if (todayNotifs.isNotEmpty()) {
                         item { Text("Today", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant) }
