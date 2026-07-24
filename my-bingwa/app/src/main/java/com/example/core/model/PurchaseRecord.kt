@@ -1,7 +1,7 @@
 package com.example.core.model
 
 enum class PaymentStatus(val label: String) {
-    RECEIVED("Payment received"),
+    RECEIVED("Purchase Successful"),
     WAITING_VERIFY("Waiting to verify"),
     NOT_CONFIRMED("Payment not confirmed"),
     CANCELLED("Payment cancelled"),
