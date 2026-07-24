@@ -1,10 +1,15 @@
 package com.example
 
+import android.Manifest
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -13,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +38,10 @@ import com.example.core.model.AppThemeSetting
 import com.example.core.model.OfferItem
 import com.example.core.model.Promotion
 import com.example.core.model.PromotionKind
+import com.example.core.notifications.AppNotifier
+import com.example.core.notifications.ConnectivityObserver
+import com.example.core.notifications.NotificationChannels
+import com.example.core.notifications.SmsSignal
 import com.example.core.ui.MyBingwaBottomNav
 import com.example.data.fake.BingwaRepository
 import com.example.data.fake.FakeBingwaRepositoryImpl
@@ -45,7 +55,11 @@ import com.example.feature.offers.OffersScreen
 import com.example.feature.onboarding.OnboardingScreen
 import com.example.feature.purchase.PurchaseBottomSheet
 import com.example.feature.settings.SettingsScreen
+import com.example.notifications.SmsSignalBus
 import com.example.ui.theme.MyBingwaTheme
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -65,12 +79,23 @@ class MainActivity : ComponentActivity() {
         }
     )
 
+    // Pending notification-tap deep-link route (AppNotifier.EXTRA_DEEP_LINK_ROUTE).
+    // Set from the launch intent and from onNewIntent (singleTop re-use); the
+    // composable observes it, navigates, then clears it.
+    private val deepLinkRoute = MutableStateFlow<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Install the system splash before super/setContent so the branded
         // launch mark shows on cold start, then hands off to the app theme.
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Register the notification channels early (guards API < 26 internally).
+        NotificationChannels.createChannels(this)
+
+        // A cold launch from a notification tap carries the route here.
+        deepLinkRoute.value = intent?.getStringExtra(AppNotifier.EXTRA_DEEP_LINK_ROUTE)
 
         setContent {
             val appTheme by repository.appTheme.collectAsState()
@@ -86,21 +111,81 @@ class MainActivity : ComponentActivity() {
             MyBingwaTheme(darkTheme = darkTheme) {
                 MyBingwaApp(
                     repository = repository,
-                    startOnboarding = !userProfile.isOnboardingCompleted
+                    startOnboarding = !userProfile.isOnboardingCompleted,
+                    deepLinkRoute = deepLinkRoute.asStateFlow(),
+                    onConsumeDeepLink = { deepLinkRoute.value = null }
                 )
             }
         }
+    }
+
+    // singleTop re-uses this activity for a notification tap while it is running;
+    // capture the fresh route so the composable can deep-link.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        deepLinkRoute.value = intent.getStringExtra(AppNotifier.EXTRA_DEEP_LINK_ROUTE)
     }
 }
 
 @Composable
 fun MyBingwaApp(
     repository: BingwaRepository,
-    startOnboarding: Boolean
+    startOnboarding: Boolean,
+    deepLinkRoute: StateFlow<String?> = MutableStateFlow(null),
+    onConsumeDeepLink: () -> Unit = {}
 ) {
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val appContext = context.applicationContext
+
+    // Notification + connectivity framework (constructed manually — no Hilt).
+    val appNotifier = remember { AppNotifier(appContext) }
+    val connectivityObserver = remember { ConnectivityObserver(appContext) }
+
+    // Feed observed connectivity into the repository (drives offer suggestions).
+    LaunchedEffect(connectivityObserver) {
+        connectivityObserver.observe().collect { state ->
+            repository.setConnectionState(state)
+        }
+    }
+
+    // React to Safaricom SMS signals surfaced by SmsDeliveryReceiver via the bus.
+    // Delivery is reconciled quietly (in-app + Activity, no loud system post);
+    // low-balance adds an in-app offers suggestion and a quiet system nudge.
+    LaunchedEffect(Unit) {
+        SmsSignalBus.signals.collect { signal ->
+            when (signal) {
+                is SmsSignal.DeliveryDetected ->
+                    repository.onBundleDeliveryDetected(signal.category)
+                is SmsSignal.LowBalanceDetected -> {
+                    repository.onLowBalanceDetected(signal.category)
+                    appNotifier.postLowBalanceSuggestion(signal.category)
+                }
+            }
+        }
+    }
+
+    // Runtime permission launchers (Android 13+ POST_NOTIFICATIONS, RECEIVE_SMS).
+    // Settings shows the in-app rationale first, then invokes these.
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* result reflected implicitly: AppNotifier no-ops without the grant. */ }
+
+    val smsPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* granted → SmsDeliveryReceiver starts receiving; denied → stays silent. */ }
+
+    val requestNotificationPermission: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        // Below API 33 the permission is granted at install time; nothing to ask.
+    }
+    val requestSmsPermission: () -> Unit = {
+        smsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS)
+    }
 
     // Reduced-motion proxy: honour the device animator-duration-scale = 0 setting
     // (design.md §11 "Respect Android reduced-motion settings").
@@ -139,6 +224,26 @@ fun MyBingwaApp(
     // Notification centre is an in-app slide-up overlay, not a standalone route,
     // so the bottom navigation stays visible behind it.
     var showNotifications by remember { mutableStateOf(false) }
+
+    // Notification-tap deep-link: navigate to a real tab, open the notification
+    // centre for "notifications", ignore anything unknown, then consume it so it
+    // does not re-fire on recomposition.
+    val pendingDeepLink by deepLinkRoute.collectAsState()
+    LaunchedEffect(pendingDeepLink) {
+        val route = pendingDeepLink ?: return@LaunchedEffect
+        when (route) {
+            "home", "offers", "activity", "help", "settings" -> {
+                navController.navigate(route) {
+                    popUpTo("home") { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+            "notifications" -> showNotifications = true
+            else -> { /* unknown route — ignore */ }
+        }
+        onConsumeDeepLink()
+    }
 
     val showBottomBar = currentRoute in listOf("home", "offers", "activity", "help", "settings")
 
@@ -302,7 +407,9 @@ fun MyBingwaApp(
                             navController.navigate("onboarding") {
                                 popUpTo(0) { inclusive = true }
                             }
-                        }
+                        },
+                        onEnablePushNotifications = requestNotificationPermission,
+                        onEnableSmsDetection = requestSmsPermission
                     )
                 }
             }

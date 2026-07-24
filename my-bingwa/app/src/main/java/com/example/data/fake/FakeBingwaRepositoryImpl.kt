@@ -13,6 +13,7 @@ import com.example.core.model.PromotionKind
 import com.example.core.model.PurchasePolicy
 import com.example.core.model.PurchaseRecord
 import com.example.core.model.UserProfile
+import com.example.core.notifications.ConnectionState
 import com.example.core.payment.KenyanPhone
 import com.example.core.payment.PaymentTxnState
 import com.example.data.payment.ActiveOrder
@@ -291,6 +292,9 @@ class FakeBingwaRepositoryImpl(
     private val _activeOrder = MutableStateFlow<ActiveOrder?>(null)
     override val activeOrder: StateFlow<ActiveOrder?> = _activeOrder.asStateFlow()
 
+    private val _connectionState = MutableStateFlow(ConnectionState.NONE)
+    override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
     override fun updateProfile(name: String, primaryNumber: String) {
         _userProfile.update { it.copy(name = name, primaryNumber = primaryNumber) }
     }
@@ -552,6 +556,79 @@ class FakeBingwaRepositoryImpl(
 
     override fun undoDeletePurchaseRecord(record: PurchaseRecord) {
         _purchases.update { listOf(record) + it }
+    }
+
+    override fun setConnectionState(state: ConnectionState) {
+        _connectionState.value = state
+    }
+
+    override fun onBundleDeliveryDetected(category: OfferCategory) {
+        // Reconcile against the newest RECEIVED purchase of this category that is
+        // not already carrier-confirmed. If none matches (e.g. a gift the user
+        // never paid for here) we simply do not fabricate a record.
+        val target = _purchases.value.firstOrNull { record ->
+            record.status == PaymentStatus.RECEIVED &&
+                !record.isDeliveryConfirmed &&
+                recordCategory(record) == category
+        } ?: return
+
+        _purchases.update { list ->
+            list.map { if (it.id == target.id) it.copy(isDeliveryConfirmed = true) else it }
+        }
+
+        // Quiet in-app note only — attributed to Safaricom, no "we delivered"
+        // claim (CLAUDE.md §7). No loud system notification here; delivery is
+        // never shouted every time.
+        val what = categoryNoun(category)
+        val newNotif = NotificationItem(
+            id = "notif_" + UUID.randomUUID().toString().take(6),
+            title = "Safaricom confirms your bundle",
+            body = "Safaricom has sent your $what. Dial *144# or *544# to check your balance.",
+            timestampMillis = System.currentTimeMillis(),
+            isRead = false,
+            deepLinkRoute = "activity"
+        )
+        _notifications.update { listOf(newNotif) + it }
+    }
+
+    override fun onLowBalanceDetected(category: OfferCategory) {
+        // §8-allowed language only: surface more offers to buy — never claim the
+        // customer is "running out" or "needs" more data.
+        val what = categoryNoun(category)
+        val newNotif = NotificationItem(
+            id = "notif_" + UUID.randomUUID().toString().take(6),
+            title = "More $what offers for you",
+            body = "Top up your $what with these deals whenever you are ready.",
+            timestampMillis = System.currentTimeMillis(),
+            isRead = false,
+            deepLinkRoute = "offers"
+        )
+        _notifications.update { listOf(newNotif) + it }
+    }
+
+    /**
+     * Resolve a purchase to its offer category for SMS reconciliation. Prefers
+     * the live catalogue (by offerId); falls back to a text heuristic on the
+     * offer name/allowance for records whose offer is no longer catalogued.
+     */
+    private fun recordCategory(record: PurchaseRecord): OfferCategory {
+        _offers.value.firstOrNull { it.id == record.offerId }?.let { return it.category }
+        val text = (record.offerName + " " + record.allowance).lowercase()
+        return when {
+            "sms" in text -> OfferCategory.SMS
+            "min" in text || "voice" in text || "call" in text -> OfferCategory.MINUTES
+            "gb" in text || "mb" in text || "data" in text -> OfferCategory.DATA
+            else -> OfferCategory.DATA
+        }
+    }
+
+    /** Human noun for a category, matching AppNotifier's wording. */
+    private fun categoryNoun(category: OfferCategory): String = when (category) {
+        OfferCategory.DATA -> "data"
+        OfferCategory.SMS -> "SMS"
+        OfferCategory.MINUTES -> "minutes"
+        OfferCategory.SPECIAL -> "bundle"
+        OfferCategory.ALL, OfferCategory.FAVOURITES -> "bundle"
     }
 
     override fun markNotificationRead(id: String) {

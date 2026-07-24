@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Clear
@@ -304,7 +303,6 @@ fun OffersScreen(
         ) {
             FilterBottomSheetContent(
                 currentFilter = filterState,
-                resultCount = state.resultCount,
                 onApplyFilter = {
                     onFilterStateChange(it)
                     showFilterSheet = false
@@ -334,7 +332,6 @@ private fun OfflineNoticeRow() {
 @Composable
 private fun FilterBottomSheetContent(
     currentFilter: OfferFilterState,
-    resultCount: Int,
     onApplyFilter: (OfferFilterState) -> Unit,
     onClear: () -> Unit
 ) {
@@ -349,17 +346,32 @@ private fun FilterBottomSheetContent(
             .padding(24.dp)
             .testTag("filter_sheet")
     ) {
-        Text("Filter & sort", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            text = "Filter Offers",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
 
-        // Price range
+        // Maximum price
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Maximum price", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            Text("KSh ${maxPrice.toInt()}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text(
+                text = "Maximum price",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "KSh ${maxPrice.toInt()}",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         Slider(
             value = maxPrice,
@@ -370,10 +382,15 @@ private fun FilterBottomSheetContent(
                 .testTag("price_slider")
         )
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
 
-        Text("Sort by", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Sort by",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(10.dp))
         SortOption.entries.forEach { option ->
             SelectableRow(
                 label = option.label,
@@ -383,10 +400,15 @@ private fun FilterBottomSheetContent(
             )
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
 
-        Text("Validity", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Validity",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(10.dp))
         ValidityFilter.entries.forEach { option ->
             SelectableRow(
                 label = option.label,
@@ -448,9 +470,9 @@ private fun SelectableRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(FieldButtonShape)
             .clickable { onSelect() }
-            .padding(vertical = 6.dp, horizontal = 4.dp)
+            .padding(vertical = 8.dp, horizontal = 4.dp)
             .testTag(testTag),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -459,7 +481,7 @@ private fun SelectableRow(
             onClick = onSelect,
             colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(10.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,

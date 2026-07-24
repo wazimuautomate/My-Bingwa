@@ -8,6 +8,7 @@ import com.example.core.model.PaymentStatus
 import com.example.core.model.Promotion
 import com.example.core.model.PurchaseRecord
 import com.example.core.model.UserProfile
+import com.example.core.notifications.ConnectionState
 import com.example.data.payment.ActiveOrder
 import com.example.data.payment.OfflineEligibility
 import com.example.data.payment.OfflinePaymentConfig
@@ -61,6 +62,13 @@ interface BingwaRepository {
     val notifications: StateFlow<List<NotificationItem>>
     val recentRecipients: StateFlow<List<String>>
     val devStkOutcome: StateFlow<DevStkOutcome>
+
+    /**
+     * The device's current internet-transport state, pushed in from the
+     * [ConnectivityObserver] in MainActivity. Feeds offer suggestion logic; the
+     * canonical offline flag stays [isOffline].
+     */
+    val connectionState: StateFlow<ConnectionState>
 
     /**
      * The in-flight checkout, or null when idle. Exposed for process-death
@@ -128,6 +136,25 @@ interface BingwaRepository {
     fun deletePurchaseRecord(recordId: String)
     fun deletePurchaseRecords(recordIds: List<String>)
     fun undoDeletePurchaseRecord(record: PurchaseRecord)
+
+    /** Record the latest observed connectivity state (from [ConnectivityObserver]). */
+    fun setConnectionState(state: ConnectionState)
+
+    /**
+     * Reconcile a Safaricom bundle-delivery SMS against the most recent RECEIVED
+     * purchase of [category] not yet flagged confirmed: flip its
+     * [PurchaseRecord.isDeliveryConfirmed] and add a carrier-attributed in-app
+     * notification. Honest — this never claims My Bingwa delivered anything, and
+     * it does not post a loud system notification (delivery is not shouted).
+     */
+    fun onBundleDeliveryDetected(category: OfferCategory)
+
+    /**
+     * Handle a Safaricom low-balance SMS for [category] by adding an in-app
+     * offers suggestion using only §8-allowed language (never "you are running
+     * out" / "you need more data").
+     */
+    fun onLowBalanceDetected(category: OfferCategory)
 
     fun markNotificationRead(id: String)
     fun markAllNotificationsRead()
