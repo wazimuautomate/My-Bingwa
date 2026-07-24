@@ -53,6 +53,10 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
   was absolutely positioned over the subhead and hid it. The slide is now a
   `Row` with the text taking `weight(1f)` and the CTA reserving its own space, so
   they can't overlap — robust at small width and 200% font scale.
+- **Settings permission dialogs (notifications & SMS) now have a clean button
+  layout.** The rationale dialogs previously cross-aligned "Allow" with a stacked
+  "Not now / Open app settings" column. They now use a single full-width vertical
+  stack — primary **Allow**, then **Not now**, then **Open app settings**.
 
 ### Security
 

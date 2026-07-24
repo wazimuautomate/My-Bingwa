@@ -505,29 +505,19 @@ fun SettingsScreen(
                 )
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
+                RationaleButtons(
+                    allowTestTag = "push_rationale_allow",
+                    onAllow = {
                         showPushRationale = false
                         notificationsEnabled = true
                         onEnablePushNotifications()
                     },
-                    modifier = Modifier.testTag("push_rationale_allow")
-                ) {
-                    Text("Allow", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                Column {
-                    TextButton(onClick = { showPushRationale = false }) {
-                        Text("Not now")
-                    }
-                    TextButton(onClick = {
+                    onNotNow = { showPushRationale = false },
+                    onOpenSettings = {
                         showPushRationale = false
                         openAppSettings(context)
-                    }) {
-                        Text("Open app settings")
                     }
-                }
+                )
             }
         )
     }
@@ -539,36 +529,68 @@ fun SettingsScreen(
             title = { Text("Read Safaricom bundle SMS?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "My Bingwa reads Safaricom bundle and balance messages on this phone only, " +
-                        "to confirm your bundle arrived and suggest top-ups. Nothing is uploaded."
+                    "My Bingwa reads Safaricom messages on this phone only, " +
+                        "to confirm your bundle is delivered."
                 )
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
+                RationaleButtons(
+                    allowTestTag = "sms_rationale_allow",
+                    onAllow = {
                         showSmsRationale = false
                         smsAlertsEnabled = true
                         onEnableSmsDetection()
                     },
-                    modifier = Modifier.testTag("sms_rationale_allow")
-                ) {
-                    Text("Allow", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                Column {
-                    TextButton(onClick = { showSmsRationale = false }) {
-                        Text("Not now")
-                    }
-                    TextButton(onClick = {
+                    onNotNow = { showSmsRationale = false },
+                    onOpenSettings = {
                         showSmsRationale = false
                         openAppSettings(context)
-                    }) {
-                        Text("Open app settings")
                     }
-                }
+                )
             }
         )
+    }
+}
+
+/**
+ * A clean, full-width vertical button stack for the permission rationale dialogs:
+ * primary **Allow**, then **Not now**, then **Open app settings**. Stacking them
+ * avoids the cramped cross-aligned look of a confirm/dismiss button row (owner
+ * feedback on the SMS / notification confirmation).
+ */
+@Composable
+private fun RationaleButtons(
+    allowTestTag: String,
+    onAllow: () -> Unit,
+    onNotNow: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        PrimaryButton(
+            text = "Allow",
+            onClick = onAllow,
+            modifier = Modifier.fillMaxWidth(),
+            testTag = allowTestTag
+        )
+        TextButton(
+            onClick = onNotNow,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Not now")
+        }
+        TextButton(
+            onClick = onOpenSettings,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                "Open app settings",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
