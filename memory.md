@@ -189,3 +189,38 @@ destinations.
 - **Next:** Initialise Git, push `feature/bootstrap-generated-ui`, watch the
   GitHub Actions run, record the real CI result, and merge to `main` only if it
   passes.
+
+### 2026-07-24 21:55 EAT — Phase 0 follow-up: pushed; CI blocked on billing
+
+- **Objective:** Push the baseline and record the authoritative CI result.
+- **Result:** **Blocked.** Baseline committed and pushed to the feature branch,
+  but GitHub Actions could not run, so **debug-APK buildability is UNVERIFIED**.
+- **Git:** Repo `wazimuautomate/My-Bingwa` already existed as an empty **private**
+  repo (created earlier 2026-07-24 15:14 UTC; not visible from the `Wazimu90`
+  account, which is why the pre-check reported "not found"). Set the active `gh`
+  account to `wazimuautomate`. Commit `d1aa76d`
+  (`chore: bootstrap generated UI into a build-safe repository baseline`, 126
+  files) pushed to `origin/feature/bootstrap-generated-ui`. **`main` NOT merged**
+  (CI gate not passed). No force, no destructive Git.
+- **Verification:** Workflow "Feature debug build" run `30106346078` ended in ~3s
+  with the job **never starting**. GitHub annotation: *"The job was not started
+  because recent account payments have failed or your spending limit needs to be
+  increased."* This is an **account-level GitHub Actions billing block on
+  `wazimuautomate`**, not a code/build failure. No job logs exist. The billing
+  API needs a `user` token scope not granted, so exact minute counts are
+  unavailable; the annotation is definitive.
+- **Decisions/assumptions:** Did not make the repo public and did not alter
+  billing — both are the owner's decisions. Committed this documentation update
+  with `[skip ci]` to avoid another no-op failed run.
+- **Risks/blockers:** CI is unusable until the owner either (a) fixes
+  billing / raises the Actions spending limit on `wazimuautomate` (Settings →
+  Billing & plans), or (b) makes the repo public (Actions minutes are free for
+  public repos; the audit found no secrets, but this exposes the source and is
+  the owner's call). Until then, no APK is produced and the code has not been
+  compiled anywhere.
+- **Next:** Owner unblocks Actions (fix billing or make repo public), then
+  re-run the workflow (`gh run rerun 30106346078 --repo wazimuautomate/My-Bingwa`
+  or push any commit). If it goes green with a `my-bingwa-debug-<sha>` artifact,
+  merge `feature/bootstrap-generated-ui` into `main` and push. If it fails on
+  AGP 9.1.1 / `compileSdk 36.1` SDK provisioning, capture the exact error and
+  adjust the SDK/AGP setup — do not weaken tests.
