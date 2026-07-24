@@ -44,6 +44,7 @@ import com.example.core.notifications.ConnectivityObserver
 import com.example.core.notifications.NotificationChannels
 import com.example.core.notifications.SmsSignal
 import com.example.core.ui.MyBingwaBottomNav
+import com.example.data.catalogue.AndroidRemoteCatalogueSource
 import com.example.data.config.AndroidRemoteConfigSource
 import com.example.data.fake.BingwaRepository
 import com.example.data.fake.FakeBingwaRepositoryImpl
@@ -88,6 +89,17 @@ class MainActivity : ComponentActivity() {
             configSource = if (backendConfigured) {
                 AndroidRemoteConfigSource(
                     context = applicationContext,
+                    baseUrl = BuildConfig.PAYMENTS_BASE_URL,
+                    appKey = BuildConfig.PAYMENTS_APP_KEY,
+                    enableLogging = BuildConfig.DEBUG
+                )
+            } else {
+                null
+            },
+            // Offers are synced from the server when online; the bundled catalogue
+            // is the guaranteed offline base (server is only for syncing).
+            catalogueSource = if (backendConfigured) {
+                AndroidRemoteCatalogueSource(
                     baseUrl = BuildConfig.PAYMENTS_BASE_URL,
                     appKey = BuildConfig.PAYMENTS_APP_KEY,
                     enableLogging = BuildConfig.DEBUG
@@ -171,6 +183,7 @@ fun MyBingwaApp(
             repository.setConnectionState(state)
             if (state != ConnectionState.NONE) {
                 repository.syncRemoteConfig()
+                repository.syncCatalogue()
             }
         }
     }

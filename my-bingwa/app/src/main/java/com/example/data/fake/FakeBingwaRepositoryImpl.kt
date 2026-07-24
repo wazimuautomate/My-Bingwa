@@ -16,6 +16,7 @@ import com.example.core.model.UserProfile
 import com.example.core.notifications.ConnectionState
 import com.example.core.payment.KenyanPhone
 import com.example.core.payment.PaymentTxnState
+import com.example.data.catalogue.RemoteCatalogueSource
 import com.example.data.config.AppConfig
 import com.example.data.config.RemoteConfigSource
 import com.example.data.payment.ActiveOrder
@@ -47,7 +48,8 @@ import java.util.UUID
 class FakeBingwaRepositoryImpl(
     gateway: PaymentGateway? = null,
     private val configProvider: OfflinePaymentConfigProvider = CachedOfflineConfigProvider(),
-    private val configSource: RemoteConfigSource? = null
+    private val configSource: RemoteConfigSource? = null,
+    private val catalogueSource: RemoteCatalogueSource? = null
 ) : BingwaRepository {
 
     // Buy-for-myself gateway: the real backend proxy when configured, otherwise a
@@ -586,6 +588,19 @@ class FakeBingwaRepositoryImpl(
 
     override suspend fun syncRemoteConfig() {
         configSource?.fetch()?.let { fresh -> _appConfig.value = fresh }
+    }
+
+    override suspend fun syncCatalogue() {
+        val fresh = catalogueSource?.fetch() ?: return
+        // Preserve the customer's local favourite/bought-today state across a sync.
+        _offers.value = fresh.map { server ->
+            val current = _offers.value.find { it.id == server.id }
+            if (current != null) {
+                server.copy(isFavourite = current.isFavourite, isBoughtToday = current.isBoughtToday)
+            } else {
+                server
+            }
+        }
     }
 
     override fun onBundleDeliveryDetected(category: OfferCategory) {

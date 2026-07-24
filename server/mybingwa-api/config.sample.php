@@ -44,6 +44,17 @@ return [
     // callback.php, e.g. https://mybingwa.blazetechscope.com/callback.php
     'callback_url' => 'https://PUT_YOUR_DOMAIN/callback.php',
 
+    // ---- Admin panel login (admin/ folder) --------------------------------
+    // Used to sign in to the offers/settings/templates manager. Change these.
+    'admin_user' => 'admin',
+    'admin_pass' => 'PUT_A_STRONG_ADMIN_PASSWORD',
+
+    // ---- Fallback seller details (only used if the settings table is empty) --
+    // Normally you manage these from the admin panel; these are just defaults.
+    'paybill_number'   => '40450595',
+    'support_number'   => '0727921038',
+    'support_whatsapp' => '254727921038',
+
     // ---- MySQL database (create it in cPanel → MySQL Databases) -----------
     'db_host' => 'localhost',
     'db_name' => 'PUT_DB_NAME',
