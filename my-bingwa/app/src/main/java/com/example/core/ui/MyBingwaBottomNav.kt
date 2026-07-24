@@ -30,14 +30,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-import androidx.compose.material.icons.outlined.Settings
-
+// design.md §12.1: exactly four primary destinations. Settings is reached from
+// the Home header profile/avatar control, never as a fifth bottom-nav item.
 enum class BottomNavDestination(val route: String, val label: String, val icon: ImageVector) {
     HOME("home", "Home", Icons.Outlined.Home),
     OFFERS("offers", "Offers", Icons.Outlined.LocalOffer),
     ACTIVITY("activity", "Activity", Icons.Outlined.History),
-    HELP("help", "Help", Icons.Outlined.HelpOutline),
-    SETTINGS("settings", "Settings", Icons.Outlined.Settings)
+    HELP("help", "Help", Icons.Outlined.HelpOutline)
 }
 
 @Composable
