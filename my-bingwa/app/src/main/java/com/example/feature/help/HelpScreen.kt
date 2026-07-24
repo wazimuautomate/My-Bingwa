@@ -54,6 +54,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.core.payment.KenyanPhone
+import com.example.data.config.AppConfig
 import com.example.ui.theme.FieldButtonShape
 import com.example.ui.theme.PromotionStatusShape
 import com.example.ui.theme.TypographyPageHeading
@@ -68,14 +70,15 @@ data class FaqItem(
 @Composable
 fun HelpScreen(
     prefilledRef: String? = null,
+    appConfig: AppConfig = AppConfig.DEFAULT,
     onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
-    val faqs = remember {
+    val faqs = remember(appConfig) {
         listOf(
             FaqItem(
                 question = "How do I buy for another number while offline?",
-                answer = "Use our Paybill:\nBusiness Number: 40450595\nAccount Number: The Safaricom number that should receive the bundle.\nEnter the bundle price as the amount."
+                answer = "Use our Paybill:\nBusiness Number: ${appConfig.paybillNumber}\nAccount Number: The Safaricom number that should receive the bundle.\nEnter the bundle price as the amount."
             ),
             FaqItem(
                 question = "I bought a once-per-day bundle twice. What happens?",
@@ -138,7 +141,7 @@ fun HelpScreen(
                 )
 
                 Text(
-                    text = "0727 921 038",
+                    text = KenyanPhone.toDisplay(appConfig.supportNumber),
                     style = MaterialTheme.typography.headlineLarge,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
@@ -152,7 +155,7 @@ fun HelpScreen(
                 ) {
                     Button(
                         onClick = {
-                            val uri = Uri.parse("https://wa.me/254727921038")
+                            val uri = Uri.parse("https://wa.me/${appConfig.supportWhatsapp}")
                             val intent = Intent(Intent.ACTION_VIEW, uri)
                             context.startActivity(intent)
                         },
@@ -172,7 +175,7 @@ fun HelpScreen(
 
                     OutlinedButton(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:0727921038"))
+                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${appConfig.supportNumber}"))
                             context.startActivity(intent)
                         },
                         shape = FieldButtonShape,
@@ -235,7 +238,7 @@ fun HelpScreen(
 
                 CenteredCopiableBox(
                     label = "Till Number",
-                    value = "4953696",
+                    value = appConfig.tillNumber,
                     testTagPrefix = "till_number"
                 )
 
@@ -296,7 +299,7 @@ fun HelpScreen(
 
                 CenteredCopiableBox(
                     label = "Paybill Business Number",
-                    value = "4050595",
+                    value = appConfig.paybillNumber,
                     subText = "Account Number: Phone Number to receive.",
                     testTagPrefix = "paybill_number"
                 )

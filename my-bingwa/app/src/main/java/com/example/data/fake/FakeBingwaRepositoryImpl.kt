@@ -16,6 +16,8 @@ import com.example.core.model.UserProfile
 import com.example.core.notifications.ConnectionState
 import com.example.core.payment.KenyanPhone
 import com.example.core.payment.PaymentTxnState
+import com.example.data.config.AppConfig
+import com.example.data.config.RemoteConfigSource
 import com.example.data.payment.ActiveOrder
 import com.example.data.payment.CachedOfflineConfigProvider
 import com.example.data.payment.OfflineConfigResult
@@ -44,7 +46,8 @@ import java.util.UUID
  */
 class FakeBingwaRepositoryImpl(
     gateway: PaymentGateway? = null,
-    private val configProvider: OfflinePaymentConfigProvider = CachedOfflineConfigProvider()
+    private val configProvider: OfflinePaymentConfigProvider = CachedOfflineConfigProvider(),
+    private val configSource: RemoteConfigSource? = null
 ) : BingwaRepository {
 
     // Buy-for-myself gateway: the real backend proxy when configured, otherwise a
@@ -295,6 +298,11 @@ class FakeBingwaRepositoryImpl(
     private val _connectionState = MutableStateFlow(ConnectionState.NONE)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
+    // Seller config: seeded from the last sync (or defaults) so it is available
+    // offline immediately; refreshed by syncRemoteConfig() when online.
+    private val _appConfig = MutableStateFlow(configSource?.cached() ?: AppConfig.DEFAULT)
+    override val appConfig: StateFlow<AppConfig> = _appConfig.asStateFlow()
+
     override fun updateProfile(name: String, primaryNumber: String) {
         _userProfile.update { it.copy(name = name, primaryNumber = primaryNumber) }
     }
@@ -539,8 +547,19 @@ class FakeBingwaRepositoryImpl(
             nowMillis = System.currentTimeMillis()
         )
 
-    override fun offlineConfig(): OfflinePaymentConfig? =
-        (configProvider.load(System.currentTimeMillis()) as? OfflineConfigResult.Valid)?.config
+    override fun offlineConfig(): OfflinePaymentConfig? {
+        // Eligibility (expiry/ambiguity) still comes from the signed provider, but the
+        // displayed Till/Paybill are the server-synced values (always available offline).
+        if (configProvider.load(System.currentTimeMillis()) !is OfflineConfigResult.Valid) return null
+        val cfg = _appConfig.value
+        return OfflinePaymentConfig(
+            tillNumber = cfg.tillNumber,
+            paybillNumber = cfg.paybillNumber,
+            issuedAtMillis = 0L,
+            expiresAtMillis = Long.MAX_VALUE,
+            signatureValid = true
+        )
+    }
 
     override fun clearActiveOrder() {
         _activeOrder.value = null
@@ -560,6 +579,13 @@ class FakeBingwaRepositoryImpl(
 
     override fun setConnectionState(state: ConnectionState) {
         _connectionState.value = state
+        // Real connectivity is now the source of truth for the offline flag: no
+        // transport at all = offline. Any Wi-Fi/cellular link = online (Phase 6).
+        _isOffline.value = (state == ConnectionState.NONE)
+    }
+
+    override suspend fun syncRemoteConfig() {
+        configSource?.fetch()?.let { fresh -> _appConfig.value = fresh }
     }
 
     override fun onBundleDeliveryDetected(category: OfferCategory) {

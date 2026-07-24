@@ -39,10 +39,12 @@ import com.example.core.model.OfferItem
 import com.example.core.model.Promotion
 import com.example.core.model.PromotionKind
 import com.example.core.notifications.AppNotifier
+import com.example.core.notifications.ConnectionState
 import com.example.core.notifications.ConnectivityObserver
 import com.example.core.notifications.NotificationChannels
 import com.example.core.notifications.SmsSignal
 import com.example.core.ui.MyBingwaBottomNav
+import com.example.data.config.AndroidRemoteConfigSource
 import com.example.data.fake.BingwaRepository
 import com.example.data.fake.FakeBingwaRepositoryImpl
 import com.example.data.payment.PaymentGatewayProvider
@@ -67,17 +69,34 @@ class MainActivity : ComponentActivity() {
     // Buy-for-myself uses the real backend proxy when a base URL is configured
     // (BuildConfig.PAYMENTS_BASE_URL, a non-secret value); otherwise a clearly
     // labelled local simulation. Daraja credentials never live in this app.
-    private val repository = FakeBingwaRepositoryImpl(
-        gateway = if (PaymentGatewayProvider.isBackendConfigured(BuildConfig.PAYMENTS_BASE_URL)) {
-            PaymentGatewayProvider.create(
-                baseUrl = BuildConfig.PAYMENTS_BASE_URL,
-                appKey = BuildConfig.PAYMENTS_APP_KEY,
-                debugLogging = BuildConfig.DEBUG
-            )
-        } else {
-            null
-        }
-    )
+    // `by lazy` so applicationContext is attached before the RemoteConfigSource
+    // (SharedPreferences) is built — property init runs before the base context.
+    private val repository: BingwaRepository by lazy {
+        val backendConfigured = PaymentGatewayProvider.isBackendConfigured(BuildConfig.PAYMENTS_BASE_URL)
+        FakeBingwaRepositoryImpl(
+            gateway = if (backendConfigured) {
+                PaymentGatewayProvider.create(
+                    baseUrl = BuildConfig.PAYMENTS_BASE_URL,
+                    appKey = BuildConfig.PAYMENTS_APP_KEY,
+                    debugLogging = BuildConfig.DEBUG
+                )
+            } else {
+                null
+            },
+            // Seller Till/Paybill/support are synced from the server but always
+            // cached for offline use. Null (no base URL) → baked-in defaults only.
+            configSource = if (backendConfigured) {
+                AndroidRemoteConfigSource(
+                    context = applicationContext,
+                    baseUrl = BuildConfig.PAYMENTS_BASE_URL,
+                    appKey = BuildConfig.PAYMENTS_APP_KEY,
+                    enableLogging = BuildConfig.DEBUG
+                )
+            } else {
+                null
+            }
+        )
+    }
 
     // Pending notification-tap deep-link route (AppNotifier.EXTRA_DEEP_LINK_ROUTE).
     // Set from the launch intent and from onNewIntent (singleTop re-use); the
@@ -144,10 +163,15 @@ fun MyBingwaApp(
     val appNotifier = remember { AppNotifier(appContext) }
     val connectivityObserver = remember { ConnectivityObserver(appContext) }
 
-    // Feed observed connectivity into the repository (drives offer suggestions).
+    // Feed observed connectivity into the repository (sets the offline flag) and,
+    // whenever we're online, sync the seller config (Till/Paybill/support) from the
+    // server so those details stay fresh — while remaining cached for offline use.
     LaunchedEffect(connectivityObserver) {
         connectivityObserver.observe().collect { state ->
             repository.setConnectionState(state)
+            if (state != ConnectionState.NONE) {
+                repository.syncRemoteConfig()
+            }
         }
     }
 
@@ -211,6 +235,7 @@ fun MyBingwaApp(
     val purchases by repository.purchases.collectAsState()
     val notifications by repository.notifications.collectAsState()
     val recentRecipients by repository.recentRecipients.collectAsState()
+    val appConfig by repository.appConfig.collectAsState()
 
     // Hoisted so list position and filters survive tab switches (design.md §14.4).
     val homeListState = rememberLazyListState()
@@ -392,6 +417,7 @@ fun MyBingwaApp(
                 composable("help") {
                     HelpScreen(
                         prefilledRef = prefilledReportRef,
+                        appConfig = appConfig,
                         onOpenSettings = { navController.navigate("settings") }
                     )
                 }

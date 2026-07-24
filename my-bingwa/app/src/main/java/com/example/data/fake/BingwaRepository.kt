@@ -9,6 +9,7 @@ import com.example.core.model.Promotion
 import com.example.core.model.PurchaseRecord
 import com.example.core.model.UserProfile
 import com.example.core.notifications.ConnectionState
+import com.example.data.config.AppConfig
 import com.example.data.payment.ActiveOrder
 import com.example.data.payment.OfflineEligibility
 import com.example.data.payment.OfflinePaymentConfig
@@ -62,6 +63,12 @@ interface BingwaRepository {
     val notifications: StateFlow<List<NotificationItem>>
     val recentRecipients: StateFlow<List<String>>
     val devStkOutcome: StateFlow<DevStkOutcome>
+
+    /**
+     * Seller details (Till, Paybill, support) synced from the server but always
+     * available offline from cache/defaults. Server is only for syncing (Phase 6).
+     */
+    val appConfig: StateFlow<AppConfig>
 
     /**
      * The device's current internet-transport state, pushed in from the
@@ -132,6 +139,9 @@ interface BingwaRepository {
 
     /** Clear the restored active order (checkout dismissed or reached a terminal state). */
     fun clearActiveOrder()
+
+    /** Fetch fresh seller config from the server and update [appConfig]; safe to call when online. */
+    suspend fun syncRemoteConfig()
 
     fun deletePurchaseRecord(recordId: String)
     fun deletePurchaseRecords(recordIds: List<String>)
