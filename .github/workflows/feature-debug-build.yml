@@ -1,0 +1,95 @@
+name: Feature debug build
+
+# Clean, Android-Studio-free build of the My Bingwa debug APK.
+# Runs on feature/chore/fix/docs branches, on main, and on PRs to main.
+# Debug only: no signing secrets are used or required here.
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+      - "chore/**"
+      - "fix/**"
+      - "docs/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# A newer build for the same branch cancels an obsolete in-progress one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: my-bingwa
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set short commit SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          build-root-directory: my-bingwa
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      # Assemble first so the debug APK is produced and uploaded for phone
+      # testing even if the quality gate below later fails the build.
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
+
+      - name: Stage debug APK with commit-specific name
+        if: success()
+        run: |
+          mkdir -p artifact
+          cp app/build/outputs/apk/debug/app-debug.apk \
+             "artifact/My-Bingwa-Debug-${SHORT_SHA}.apk"
+
+      - name: Upload debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-bingwa-debug-${{ env.SHORT_SHA }}
+          path: my-bingwa/artifact/My-Bingwa-Debug-${{ env.SHORT_SHA }}.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      # Quality gate runs after the APK is captured. A failure here still marks
+      # the build red (visible) but does not discard the uploaded debug APK.
+      - name: Run unit tests and lint
+        run: ./gradlew test lint --stacktrace --no-daemon
+
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-bingwa-reports-${{ env.SHORT_SHA }}
+          path: |
+            my-bingwa/app/build/reports/**
+            my-bingwa/app/build/test-results/**
+          if-no-files-found: warn
+          retention-days: 14
