@@ -33,6 +33,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.core.model.DailyStateKind
+import com.example.core.model.OfferDailyState
 import com.example.core.model.OfferItem
 import com.example.core.model.PurchasePolicy
 import com.example.ui.theme.BottomSheetTopShape
