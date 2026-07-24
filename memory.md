@@ -3,7 +3,9 @@
 **Purpose:** Durable project continuity and execution record  
 **Time zone:** Africa/Nairobi  
 **Last updated:** 2026-07-24  
-**Current phase:** Phase 0 — repository baseline (imported UI made build-safe)
+**Current phase:** Phase 1 — design system & branding foundation on
+`feature/android-foundation` (fonts/logos/theme/nav + CI unblock); architecture
+contracts (Hilt, module split, DataStore, nav registry) still pending
 
 This document records current truth, important decisions, completed work,
 verification and the next step. It is not a raw command log and must never
@@ -251,6 +253,82 @@ destinations.
   before that gate regardless.
 - **Next:** Watch the new run; if the APK assembles, merge to `main`; capture any
   test/lint failure without weakening tests.
+
+### 2026-07-24 19:40 EAT — Phase 1: design system, branding and CI unblock
+
+- **Objective:** Advance Phase 1 (shared foundation and design system) with the
+  user's priorities: make the app use the real design system — bundled brand
+  fonts (the running UI was falling back to Roboto), full logo usage (app icon,
+  onboarding, in-app, splash, notification), consistent light/dark theme, and
+  icons not emoji.
+- **Result:** Partial (design-system + branding axis of Phase 1 complete;
+  architecture contracts deferred — see Risks). Also fixed the Phase 0 CI build
+  blocker so the branch can actually compile and merge.
+- **Changed:**
+  - **Fonts:** downloaded Outfit (variable) + Poppins (static R/M/SB/B) OFL fonts
+    into `app/src/main/res/font`; OFL licences in `app/licenses/`. Rewrote
+    `ui/theme/Type.kt` to use bundled fonts via `FontVariation` weight axis for
+    Outfit; mapped **every** Material 3 typography role. Deleted the fake
+    `res/values/font_certs.xml` and removed the `ui-text-google-fonts` dep. This
+    is the fix for "the current UI fonts are not ours".
+  - **Category colours:** stripped baked light hexes from `OfferCategory` (now
+    semantic label+iconName only); added theme-aware `ui/theme/CategoryColors.kt`
+    (`categoryColors(category)`), dark tints in `Color.kt`; updated the two
+    consumers (`OfferCard`, `HomeScreen`).
+  - **Launcher/branding:** proper monochrome themed-icon layer
+    (`ic_mybingwa_symbol_mono.xml` + `ic_launcher_monochrome.xml`) wired into both
+    adaptive icons; replaced legacy webp launcher icons with My Bingwa PNGs from
+    the logo kit (API 24–25); placed monochrome `ic_stat_my_bingwa` notification
+    icons for all densities. In-app logo already in the top bar; onboarding
+    already shows the 140dp mark — confirmed, not changed.
+  - **Splash:** added `androidx.core:core-splashscreen`, `ic_splash_logo.xml`,
+    `Theme.MyBingwa.Starting` (light+dark `splash_background`), manifest theme,
+    and `installSplashScreen()` in `MainActivity`.
+  - **Nav:** bottom nav reduced to 4 items (removed `SETTINGS` entry).
+  - **CI unblock (Phase 0 blocker):** removed the KSP plugin + unused Room/Moshi
+    codegen deps (KSP2 crashed on the runner with an AWT-EventQueue NPE during
+    annotation processing — root cause of every failed Phase 0 run since the
+    Gradle bump). Removed unused AI Studio cruft: `google-services` + `secrets`
+    plugins, Firebase BOM, `firebase-ai`, `firebase-appcheck`, `.env.example`,
+    and the `googleServices.missing.passthrough` property. Added
+    `-Djava.awt.headless=true` to Gradle JVM args.
+  - **Emoji:** full scan of source — none present; UI already uses Material
+    Symbols. No change needed.
+- **Files changed:** `Type.kt`, `Color.kt`, `CategoryColors.kt` (new),
+  `OfferCategory.kt`, `OfferCard.kt`, `HomeScreen.kt`, `MyBingwaBottomNav.kt`,
+  `MainActivity.kt`, `AndroidManifest.xml`, `res/values/themes.xml`,
+  `res/values/colors.xml`, `res/values-night/colors.xml` (new),
+  `res/font/*` (new), `app/licenses/*` (new), launcher/notification/splash
+  drawables + mipmaps, `app/build.gradle.kts`, `build.gradle.kts`,
+  `gradle.properties`, `gradle/libs.versions.toml`; deleted `font_certs.xml`,
+  `.env.example`, legacy `ic_launcher*.webp`.
+- **Decisions/assumptions:**
+  - Did **not** touch `namespace`/`applicationId` — the permanent applicationId
+    is an unresolved business input; finalising the package/module split waits on
+    it. Kept the single `:app` module.
+  - Removing KSP is safe because no `@Entity`/`@Dao`/`@JsonClass` exist; Room and
+    kotlinx.serialization come back with real code in Phase 6/7.
+  - AGP 9.1.1 supplies built-in Kotlin (no explicit `kotlin.android` plugin), so
+    removing KSP does not affect Kotlin compilation.
+  - Left onboarding's confetti/rotating-glow/gradient and Home's gradient promo
+    hero untouched — they are design.md violations but owned by Phases 2/3.
+- **Verification:** No local build (PC has no JDK/Android SDK). Static checks:
+  full-repo emoji scan (clean), grep for dangling refs to removed symbols
+  (clean), font binaries verified as valid TrueType. Authoritative build is the
+  GitHub Actions run on `feature/android-foundation` (result to be recorded).
+- **Git:** Branch `feature/android-foundation` off Phase 0 tip. Branding work
+  landed in `24cffea` (auto-committed by the environment); CI unblock + nav in
+  `4304d80`. No `main` exists yet. Push + CI pending.
+- **Risks/blockers:** (1) CI must confirm the KSP removal actually unblocks
+  `assembleDebug` and the app compiles — unverified until the run is green.
+  (2) Phase 1 architecture contracts NOT done: Hilt DI, module split
+  (`core:*`/`feature:*`), DataStore, navigation route registry, Room/network
+  interface shells, final namespace — deferred (namespace blocked on
+  applicationId; large blind refactors are risky without local build).
+- **Next:** Push `feature/android-foundation`; watch GitHub Actions. If green
+  with a `my-bingwa-debug-<sha>` artifact, establish `main` from it and record
+  the phone-test handoff. If red, capture the exact error and fix on-branch
+  without weakening tests.
 
 ### 2026-07-24 22:25 EAT — Phase 0 follow-up: debug APK builds; fixed template tests
 
