@@ -330,6 +330,38 @@ destinations.
   the phone-test handoff. If red, capture the exact error and fix on-branch
   without weakening tests.
 
+### 2026-07-24 20:00 EAT — Phase 1 follow-up: CI green, `main` established
+
+- **Objective:** Get an authoritative green build and merge Phase 1 to `main`.
+- **Result:** Done. First real end-to-end CI on the fix: run `30110137557`
+  **assembled and uploaded the debug APK** (KSP removal confirmed as the correct
+  unblock — the app compiles), but the `test lint` gate failed on
+  `ExampleRobolectricTest` (`UnsupportedOperationException`, Robolectric 4.16.1
+  has no SDK 36 sandbox — a pre-existing template defect only reachable once the
+  KSP crash was gone). Pinned the test to `@Config(sdk = [34])` (commit
+  `2cd3d8c`). Re-run `30110563088` = **success** (assembleDebug + test + lint).
+- **Git:** `feature/android-foundation` green at `2cd3d8c`. Created and pushed
+  `main` at the same commit (no prior `main` existed; this establishes it from
+  the verified tip = Phase 0 baseline + Phase 1 design-system foundation). Main
+  post-merge CI run `30110953057` re-runs the full gate. Working tree clean.
+  Note: an auto-commit step in this environment added an unused
+  `res/drawable-nodpi/img_onboarding_logo.png` (part of the green tree, not
+  referenced) and split the branding work across commits `24cffea`/`4304d80`.
+- **Artifact:** `my-bingwa-debug-2cd3d8c` → `My-Bingwa-Debug-2cd3d8c.apk` (debug,
+  versionName 1.0 / versionCode 1). Workflow "Feature debug build" on
+  `feature/android-foundation`, run `30110563088`.
+- **Verification:** GitHub Actions only (no local toolchain). assembleDebug +
+  unit test + lint all green. Not yet installed/tested on a physical phone.
+- **Risks/blockers:** Physical-phone acceptance (fonts render, launcher/splash/
+  notification icons, light+dark, 4-item nav) still pending — CI cannot confirm
+  visual rendering. Phase 1 architecture contracts (Hilt, module split,
+  DataStore, nav registry, Room/network shells, final namespace) remain.
+- **Next:** Install `My-Bingwa-Debug-2cd3d8c.apk` on the phone; verify Outfit/
+  Poppins render, adaptive+themed launcher icon, branded splash, notification
+  icon, and light/dark consistency. Then schedule the remaining Phase 1
+  architecture work (or fold it into Phase 6 integration) once the permanent
+  applicationId is provided.
+
 ### 2026-07-24 22:25 EAT — Phase 0 follow-up: debug APK builds; fixed template tests
 
 - **Objective:** Green CI + debug APK.
