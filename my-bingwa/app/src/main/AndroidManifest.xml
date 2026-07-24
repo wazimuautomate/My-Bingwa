@@ -14,6 +14,16 @@
     -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
 
+    <!--
+      RECEIVE_SMS implies telephony hardware; declare it optional so the app
+      still installs on non-telephony devices (tablets / ChromeOS) and to satisfy
+      lint (PermissionImpliesUnsupportedChromeOsHardware). SMS detection simply
+      stays inactive where there is no telephony.
+    -->
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
