@@ -2,8 +2,10 @@ package com.example.feature.home
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollToNode
 import com.example.core.model.DailyRule
 import com.example.core.model.OfferCategory
 import com.example.core.model.OfferItem
@@ -102,6 +104,8 @@ class HomeScreenComposeTest {
     @Test
     fun `favourites section header renders`() {
         setHome()
+        composeRule.onNodeWithTag("home_scroll")
+            .performScrollToNode(hasTestTag("section_header_Your favourites"))
         composeRule.onNodeWithTag("section_header_Your favourites").assertExists()
     }
 }
