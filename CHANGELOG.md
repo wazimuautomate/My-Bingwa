@@ -12,6 +12,19 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Added
 
+- Bundled brand typefaces: Outfit (variable) and Poppins (Regular/Medium/
+  SemiBold/Bold static) under `app/src/main/res/font`, with OFL licences kept in
+  `app/licenses/`. Typography now maps every Material 3 role to Outfit/Poppins,
+  so no text falls back to the system font.
+- Theme-aware category colours (`ui/theme/CategoryColors.kt`): category chips and
+  icon tiles resolve their accent/container/on-container from the active theme,
+  designed for both light and dark (design.md §7.3) instead of baked light hexes.
+- Branded launcher icon set: proper Android 13+ themed (monochrome) silhouette
+  layer, adaptive foreground/background, and My Bingwa raster launcher icons for
+  API 24–25; monochrome notification icon (`ic_stat_my_bingwa`) placed for all
+  densities ahead of the notifications phase.
+- Android 12+ launch splash showing the My Bingwa mark on the brand canvas
+  (light and dark), via `androidx.core:core-splashscreen`.
 - Checked-in Gradle wrapper (Gradle 9.3.1) under `my-bingwa/gradle/wrapper/`
   with `gradlew`/`gradlew.bat`, so the project builds from the command line and
   CI without Android Studio. Distribution is pinned with a SHA-256 checksum.
@@ -29,6 +42,11 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Changed
 
+- Typography engine switched from the downloadable Google Fonts provider (which
+  needed real Google certificates and silently fell back to the system font) to
+  the bundled font files.
+- Bottom navigation reduced to the four primary destinations — Home, Offers,
+  Activity, Help (design.md §12.1). Settings opens from the Home avatar.
 - Repository layout: planning documents (`Plan.md`, `design.md`,
   `CLAUDE_KICKOFF_AND_BUILD_PHASES.md`) moved into `docs/`. Operating brain
   (`CLAUDE.md`), `memory.md` and `CHANGELOG.md` remain at the repository root.
@@ -45,6 +63,13 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Removed
 
+- Fake placeholder font certificates (`res/values/font_certs.xml`) and the
+  `ui-text-google-fonts` dependency, now that fonts are bundled locally.
+- AI Studio scaffolding that My Bingwa does not use and that broke the CI build:
+  the KSP plugin with its unused Room/Moshi codegen (KSP2 crashed on the runner
+  during annotation processing), the `google-services` and `secrets` Gradle
+  plugins, the Firebase BOM, `firebase-ai` (Gemini) and `firebase-appcheck`
+  dependencies, and `.env.example`.
 - Empty stray `firebase-debug.log` from the repository root.
 - Broken custom `debugConfig` signing config from `app/build.gradle.kts`.
 - Orphaned template `GreetingScreenshotTest.kt` (and its `greeting.png`) that
