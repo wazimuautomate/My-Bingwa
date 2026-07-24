@@ -8,6 +8,9 @@ import com.example.core.model.PaymentStatus
 import com.example.core.model.Promotion
 import com.example.core.model.PurchaseRecord
 import com.example.core.model.UserProfile
+import com.example.data.payment.ActiveOrder
+import com.example.data.payment.OfflineEligibility
+import com.example.data.payment.OfflinePaymentConfig
 import kotlinx.coroutines.flow.StateFlow
 
 enum class DevStkOutcome {
@@ -59,6 +62,12 @@ interface BingwaRepository {
     val recentRecipients: StateFlow<List<String>>
     val devStkOutcome: StateFlow<DevStkOutcome>
 
+    /**
+     * The in-flight checkout, or null when idle. Exposed for process-death
+     * restoration (Plan.md §3.4); persisted in Phase 6.
+     */
+    val activeOrder: StateFlow<ActiveOrder?>
+
     fun updateProfile(name: String, primaryNumber: String)
     fun setOnboardingCompleted(completed: Boolean)
     fun setAppTheme(theme: AppThemeSetting)
@@ -77,18 +86,44 @@ interface BingwaRepository {
     suspend fun refreshCatalogue()
     fun setDevStkOutcome(outcome: DevStkOutcome)
 
+    /**
+     * Online M-Pesa STK Push. [clientRequestId] is the idempotency key: repeating it
+     * must never create a second charge (double-tap, retry). Runs the payment state
+     * machine behind the payment gateway and returns the settled/honest record.
+     *
+     * [isForSelf] selects the route: buy-for-myself uses the configured gateway (real
+     * backend/Daraja when a base URL is set — the Till lands the money on the seller's
+     * own-number identity); buy-for-another remains a simulation in this phase.
+     */
     suspend fun executeMpesaStkPush(
         offer: OfferItem,
         recipientNumber: String,
-        payerNumber: String
+        payerNumber: String,
+        clientRequestId: String,
+        isForSelf: Boolean
     ): PurchaseRecord
 
+    /**
+     * Records a customer-marked offline payment. With an M-Pesa [receipt] the
+     * attempt becomes **Waiting to verify**; without one it becomes **Payment not
+     * confirmed** (Plan.md §5.8). Never returns success.
+     */
     suspend fun executeOfflinePayment(
         offer: OfferItem,
         recipientNumber: String,
         payerNumber: String,
-        isTill: Boolean
+        isTill: Boolean,
+        receipt: String?
     ): PurchaseRecord
+
+    /** Whether [offer] can be bought offline via the chosen route, and why not otherwise. */
+    fun offlineEligibility(offer: OfferItem, isForSelf: Boolean): OfflineEligibility
+
+    /** The current verified offline config (Till/Paybill), or null when unavailable/expired. */
+    fun offlineConfig(): OfflinePaymentConfig?
+
+    /** Clear the restored active order (checkout dismissed or reached a terminal state). */
+    fun clearActiveOrder()
 
     fun deletePurchaseRecord(recordId: String)
     fun deletePurchaseRecords(recordIds: List<String>)

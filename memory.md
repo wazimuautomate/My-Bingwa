@@ -511,3 +511,74 @@ destinations.
 - **Next:** Install `My-Bingwa-Debug-67a8290.apk` on the phone and verify the
   nav fix + billboard + personalisation; then the integration coordinator merges
   `feature/catalogue-experience` (note the intentional MainActivity nav change).
+
+### 2026-07-24 (later) EAT — Phase 4: checkout payment state machine + Daraja-via-backend
+
+- **Objective:** Give the checkout real logic — the payment state machine, honest
+  STK states behind a payment-repository interface, offline signed-config
+  Till/Paybill, and a real Daraja integration for buy-for-myself (buy-for-another
+  stays mocked; user supplies backend/Daraja credentials).
+- **Result:** **Implemented (source complete; unverified locally — no JDK on this
+  machine, CI is the gate).** Not yet built/tested on CI or phone.
+- **Key decision — Daraja is backend-proxied, never in the APK.** Asked the user
+  how the app should reach Daraja; they chose the **backend proxy** (recommended).
+  So the app calls *our* backend (`payments/stk`, `payments/status`), which holds
+  the consumer key/secret + STK passkey and owns the Daraja CallbackURL. No secrets
+  in the app (CLAUDE.md §2/§10). Direct-from-app was explicitly rejected as it would
+  bake extractable secrets into the APK. Base URL is a **non-secret** BuildConfig
+  field `PAYMENTS_BASE_URL` (Gradle prop `paymentsBaseUrl` / env `PAYMENTS_BASE_URL`,
+  empty by default). When empty, the app uses a clearly-labelled local
+  **simulation** so it stays testable — it never fakes a real "success".
+- **Changed (new files):**
+  - `core/payment/PaymentTxnState.kt` — the Plan.md §6 state machine states with the
+    exact customer copy; `toRecordStatus()` maps to `PaymentStatus`.
+  - `core/payment/PaymentStateMachine.kt` — pure transition table + events; illegal
+    transitions throw (never optimistically confirm).
+  - `core/payment/KenyanPhone.kt` — E.164 normalisation / display / MSISDN (Plan §5.5).
+  - `data/payment/PaymentGateway.kt` — the payment-repository interface + request/result.
+  - `data/payment/PaymentApi.kt` + `BackendPaymentGateway.kt` — Retrofit backend proxy
+    (reflective Moshi; no KSP). Maps backend status strings → state machine.
+  - `data/payment/SimulatedPaymentGateway.kt` + `PaymentGatewayProvider.kt` — labelled
+    simulation + backend/simulation selector.
+  - `data/payment/OfflinePaymentConfig.kt` + `OfflineEligibility.kt` — signed-config
+    interface (Till/Paybill + validity/signature) with expired/invalid/missing states;
+    pure eligibility: expiry, ambiguity (shared amount on same route), Till/Paybill
+    route, hard-once-per-day offline block.
+  - `data/payment/ActiveOrder.kt` — process-death restoration **contract** (in-memory
+    now; Phase 6 persists; integration re-opens the sheet).
+  - Tests: `PaymentStateMachineTest`, `KenyanPhoneTest`, `OfflineEligibilityTest`,
+    `PaymentRepositoryTest` (idempotent double-tap, honest offline receipt).
+- **Changed (edits):** `PaymentStatus` +EXPIRED/+NOT_CONFIRMED/+COULD_NOT_VERIFY and
+  `PurchaseRecord` +clientRequestId/+orderReference; `FakeBingwaRepositoryImpl` now
+  delegates to the gateway (idempotency on clientRequestId, poll-to-terminal, honest
+  "still checking", bought-today/notif/recents), offline receipt → Waiting to verify
+  / no receipt → Payment not confirmed, `offlineEligibility`/`offlineConfig`/`activeOrder`;
+  `PurchaseBottomSheet` rewritten for honest results (Payment received with no delivery
+  timeframe; Payment cancelled/failed, Request expired, Still checking, We could not
+  verify), airtight double-tap, Resend-after-delay, offline signed-config steps +
+  receipt entry + expired/ambiguous notices, spec labels "Bundle recipient" /
+  "M-Pesa payment number"; `MainActivity` builds the gateway from BuildConfig;
+  `ActivityScreen` `when`s extended for the new statuses; `build.gradle.kts` adds the
+  `PAYMENTS_BASE_URL` field.
+- **Decisions/assumptions:** Buy-for-another routes through a dedicated simulation
+  even once the backend URL is set (kept mocked per the user). Fixed the checkout
+  Till/Paybill to read from the signed config (single source of truth) — Help-screen
+  card-2 Paybill `4050595` vs `40450595` mismatch remains in Phase-5-owned HelpScreen
+  and is left untouched. Removed the design.md-conflicting recipient label tweak
+  ("Number to receive" → spec "Bundle recipient").
+- **Verification:** No local build possible (no JDK; SDK-only). Pure unit tests
+  written for the state machine, phone, eligibility and repository idempotency; they
+  run in CI. Not yet run.
+- **Git:** Branch `feature/checkout-state-machine` off `feature/catalogue-experience`
+  HEAD (`78a043c`) — that base carries the uncommitted Phase-3 tweaks + this phase.
+  Not pushed yet at time of writing; `main` untouched (coordinator owns it).
+- **Risks/blockers:** (1) No backend yet → buy-for-myself runs on the simulation
+  until `PAYMENTS_BASE_URL` is set and the two endpoints exist. (2) CI unverified —
+  first push may surface a compile error to fix on-branch. (3) Physical-phone
+  acceptance pending. (4) Real signed offline config + Keystore-backed persistence +
+  true process-death restore are Phase 6/7.
+- **Next:** Push `feature/checkout-state-machine`, watch GitHub Actions, fix any
+  compile error on-branch. Provide the backend base URL + implement `POST payments/stk`
+  and `GET payments/status` (status strings PAYMENT_REQUESTED/AWAITING_APPROVAL/
+  PAYMENT_CONFIRMED/CANCELLED/PAYMENT_FAILED/TIMED_OUT) to switch buy-for-myself to
+  real Daraja STK.

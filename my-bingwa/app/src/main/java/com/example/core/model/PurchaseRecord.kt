@@ -3,8 +3,11 @@ package com.example.core.model
 enum class PaymentStatus(val label: String) {
     RECEIVED("Payment received"),
     WAITING_VERIFY("Waiting to verify"),
+    NOT_CONFIRMED("Payment not confirmed"),
     CANCELLED("Payment cancelled"),
-    FAILED("Payment failed")
+    FAILED("Payment failed"),
+    EXPIRED("Request expired"),
+    COULD_NOT_VERIFY("We could not verify this payment")
 }
 
 enum class PaymentMethod(val label: String) {
@@ -24,5 +27,12 @@ data class PurchaseRecord(
     val mpesaCode: String,
     val timestampMillis: Long,
     val status: PaymentStatus,
-    val paymentMethod: PaymentMethod
+    val paymentMethod: PaymentMethod,
+    /**
+     * Idempotency key for this checkout attempt (Plan.md API §"clientRequestId").
+     * The same key must never create a second charge on retry/double-tap.
+     */
+    val clientRequestId: String = "",
+    /** My Bingwa order reference for support ("Ref" shown in Activity), when known. */
+    val orderReference: String = ""
 )

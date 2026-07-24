@@ -12,6 +12,37 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Added
 
+- **Checkout & payment state machine (Phase 4):** real payment logic behind a
+  transport-agnostic payment-gateway interface, replacing the demo `delay()` stub.
+  - Payment state machine (`core/payment`): the Plan.md §6 online (STK) and offline
+    device-first transitions as a pure, unit-tested machine with the exact
+    customer-facing copy; illegal transitions throw so a payment is never
+    optimistically confirmed.
+  - **Daraja via a backend proxy** (`data/payment`): the app calls our backend
+    (`POST payments/stk`, `GET payments/status`) over Retrofit; the backend holds the
+    Daraja consumer key/secret + STK passkey and owns the CallbackURL. **No Daraja
+    secrets in the APK.** The backend base URL is a non-secret `BuildConfig`
+    field (`PAYMENTS_BASE_URL`), empty by default.
+  - A clearly-labelled local **simulation** gateway used when no backend URL is
+    configured (and for the still-mocked buy-for-another path), so the app stays
+    testable on a phone without ever faking a real success.
+  - Idempotent checkout: every attempt carries a `clientRequestId`; a double-tap or
+    retry returns the existing record instead of charging twice. Airtight in-flight
+    guard in the sheet plus repository-level idempotency.
+  - Offline signed-config interface (`OfflinePaymentConfig` + provider): Till/Paybill
+    values with a validity window and signature check, and pure eligibility rules —
+    expiry, amount ambiguity (shared price on the same route), Till vs Paybill route,
+    and hard once-per-day offline blocking.
+  - Offline receipt capture: **I've paid** with an M-Pesa code → **Waiting to verify**;
+    without a code → **Payment not confirmed**. Never shown as success.
+  - Process-death restoration **contract** (`ActiveOrder` + `activeOrder` flow),
+    in-memory this phase; Phase 6 persists it.
+  - Kenyan phone normalisation (`KenyanPhone`): `07…/01…/254…/+254…` → E.164, grouped
+    display and MSISDN for the gateway; invalid numbers block STK.
+  - New payment statuses (`EXPIRED`, `NOT_CONFIRMED`, `COULD_NOT_VERIFY`) and
+    `PurchaseRecord` fields (`clientRequestId`, `orderReference`).
+  - Unit tests: state machine (full transition table + illegal transitions + copy),
+    phone normalisation, offline eligibility, and repository idempotency/honesty.
 - **Catalogue experience (Phase 3):** real logic for Home, Offers, offer
   details, search, filters, sorting, favourites, promotions and daily purchase
   awareness, replacing the demo screens.
@@ -75,6 +106,15 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Changed
 
+- **Honest payment language (Phase 4):** the checkout success screen now shows
+  **Payment received** with "Please wait for the bundle on {recipient}" and no
+  delivery timeframe (was "Purchase successful" / "Your bundle will be received in a
+  few minutes"). The checkout now surfaces every honest state — Payment cancelled,
+  Payment failed, Request expired, Still checking payment and We could not verify —
+  and never claims delivery. Phone-field labels use the exact spec strings
+  **Bundle recipient** and **M-Pesa payment number**.
+- The checkout Till/Paybill values are read from the signed offline config (single
+  source of truth) instead of hardcoded literals in the sheet.
 - Offer cards are now pure selection surfaces: the compact full-size **Buy**
   button was removed (Plan.md §5.3) — tapping a card opens offer details / the
   purchase sheet. Cards now present calm daily-state labels.

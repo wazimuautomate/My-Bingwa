@@ -107,8 +107,8 @@ fun ActivityScreen(
         purchases.filter { record ->
             when (selectedFilter) {
                 ActivityFilter.ALL -> true
-                ActivityFilter.SUCCESSFUL -> record.status == PaymentStatus.RECEIVED || record.status == PaymentStatus.WAITING_VERIFY
-                ActivityFilter.FAILED -> record.status == PaymentStatus.FAILED || record.status == PaymentStatus.CANCELLED
+                ActivityFilter.SUCCESSFUL -> record.status == PaymentStatus.RECEIVED || record.status == PaymentStatus.WAITING_VERIFY || record.status == PaymentStatus.NOT_CONFIRMED
+                ActivityFilter.FAILED -> record.status == PaymentStatus.FAILED || record.status == PaymentStatus.CANCELLED || record.status == PaymentStatus.EXPIRED || record.status == PaymentStatus.COULD_NOT_VERIFY
                 ActivityFilter.DATA -> record.offerName.contains("data", ignoreCase = true) || record.allowance.contains("gb", ignoreCase = true) || record.allowance.contains("mb", ignoreCase = true)
                 ActivityFilter.SMS -> record.offerName.contains("sms", ignoreCase = true) || record.allowance.contains("sms", ignoreCase = true)
                 ActivityFilter.MINUTES -> record.offerName.contains("minute", ignoreCase = true) || record.offerName.contains("voice", ignoreCase = true) || record.offerName.contains("call", ignoreCase = true) || record.allowance.contains("min", ignoreCase = true)
@@ -412,8 +412,9 @@ private fun ActivityRowItem(
                 .background(
                     when (record.status) {
                         PaymentStatus.RECEIVED -> MaterialTheme.colorScheme.primaryContainer
-                        PaymentStatus.WAITING_VERIFY -> MaterialTheme.colorScheme.tertiaryContainer
-                        PaymentStatus.CANCELLED, PaymentStatus.FAILED -> MaterialTheme.colorScheme.errorContainer
+                        PaymentStatus.WAITING_VERIFY, PaymentStatus.NOT_CONFIRMED -> MaterialTheme.colorScheme.tertiaryContainer
+                        PaymentStatus.CANCELLED, PaymentStatus.FAILED,
+                        PaymentStatus.EXPIRED, PaymentStatus.COULD_NOT_VERIFY -> MaterialTheme.colorScheme.errorContainer
                     }
                 ),
             contentAlignment = Alignment.Center
@@ -421,14 +422,16 @@ private fun ActivityRowItem(
             Icon(
                 imageVector = when (record.status) {
                     PaymentStatus.RECEIVED -> Icons.Outlined.CheckCircle
-                    PaymentStatus.WAITING_VERIFY -> Icons.Outlined.HourglassEmpty
-                    PaymentStatus.CANCELLED, PaymentStatus.FAILED -> Icons.Outlined.ErrorOutline
+                    PaymentStatus.WAITING_VERIFY, PaymentStatus.NOT_CONFIRMED -> Icons.Outlined.HourglassEmpty
+                    PaymentStatus.CANCELLED, PaymentStatus.FAILED,
+                    PaymentStatus.EXPIRED, PaymentStatus.COULD_NOT_VERIFY -> Icons.Outlined.ErrorOutline
                 },
                 contentDescription = null,
                 tint = when (record.status) {
                     PaymentStatus.RECEIVED -> MaterialTheme.colorScheme.primary
-                    PaymentStatus.WAITING_VERIFY -> MaterialTheme.colorScheme.tertiary
-                    PaymentStatus.CANCELLED, PaymentStatus.FAILED -> MaterialTheme.colorScheme.error
+                    PaymentStatus.WAITING_VERIFY, PaymentStatus.NOT_CONFIRMED -> MaterialTheme.colorScheme.tertiary
+                    PaymentStatus.CANCELLED, PaymentStatus.FAILED,
+                    PaymentStatus.EXPIRED, PaymentStatus.COULD_NOT_VERIFY -> MaterialTheme.colorScheme.error
                 },
                 modifier = Modifier.size(22.dp)
             )
@@ -477,7 +480,7 @@ private fun ActivityRowItem(
                 onDismissRequest = { showMenu = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text("Copy entire log") },
+                    text = { Text("Copy") },
                     onClick = {
                         showMenu = false
                         val fullLog = "Offer: ${record.offerName}\nRecipient: $recipientText\nPrice: KSh ${record.priceKsh}\nRef: ${record.mpesaCode}\nDate: $formattedDate"

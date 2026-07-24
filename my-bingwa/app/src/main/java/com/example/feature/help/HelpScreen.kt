@@ -167,7 +167,7 @@ fun HelpScreen(
                     ) {
                         Icon(imageVector = Icons.Outlined.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("WhatsApp Us", style = MaterialTheme.typography.labelSmall)
+                        Text("WhatsApp", style = MaterialTheme.typography.labelSmall)
                     }
 
                     OutlinedButton(

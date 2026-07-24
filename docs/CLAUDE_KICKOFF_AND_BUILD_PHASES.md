@@ -111,8 +111,6 @@ Scope:
 - Waiting to verify after customer-marked offline payment.
 - Unit tests for the complete payment state machine.
 
-Do not connect real Daraja or hardcode production Till/Paybill values here.
-
 ### Phase 5 — Activity, Help, Settings and notification-centre UI
 
 **Branch:** `feature/activity-support-settings`  
