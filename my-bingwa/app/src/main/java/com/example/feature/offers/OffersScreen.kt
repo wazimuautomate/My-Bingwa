@@ -15,13 +15,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Clear
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SearchOff
+import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,7 +42,10 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -46,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,233 +67,234 @@ import com.example.core.model.OfferCategory
 import com.example.core.model.OfferItem
 import com.example.core.ui.EmptyStateView
 import com.example.core.ui.OfferCard
+import com.example.core.ui.OfferCardSkeleton
+import com.example.data.fake.MAX_OFFER_PRICE_KSH
 import com.example.data.fake.OfferFilterState
 import com.example.data.fake.SortOption
 import com.example.data.fake.ValidityFilter
+import com.example.feature.home.OffersUiState
+import com.example.feature.home.dailyStateFor
 import com.example.ui.theme.BottomSheetTopShape
 import com.example.ui.theme.FieldButtonShape
 import com.example.ui.theme.TagShape
 import com.example.ui.theme.TypographyPageHeading
+import kotlinx.coroutines.launch
 
+/**
+ * Offers (Plan.md §5.3 / design.md §14.4). Search + category chips + a
+ * filter/sort sheet (category, price range, validity; five sort orders) over
+ * the cached catalogue. Query, filters, sort and scroll position are all
+ * preserved: filter/sort live in the repository, scroll in the hoisted
+ * [listState]. Loading, empty-from-filters, empty-catalogue and offline states
+ * are all handled.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OffersScreen(
-    offers: List<OfferItem>,
-    filterState: OfferFilterState,
-    isOffline: Boolean,
+    state: OffersUiState,
+    listState: LazyListState = rememberLazyListState(),
     onSearchQueryChange: (String) -> Unit,
     onCategorySelect: (OfferCategory) -> Unit,
     onFilterStateChange: (OfferFilterState) -> Unit,
     onClearFilters: () -> Unit,
     onOfferSelect: (OfferItem) -> Unit,
-    onOfferBuy: (OfferItem) -> Unit,
-    onFavouriteToggle: (OfferItem) -> Unit
+    onFavouriteToggle: (OfferItem) -> Unit,
+    onUndoFavourite: (String) -> Unit
 ) {
     var showFilterSheet by remember { mutableStateOf(false) }
+    val filterState = state.filter
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
-    // Apply Filter Logic
-    val filteredOffers = remember(offers, filterState) {
-        offers.filter { offer ->
-            // Category check
-            val matchesCategory = when (filterState.selectedCategory) {
-                OfferCategory.ALL -> true
-                OfferCategory.FAVOURITES -> offer.isFavourite
-                else -> offer.category == filterState.selectedCategory
-            }
-
-            // Search query check
-            val query = filterState.searchQuery.trim().lowercase()
-            val matchesSearch = if (query.isEmpty()) true else {
-                offer.name.lowercase().contains(query) ||
-                        offer.allowance.lowercase().contains(query) ||
-                        offer.category.label.lowercase().contains(query) ||
-                        offer.priceKsh.toString().contains(query)
-            }
-
-            // Price check
-            val matchesPrice = offer.priceKsh <= filterState.maxPriceKsh
-
-            // Validity check
-            val matchesValidity = when (filterState.selectedValidity) {
-                ValidityFilter.ALL -> true
-                ValidityFilter.HOURLY -> offer.validity.lowercase().contains("hour")
-                ValidityFilter.DAILY -> offer.validity.lowercase().contains("day") || offer.validity.lowercase().contains("24") || offer.validity.lowercase().contains("midnight")
-                ValidityFilter.WEEKLY -> offer.validity.lowercase().contains("week") || offer.validity.lowercase().contains("7")
-                ValidityFilter.MONTHLY -> offer.validity.lowercase().contains("month") || offer.validity.lowercase().contains("30")
-            }
-
-            matchesCategory && matchesSearch && matchesPrice && matchesValidity
-        }.let { list ->
-            when (filterState.selectedSort) {
-                SortOption.POPULAR -> list.sortedByDescending { it.isPopular }
-                SortOption.LOWEST_PRICE -> list.sortedBy { it.priceKsh }
-                SortOption.HIGHEST_VALUE -> list.sortedByDescending { it.priceKsh }
+    val favouriteToggle: (OfferItem) -> Unit = { offer ->
+        val wasFavourite = offer.isFavourite
+        onFavouriteToggle(offer)
+        if (wasFavourite) {
+            scope.launch {
+                val result = snackbarHostState.showSnackbar(
+                    message = "Removed from favourites",
+                    actionLabel = "Undo",
+                    duration = SnackbarDuration.Short
+                )
+                if (result == SnackbarResult.ActionPerformed) onUndoFavourite(offer.id)
             }
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        // Top Heading & Search Bar
+    Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
         ) {
-            Text(
-                text = "Offers",
-                style = TypographyPageHeading.copy(fontSize = 24.sp),
-                color = MaterialTheme.colorScheme.onBackground,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            OutlinedTextField(
-                value = filterState.searchQuery,
-                onValueChange = onSearchQueryChange,
-                placeholder = { Text("Search data, SMS or minutes") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Search,
-                        contentDescription = "Search",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingIcon = {
-                    if (filterState.searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { onSearchQueryChange("") }) {
-                            Icon(
-                                imageVector = Icons.Outlined.Clear,
-                                contentDescription = "Clear search",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = FieldButtonShape,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                ),
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("offers_search_field")
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Horizontally Scrollable Category Filters
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(horizontal = 2.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                items(OfferCategory.entries.toTypedArray()) { category ->
-                    val selected = filterState.selectedCategory == category
-                    FilterChip(
-                        selected = selected,
-                        onClick = { onCategorySelect(category) },
-                        label = {
-                            Text(
-                                text = category.label,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                            )
-                        },
-                        shape = TagShape,
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        modifier = Modifier.testTag("category_chip_${category.name.lowercase()}")
+                Text(
+                    text = "Offers",
+                    style = TypographyPageHeading.copy(fontSize = 24.sp),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = filterState.searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    placeholder = { Text("Search data, SMS or minutes") },
+                    leadingIcon = {
+                        Icon(Icons.Outlined.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    },
+                    trailingIcon = {
+                        if (filterState.searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { onSearchQueryChange("") }) {
+                                Icon(Icons.Outlined.Clear, contentDescription = "Clear search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = FieldButtonShape,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("offers_search_field")
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp)
+                ) {
+                    items(OfferCategory.entries.toList()) { category ->
+                        val selected = filterState.selectedCategory == category
+                        FilterChip(
+                            selected = selected,
+                            onClick = { onCategorySelect(category) },
+                            label = {
+                                Text(
+                                    text = category.label,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            },
+                            shape = TagShape,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier = Modifier.testTag("category_chip_${category.name.lowercase()}")
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (state.loading) "Loading offers" else "${state.resultCount} offers available",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.testTag("offers_result_count")
                     )
+
+                    Surface(
+                        shape = FieldButtonShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .clip(FieldButtonShape)
+                            .clickable { showFilterSheet = true }
+                            .testTag("filter_control_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Outlined.FilterList, contentDescription = "Filter", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Filter & Sort", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                if (state.isOffline) {
+                    Spacer(Modifier.height(8.dp))
+                    OfflineNoticeRow()
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(Modifier.height(4.dp))
 
-            // Result Count & Filter Control
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "${filteredOffers.size} offers available",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
+            when {
+                state.loading -> LazyColumn(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(5) { OfferCardSkeleton() }
+                }
+
+                state.results.isEmpty() && state.emptyFromFilters -> EmptyStateView(
+                    icon = Icons.Outlined.SearchOff,
+                    title = "No offers found",
+                    description = "Try a different search or clear your filters to see everything.",
+                    actionText = "Clear filters",
+                    onActionClick = onClearFilters
                 )
 
-                Surface(
-                    shape = FieldButtonShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                state.results.isEmpty() -> EmptyStateView(
+                    icon = Icons.Outlined.SearchOff,
+                    title = "No offers yet",
+                    description = if (state.isOffline)
+                        "You're offline. Saved offers will appear here once available."
+                    else
+                        "Offers will appear here as soon as they're available."
+                )
+
+                else -> LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier
-                        .clip(FieldButtonShape)
-                        .clickable { showFilterSheet = true }
-                        .testTag("filter_control_button")
+                        .fillMaxSize()
+                        .testTag("offers_list")
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.FilterList,
-                            contentDescription = "Filter",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Filter & Sort",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Bold
+                    items(state.results, key = { it.id }) { offer ->
+                        OfferCard(
+                            offer = offer,
+                            dailyState = dailyStateFor(offer, state.purchases, state.recipientNumber, state.nowMillis),
+                            isOffline = state.isOffline,
+                            onCardClick = { onOfferSelect(offer) },
+                            onFavouriteToggle = { favouriteToggle(offer) }
                         )
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Offer List
-        if (filteredOffers.isEmpty()) {
-            EmptyStateView(
-                icon = Icons.Outlined.SearchOff,
-                title = "No offers found",
-                description = "Try adjusting your search query or clearing filter choices.",
-                actionText = "Clear filters",
-                onActionClick = onClearFilters
-            )
-        } else {
-            LazyColumn(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(filteredOffers, key = { it.id }) { offer ->
-                    OfferCard(
-                        offer = offer,
-                        isOffline = isOffline,
-                        onCardClick = { onOfferSelect(offer) },
-                        onBuyClick = { onOfferBuy(offer) },
-                        onFavouriteToggle = { onFavouriteToggle(offer) }
-                    )
-                }
-            }
-        }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(16.dp)
+        )
     }
 
-    // Filter Bottom Sheet
     if (showFilterSheet) {
         ModalBottomSheet(
             onDismissRequest = { showFilterSheet = false },
@@ -294,9 +304,9 @@ fun OffersScreen(
         ) {
             FilterBottomSheetContent(
                 currentFilter = filterState,
-                offerCount = filteredOffers.size,
-                onApplyFilter = { newFilter ->
-                    onFilterStateChange(newFilter)
+                resultCount = state.resultCount,
+                onApplyFilter = {
+                    onFilterStateChange(it)
                     showFilterSheet = false
                 },
                 onClear = {
@@ -309,66 +319,85 @@ fun OffersScreen(
 }
 
 @Composable
+private fun OfflineNoticeRow() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Outlined.WifiOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = "You're offline. Showing saved offers.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
 private fun FilterBottomSheetContent(
     currentFilter: OfferFilterState,
-    offerCount: Int,
+    resultCount: Int,
     onApplyFilter: (OfferFilterState) -> Unit,
     onClear: () -> Unit
 ) {
     var selectedValidity by remember(currentFilter) { mutableStateOf(currentFilter.selectedValidity) }
+    var selectedSort by remember(currentFilter) { mutableStateOf(currentFilter.selectedSort) }
+    var maxPrice by remember(currentFilter) { mutableFloatStateOf(currentFilter.maxPriceKsh.toFloat()) }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp)
+            .testTag("filter_sheet")
     ) {
-        Text(
-            text = "Filter Offers",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+        Text("Filter & sort", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+
+        Spacer(Modifier.height(20.dp))
+
+        // Price range
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Maximum price", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Text("KSh ${maxPrice.toInt()}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        }
+        Slider(
+            value = maxPrice,
+            onValueChange = { maxPrice = it },
+            valueRange = 5f..MAX_OFFER_PRICE_KSH.toFloat(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("price_slider")
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
 
-        Text(
-            text = "Select Validity",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        ValidityFilter.entries.forEach { option ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(FieldButtonShape)
-                    .clickable { selectedValidity = option }
-                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RadioButton(
-                    selected = (selectedValidity == option),
-                    onClick = { selectedValidity = option },
-                    colors = RadioButtonDefaults.colors(
-                        selectedColor = MaterialTheme.colorScheme.primary
-                    )
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = option.label,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = if (selectedValidity == option) FontWeight.Bold else FontWeight.Normal,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
+        Text("Sort by", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(6.dp))
+        SortOption.entries.forEach { option ->
+            SelectableRow(
+                label = option.label,
+                selected = selectedSort == option,
+                onSelect = { selectedSort = option },
+                testTag = "sort_option_${option.name.lowercase()}"
+            )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(Modifier.height(12.dp))
 
-        // Action buttons
+        Text("Validity", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(6.dp))
+        ValidityFilter.entries.forEach { option ->
+            SelectableRow(
+                label = option.label,
+                selected = selectedValidity == option,
+                onSelect = { selectedValidity = option },
+                testTag = "validity_option_${option.name.lowercase()}"
+            )
+        }
+
+        Spacer(Modifier.height(24.dp))
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -387,7 +416,9 @@ private fun FilterBottomSheetContent(
                 onClick = {
                     onApplyFilter(
                         currentFilter.copy(
-                            selectedValidity = selectedValidity
+                            selectedValidity = selectedValidity,
+                            selectedSort = selectedSort,
+                            maxPriceKsh = maxPrice.toInt()
                         )
                     )
                 },
@@ -401,8 +432,39 @@ private fun FilterBottomSheetContent(
                     .height(50.dp)
                     .testTag("apply_filter_button")
             ) {
-                Text("Show $offerCount offers", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text("Show offers", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+@Composable
+private fun SelectableRow(
+    label: String,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    testTag: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onSelect() }
+            .padding(vertical = 6.dp, horizontal = 4.dp)
+            .testTag(testTag),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = onSelect,
+            colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }

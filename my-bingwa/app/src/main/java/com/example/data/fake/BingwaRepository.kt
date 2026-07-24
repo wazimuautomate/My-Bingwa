@@ -5,6 +5,7 @@ import com.example.core.model.NotificationItem
 import com.example.core.model.OfferCategory
 import com.example.core.model.OfferItem
 import com.example.core.model.PaymentStatus
+import com.example.core.model.Promotion
 import com.example.core.model.PurchaseRecord
 import com.example.core.model.UserProfile
 import kotlinx.coroutines.flow.StateFlow
@@ -27,14 +28,19 @@ enum class ValidityFilter(val label: String) {
 enum class SortOption(val label: String) {
     POPULAR("Popular"),
     LOWEST_PRICE("Lowest price"),
-    HIGHEST_VALUE("Highest value")
+    HIGHEST_VALUE("Highest value"),
+    SHORTEST_VALIDITY("Shortest validity"),
+    LONGEST_VALIDITY("Longest validity")
 }
+
+/** Highest offer price in the catalogue; the price filter defaults to this so nothing is hidden. */
+const val MAX_OFFER_PRICE_KSH = 1500
 
 data class OfferFilterState(
     val selectedCategory: OfferCategory = OfferCategory.ALL,
     val selectedValidity: ValidityFilter = ValidityFilter.ALL,
     val searchQuery: String = "",
-    val maxPriceKsh: Int = 200,
+    val maxPriceKsh: Int = MAX_OFFER_PRICE_KSH,
     val selectedSort: SortOption = SortOption.POPULAR
 )
 
@@ -42,7 +48,11 @@ interface BingwaRepository {
     val userProfile: StateFlow<UserProfile>
     val appTheme: StateFlow<AppThemeSetting>
     val isOffline: StateFlow<Boolean>
+    /** True until the first cached catalogue load resolves; drives the Home/Offers skeletons. */
+    val catalogueLoading: StateFlow<Boolean>
     val offers: StateFlow<List<OfferItem>>
+    /** Active promotions/announcements for the Home billboard (Plan.md §5.13). */
+    val promotions: StateFlow<List<Promotion>>
     val filterState: StateFlow<OfferFilterState>
     val purchases: StateFlow<List<PurchaseRecord>>
     val notifications: StateFlow<List<NotificationItem>>
@@ -61,6 +71,10 @@ interface BingwaRepository {
     fun clearFilters()
 
     fun toggleFavourite(offerId: String)
+    /** Deterministic favourite set, so a "Removed from favourites" Undo restores the exact prior state. */
+    fun setFavourite(offerId: String, isFavourite: Boolean)
+    /** Re-load the cached catalogue (retry after an error / manual refresh). */
+    suspend fun refreshCatalogue()
     fun setDevStkOutcome(outcome: DevStkOutcome)
 
     suspend fun executeMpesaStkPush(

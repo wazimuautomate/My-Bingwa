@@ -3,9 +3,10 @@
 **Purpose:** Durable project continuity and execution record  
 **Time zone:** Africa/Nairobi  
 **Last updated:** 2026-07-24  
-**Current phase:** Phase 1 — design system & branding foundation on
-`feature/android-foundation` (fonts/logos/theme/nav + CI unblock); architecture
-contracts (Hilt, module split, DataStore, nav registry) still pending
+**Current phase:** Phase 3 — Home, catalogue, search, favourites and promotions
+on `feature/catalogue-experience` (real catalogue logic, promotion billboard,
+personalisation, nav fix). Phase 1 foundation merged to `main`; architecture
+contracts (Hilt, module split, DataStore, nav registry) still pending for Phase 6.
 
 This document records current truth, important decisions, completed work,
 verification and the next step. It is not a raw command log and must never
@@ -388,3 +389,99 @@ destinations.
   and fix or baseline them honestly.
 - **Next:** Watch the run; if fully green, merge `feature/bootstrap-generated-ui`
   → `main` and report the exact APK artifact.
+
+### 2026-07-24 23:40 EAT — Phase 3: catalogue experience (Home, Offers, promotions, personalisation, nav fix)
+
+- **Objective:** Give real logic to Home sections + category intents, cached
+  catalogue UI, search/filters/sorting/result state, offer details, favourite
+  toggle + Undo, once/multiple-per-day presentation, the promotion/announcement
+  surface, and catalogue loading/empty/error/offline states — plus three explicit
+  user requests: (1) turn the promotion banner into a swipeable, gradient-free,
+  brand-coloured advert "television" with a breathing CTA, image support and
+  offer rotation weighted to big (monthly/weekly/high-value) offers; (2) fix the
+  bottom-nav bug where Home was unreachable from Offers and Help/Activity landed
+  on Offers; (3) make the app feel personalised (bought-today awareness,
+  favourites-based suggestions) without being noisy.
+- **Result:** Implemented (code complete; **not yet built** — this PC has no JDK/
+  Android SDK, so compilation + APK are pending the GitHub Actions run on the
+  branch). Delegated the billboard component and the test suite to sub-agents.
+- **Changed (behaviour + files):**
+  - **New core models:** `core/model/Promotion.kt` (`Promotion` +
+    `PromotionKind`/`PromotionAccent`), `core/model/OfferDailyState.kt`
+    (`OfferDailyState`/`DailyStateKind`); `core/model/OfferItem.kt` gained
+    `PurchasePolicy` (MULTIPLE / ONCE_PER_RECIPIENT / MAX_PER_RECIPIENT +
+    `maxPurchasesPerDay`), defaulted from the existing `dailyRule`.
+  - **Repository contract** (`data/fake/BingwaRepository.kt` + `FakeBingwaRepositoryImpl.kt`):
+    added `promotions`, `catalogueLoading`, `setFavourite(id, isFavourite)`,
+    `refreshCatalogue()`, two more `SortOption`s (shortest/longest validity),
+    `MAX_OFFER_PRICE_KSH = 1500`, three larger offers (3 GB weekly, 8 GB monthly,
+    Monthly Mega) and a 6-slide promotions pool. Default price filter raised to
+    1500 so the new offers are not hidden.
+  - **`feature/home/CatalogueLogic.kt`** (new, pure/unit-tested): Nairobi-day
+    helpers, `filterAndSortOffers`, `sortOffers` (5 orders), `validityRankMinutes`,
+    `dailyStateFor` (per-recipient, per-day), `deriveHomeSections`, `suggestSimilar`
+    (category-affinity, empty when no signal), `selectPromotions`.
+  - **`feature/home/CatalogueViewModel.kt`** (new): screen-level ViewModel,
+    type-safe 5-flow combines → `HomeUiState`/`OffersUiState`, injectable clock.
+  - **`feature/home/PromotionBillboard.kt`** (new, delegated): manual-swipe
+    `HorizontalPager` of solid brand-colour slides (NO gradient), page dots,
+    optional `imageRes` + scrim, breathing CTA suppressed under reduced motion,
+    no auto-rotation.
+  - **`feature/home/OfferDetailsSheet.kt`** (new): offer details bottom sheet
+    with **Buy bundle**; disables buy with a plain reason when not purchasable or
+    offline+once-per-day. Honest language, no delivery claims.
+  - **`feature/home/HomeScreen.kt`** rebuilt to the Plan.md §5.2 order (greeting,
+    search, category shortcuts, one billboard, Popular, Bought today, More offers,
+    Buy again, Favourites, "You might also like"), skeleton/empty states,
+    favourite Undo snackbar, hoisted list state.
+  - **`feature/offers/OffersScreen.kt`** rebuilt: filter sheet has price range +
+    validity + all 5 sorts; loading/empty-from-filters/empty/offline states;
+    favourite Undo; scroll + filters + query + sort preserved.
+  - **`core/ui/OfferCard.kt`** rebuilt as a pure selection surface — removed the
+    compact Buy button (Plan.md §5.3), added calm daily-state labels.
+  - **`MainActivity.kt`**: wired the ViewModel + offer-details flow + promotion
+    intents + hoisted list state; **navigation fix** — every jump to a tab route
+    uses one consistent `popUpTo("home"){saveState} + launchSingleTop +
+    restoreState`, guarded against re-navigating the current route, with
+    reselect-to-top. Repo param typed to the `BingwaRepository` interface.
+  - **Tests:** `test/.../feature/home/CatalogueLogicTest.kt` (added, reviewed).
+    ViewModel + Compose tests generated by a sub-agent (see Next).
+  - **Docs:** CHANGELOG `[Unreleased]` updated (Added/Changed/Fixed).
+- **Decisions/assumptions:**
+  - **Explicit-user-override of two design.md guidelines, scoped safely:** the
+    breathing CTA (design.md forbids a pulsing CTA) and the swipe carousel are
+    honoured because the user was explicit, BUT only on the advert billboard
+    (never on checkout/payment CTAs), the breathing freezes under reduced motion,
+    and the carousel never auto-rotates (that hard prohibition is kept). Follows
+    CLAUDE.md §1 and does not touch payment/security/release.
+  - **Navigation fix crosses the phase's "must not own global navigation"
+    boundary** — done deliberately because the user explicitly reported the bug.
+    Flagged for the integration coordinator.
+  - Promotion "randomly posts mostly big offers": ordered by `priorityWeight`
+    (monthly/weekly/high-value highest) with a Nairobi-day seed breaking ties.
+  - Kept `dailyRule` for back-compat (PurchaseBottomSheet still reads it);
+    `purchasePolicy` is the new source of truth for awareness.
+  - Did NOT introduce Hilt (Phase 1 deferred it); ViewModel created via a plain
+    `ViewModelProvider.Factory`. Canonical per-recipient Nairobi-day ledger is
+    still Phase 6 — Phase 3 only presents state from local records.
+- **Verification:** No local build possible (no JDK/SDK). Static self-review: all
+  `BingwaRepository` members implemented; no stale screen/card signatures; no
+  `Brush`/gradient in scope (only OnboardingScreen, Phase 2); `CatalogueLogicTest`
+  assertions hand-traced against the implementation and all pass. Authoritative
+  compile/test is the GitHub Actions run (pending push).
+- **Git:** Branch `feature/catalogue-experience` (base = Phase 1 `main` at
+  `2cd3d8c`, tip `43d8dab`). Commit + push pending. `main` NOT touched.
+- **Risks/blockers:**
+  - **Animated GIFs / remote images NOT supported** — needs an image-loading
+    library (Coil `coil-compose` + `coil-gif`), not added without a build to
+    verify. Static bundled `imageRes` artwork IS supported. Adding Coil + a promo
+    media host is the next step for the full "TV with gifs".
+  - CI must confirm the Compose/pager/ViewModel code compiles on the runner
+    (Compose BOM 2024.09.00 has `HorizontalPager`). Unverified until green.
+  - Three pre-existing uncommitted copy tweaks outside Phase 3 scope
+    (`ActivityScreen.kt`, `HelpScreen.kt`, `PurchaseBottomSheet.kt`) left unstaged.
+- **Next:** Review the delegated ViewModel/Compose tests, commit the Phase 3
+  files (excluding the 3 unrelated tweaks), push `feature/catalogue-experience`,
+  watch GitHub Actions; fix any compile error on-branch without weakening tests;
+  hand off to the integration coordinator with the nav-fix note. For full advert
+  media, add Coil + a promo image/gif host (business input) later.

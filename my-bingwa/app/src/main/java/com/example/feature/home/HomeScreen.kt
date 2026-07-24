@@ -13,218 +13,309 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SignalCellularAlt
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.core.model.OfferCategory
 import com.example.core.model.OfferItem
-import com.example.core.model.PurchaseRecord
-import com.example.core.model.UserProfile
+import com.example.core.model.Promotion
 import com.example.core.ui.MyBingwaTopAppBar
 import com.example.core.ui.OfferCard
+import com.example.core.ui.OfferCardSkeleton
 import com.example.core.ui.OfflineStatusStrip
 import com.example.ui.theme.CardShape
 import com.example.ui.theme.FieldButtonShape
-import com.example.ui.theme.PromotionStatusShape
-import com.example.ui.theme.TagShape
 import com.example.ui.theme.categoryColors
+import kotlinx.coroutines.launch
 import java.util.Calendar
 
+/**
+ * Home (Plan.md §5.2 / design.md §14.3). Renders the cached catalogue from
+ * [HomeUiState] with the ordered sections: greeting, search, category
+ * shortcuts, one restrained promotion billboard, Popular, Bought today, More
+ * offers, Buy again, Favourites and a restrained "You might also like".
+ *
+ * The screen keeps honest language, never claims delivery, and preserves list
+ * position across configuration changes via [listState].
+ */
 @Composable
 fun HomeScreen(
-    profile: UserProfile,
-    isOffline: Boolean,
+    state: HomeUiState,
     unreadNotifCount: Int,
-    offers: List<OfferItem>,
-    recentPurchases: List<PurchaseRecord>,
+    reducedMotion: Boolean = false,
+    listState: LazyListState = rememberLazyListState(),
     onCategoryClick: (OfferCategory) -> Unit,
     onOfferSelect: (OfferItem) -> Unit,
-    onOfferBuy: (OfferItem) -> Unit,
     onFavouriteToggle: (OfferItem) -> Unit,
+    onUndoFavourite: (String) -> Unit,
+    onPromotionAction: (Promotion) -> Unit,
     onNotifClick: () -> Unit,
     onProfileClick: () -> Unit,
     onSearchClick: () -> Unit
 ) {
-    val scrollState = rememberScrollState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
-    // Time-based greeting
+    // Greeting is personalised once (design.md §14.3): compute the time band here,
+    // the name comes from the profile.
     val greeting = remember {
-        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        when {
-            hour < 12 -> "Good morning"
-            hour < 17 -> "Good afternoon"
+        when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
+            in 0..11 -> "Good morning"
+            in 12..16 -> "Good afternoon"
             else -> "Good evening"
         }
     }
 
-    val favouriteOffers = offers.filter { it.isFavourite }
+    val favouriteToggle: (OfferItem) -> Unit = { offer ->
+        val wasFavourite = offer.isFavourite
+        onFavouriteToggle(offer)
+        if (wasFavourite) {
+            scope.launch {
+                val result = snackbarHostState.showSnackbar(
+                    message = "Removed from favourites",
+                    actionLabel = "Undo",
+                    duration = androidx.compose.material3.SnackbarDuration.Short
+                )
+                if (result == SnackbarResult.ActionPerformed) onUndoFavourite(offer.id)
+            }
+        }
+    }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        // Top Bar
-        MyBingwaTopAppBar(
-            userName = profile.name,
-            unreadNotifCount = unreadNotifCount,
-            isOffline = isOffline,
-            onNotifClick = onNotifClick,
-            onProfileClick = onProfileClick,
-            onOfflineClick = onSearchClick
-        )
-
+    Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .background(MaterialTheme.colorScheme.background)
         ) {
-            // Welcome Section
-            Text(
-                text = "$greeting, ${profile.name.ifEmpty { "Customer" }}",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-                fontWeight = FontWeight.Bold,
+            MyBingwaTopAppBar(
+                userName = state.greetingName,
+                unreadNotifCount = unreadNotifCount,
+                isOffline = state.isOffline,
+                onNotifClick = onNotifClick,
+                onProfileClick = onProfileClick,
+                onOfflineClick = onSearchClick
+            )
+
+            LazyColumn(
+                state = listState,
                 modifier = Modifier
-                    .padding(vertical = 12.dp)
-                    .testTag("home_greeting_text")
-            )
-
-            // Category Section
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .fillMaxSize()
+                    .testTag("home_scroll"),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                CategoryShortcutTile(
-                    label = "Data",
-                    icon = Icons.Outlined.SignalCellularAlt,
-                    category = OfferCategory.DATA,
-                    onClick = { onCategoryClick(OfferCategory.DATA) }
-                )
-                CategoryShortcutTile(
-                    label = "SMS",
-                    icon = Icons.Outlined.ChatBubbleOutline,
-                    category = OfferCategory.SMS,
-                    onClick = { onCategoryClick(OfferCategory.SMS) }
-                )
-                CategoryShortcutTile(
-                    label = "Minutes",
-                    icon = Icons.Outlined.Call,
-                    category = OfferCategory.MINUTES,
-                    onClick = { onCategoryClick(OfferCategory.MINUTES) }
-                )
-                CategoryShortcutTile(
-                    label = "Special",
-                    icon = Icons.Outlined.AutoAwesome,
-                    category = OfferCategory.SPECIAL,
-                    onClick = { onCategoryClick(OfferCategory.SPECIAL) }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Connectivity Strip if offline
-            if (isOffline) {
-                OfflineStatusStrip()
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            // Announcement Section (Large Card with Rectangular Banner Graphic)
-            LargeAnnouncementCard(
-                label = "HOT DEAL",
-                headline = "2 GB for KSh 110",
-                validity = "Valid for 24 Hours",
-                buttonText = "Buy Now",
-                onAction = {
-                    offers.find { it.name.contains("2 GB") }?.let { onOfferBuy(it) } ?: onSearchClick()
-                }
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Favourites Section
-            SectionHeader(title = "Favourites")
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            if (favouriteOffers.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    favouriteOffers.forEach { offer ->
-                        OfferCard(
-                            offer = offer,
-                            isOffline = isOffline,
-                            onCardClick = { onOfferSelect(offer) },
-                            onBuyClick = { onOfferBuy(offer) },
-                            onFavouriteToggle = { onFavouriteToggle(offer) }
-                        )
-                    }
-                }
-            } else {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ),
-                    shape = CardShape
-                ) {
-                    Column(
+                item(key = "greeting") {
+                    Text(
+                        text = "$greeting, ${state.greetingName.ifEmpty { "Customer" }}",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.Bold,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "No favourite offers saved yet",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "Tap the heart icon on any offer to add it here",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            .padding(top = 8.dp, bottom = 4.dp)
+                            .testTag("home_greeting_text")
+                    )
+                }
+
+                item(key = "search") {
+                    HomeSearchEntry(onClick = onSearchClick)
+                }
+
+                item(key = "categories") {
+                    CategoryShortcutRow(onCategoryClick = onCategoryClick)
+                }
+
+                if (state.isOffline) {
+                    item(key = "offline_strip") {
+                        OfflineStatusStrip(onDetailsClick = onSearchClick)
+                    }
+                }
+
+                if (state.loading) {
+                    items(3, key = { "skeleton_$it" }) { OfferCardSkeleton() }
+                    return@LazyColumn
+                }
+
+                // One restrained promotion (design.md §14.3 item 5).
+                if (state.promotions.isNotEmpty()) {
+                    item(key = "billboard") {
+                        PromotionBillboard(
+                            promotions = state.promotions,
+                            reducedMotion = reducedMotion,
+                            onPromotionAction = onPromotionAction
                         )
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(32.dp))
+                offerSection(
+                    key = "popular",
+                    title = "Popular offers",
+                    offers = state.sections.popular.take(4),
+                    state = state,
+                    onOfferSelect = onOfferSelect,
+                    onFavouriteToggle = favouriteToggle
+                )
+
+                offerSection(
+                    key = "bought_today",
+                    title = "Bought today",
+                    offers = state.sections.boughtToday,
+                    state = state,
+                    onOfferSelect = onOfferSelect,
+                    onFavouriteToggle = favouriteToggle
+                )
+
+                offerSection(
+                    key = "more_offers",
+                    title = "More offers you can buy",
+                    offers = state.sections.moreOffers.take(4),
+                    state = state,
+                    onOfferSelect = onOfferSelect,
+                    onFavouriteToggle = favouriteToggle
+                )
+
+                offerSection(
+                    key = "buy_again",
+                    title = "Buy again",
+                    offers = state.sections.buyAgain.take(4),
+                    state = state,
+                    onOfferSelect = onOfferSelect,
+                    onFavouriteToggle = favouriteToggle
+                )
+
+                offerSection(
+                    key = "favourites",
+                    title = "Your favourites",
+                    offers = state.sections.favourites,
+                    state = state,
+                    onOfferSelect = onOfferSelect,
+                    onFavouriteToggle = favouriteToggle
+                )
+
+                offerSection(
+                    key = "suggestions",
+                    title = "You might also like",
+                    offers = state.sections.suggestions,
+                    state = state,
+                    onOfferSelect = onOfferSelect,
+                    onFavouriteToggle = favouriteToggle
+                )
+
+                item(key = "footer_spacer") { Spacer(Modifier.height(24.dp)) }
+            }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(16.dp)
+        )
+    }
+}
+
+/**
+ * Adds a titled section of offer cards to the Home list — only when [offers] is
+ * non-empty, so sections stay silent rather than showing empty placeholders.
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.offerSection(
+    key: String,
+    title: String,
+    offers: List<OfferItem>,
+    state: HomeUiState,
+    onOfferSelect: (OfferItem) -> Unit,
+    onFavouriteToggle: (OfferItem) -> Unit
+) {
+    if (offers.isEmpty()) return
+    item(key = "header_$key") {
+        Spacer(Modifier.height(8.dp))
+        SectionHeader(title)
+    }
+    items(offers, key = { "${key}_${it.id}" }) { offer ->
+        OfferCard(
+            offer = offer,
+            dailyState = dailyStateFor(offer, state.purchases, state.recipientNumber, state.nowMillis),
+            isOffline = state.isOffline,
+            onCardClick = { onOfferSelect(offer) },
+            onFavouriteToggle = { onFavouriteToggle(offer) }
+        )
+    }
+}
+
+@Composable
+private fun HomeSearchEntry(onClick: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = FieldButtonShape,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(FieldButtonShape)
+            .clickable { onClick() }
+            .testTag("home_search_entry")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.size(12.dp))
+            Text(
+                text = "Search data, SMS or minutes",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategoryShortcutRow(onCategoryClick: (OfferCategory) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        CategoryShortcutTile("Data", Icons.Outlined.SignalCellularAlt, OfferCategory.DATA) { onCategoryClick(OfferCategory.DATA) }
+        CategoryShortcutTile("Minutes", Icons.Outlined.Call, OfferCategory.MINUTES) { onCategoryClick(OfferCategory.MINUTES) }
+        CategoryShortcutTile("SMS", Icons.Outlined.ChatBubbleOutline, OfferCategory.SMS) { onCategoryClick(OfferCategory.SMS) }
+        CategoryShortcutTile("Special", Icons.Outlined.AutoAwesome, OfferCategory.SPECIAL) { onCategoryClick(OfferCategory.SPECIAL) }
     }
 }
 
 @Composable
 private fun CategoryShortcutTile(
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     category: OfferCategory,
     onClick: () -> Unit
 ) {
@@ -251,7 +342,7 @@ private fun CategoryShortcutTile(
                 modifier = Modifier.size(26.dp)
             )
         }
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
@@ -262,114 +353,14 @@ private fun CategoryShortcutTile(
 }
 
 @Composable
-private fun LargeAnnouncementCard(
-    label: String,
-    headline: String,
-    validity: String,
-    buttonText: String,
-    onAction: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(PromotionStatusShape),
-        shape = PromotionStatusShape,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            // Rectangular Top Banner Graphic Container
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(130.dp)
-                    .background(
-                        brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.tertiary
-                            )
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
-                        shape = TagShape
-                    ) {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = headline,
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
-            }
-
-            // Bottom Info & Action Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Special Offer",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = validity,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                    )
-                }
-
-                Button(
-                    onClick = onAction,
-                    shape = FieldButtonShape,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
-                    modifier = Modifier.testTag("announcement_card_button")
-                ) {
-                    Text(
-                        text = buttonText,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SectionHeader(title: String) {
     Text(
         text = title,
         style = MaterialTheme.typography.titleLarge,
         color = MaterialTheme.colorScheme.onBackground,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("section_header_$title")
     )
 }
