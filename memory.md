@@ -512,6 +512,45 @@ destinations.
   nav fix + billboard + personalisation; then the integration coordinator merges
   `feature/catalogue-experience` (note the intentional MainActivity nav change).
 
+### 2026-07-24 (later) — Owner correction: simpler Home, classic offer card, real offers
+
+- **Objective:** The owner rejected the Phase 3 UI redesign (they wanted feature
+  logic, not a redesign) and gave explicit direction: simplify Home; revert the
+  offer card; load the real catalogue; move the billboard CTA; push everything to
+  `main` for a fresh APK. Explicit instruction overrides Plan.md/design.md here.
+- **Result:** Done in code on `feature/checkout-state-machine` (which already
+  carries Phase 3 + Phase 4). Build/test authority is CI.
+- **Changed:**
+  - HomeScreen rewritten simple: removed search bar + Popular/Bought today/Buy
+    again; after the billboard only **Your favourites** (vertical) and **You may
+    also like** (horizontal LazyRow). Kept greeting + category tiles + favourite
+    Undo.
+  - OfferCard reverted verbatim to the pre-Phase-3 classic (Buy button + few
+    details) via `git show 43d8dab:…OfferCard.kt`. OffersScreen + MainActivity
+    rewired to the old signature (`onBuyClick`); card tap / Buy / promotion all
+    open the purchase sheet directly. Removed the interim `OfferDetailsSheet.kt`.
+  - Real catalogue (29 offers: 13 Data, 5 SMS, 8 Minutes, 3 Special) with exact
+    prices, validity, buy-tags; 3 pre-set favourites so Home is populated.
+    `OfferItem.validityBand` added (Hourly/Daily/Weekly/Monthly) + used by the
+    validity filter; `validityRankMinutes` now understands "Hr". DailyRule label
+    ONCE = "Buy once a day". `MAX_OFFER_PRICE_KSH` = 1005. Promotions relinked to
+    real high-value offers.
+  - Billboard CTA moved to CenterEnd with more height/padding (agent) so the
+    label no longer clips.
+  - Tests updated: OfferCard/Home Compose tests + ViewModel test adjusted to the
+    reverted card, simpler Home and non-popular catalogue.
+- **Files:** `core/model/OfferItem.kt`, `core/ui/OfferCard.kt`, `feature/home/
+  HomeScreen.kt`, `feature/home/CatalogueLogic.kt`, `feature/offers/OffersScreen.kt`,
+  `MainActivity.kt`, `data/fake/BingwaRepository.kt`, `data/fake/FakeBingwaRepositoryImpl.kt`,
+  `feature/home/PromotionBillboard.kt`; deleted `feature/home/OfferDetailsSheet.kt`;
+  updated 3 test files.
+- **Git:** committing on `feature/checkout-state-machine`; per owner instruction
+  this branch (Phase 3 + Phase 4 + this correction) will be **merged to `main`**
+  once CI is green, so a fresh debug APK is produced.
+- **Risks/blockers:** CI must confirm compilation. Physical-phone acceptance
+  still pending.
+- **Next:** Commit, push, watch CI; if green, merge to `main` and report the APK.
+
 ### 2026-07-24 (later) EAT — Phase 4: checkout payment state machine + Daraja-via-backend
 
 - **Objective:** Give the checkout real logic — the payment state machine, honest

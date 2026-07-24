@@ -164,9 +164,13 @@ private fun PromotionSlide(
             )
         }
 
+        // Start-aligned text block. It reserves roughly the left 62% of the slide
+        // so long headlines/subheads wrap before reaching the right-side CTA and
+        // never sit underneath it.
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .fillMaxWidth(0.62f)
                 .padding(20.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.Start
@@ -205,17 +209,20 @@ private fun PromotionSlide(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            BreathingCtaButton(
-                label = promotion.ctaLabel,
-                palette = palette,
-                reducedMotion = reducedMotion,
-                onClick = { onPromotionAction(promotion) },
-                modifier = Modifier.testTag("promotion_cta_${promotion.id}")
-            )
         }
+
+        // CTA lives on the right, vertically centred (visually higher than the old
+        // bottom position) with room to breathe on all sides so nothing clips.
+        BreathingCtaButton(
+            label = promotion.ctaLabel,
+            palette = palette,
+            reducedMotion = reducedMotion,
+            onClick = { onPromotionAction(promotion) },
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 20.dp)
+                .testTag("promotion_cta_${promotion.id}")
+        )
     }
 }
 
@@ -259,8 +266,11 @@ private fun BreathingCtaButton(
             containerColor = palette.ctaContainer,
             contentColor = palette.ctaContent
         ),
+        // A taller button with generous vertical content padding keeps the label
+        // fully visible (the descenders were being clipped before).
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
         modifier = modifier
-            .height(44.dp)
+            .height(48.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -269,7 +279,9 @@ private fun BreathingCtaButton(
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

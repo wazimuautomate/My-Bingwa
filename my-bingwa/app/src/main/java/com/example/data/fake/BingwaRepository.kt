@@ -37,7 +37,7 @@ enum class SortOption(val label: String) {
 }
 
 /** Highest offer price in the catalogue; the price filter defaults to this so nothing is hidden. */
-const val MAX_OFFER_PRICE_KSH = 1500
+const val MAX_OFFER_PRICE_KSH = 1005
 
 data class OfferFilterState(
     val selectedCategory: OfferCategory = OfferCategory.ALL,

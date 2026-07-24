@@ -74,181 +74,59 @@ class FakeBingwaRepositoryImpl(
     private val _isOffline = MutableStateFlow(false)
     override val isOffline: StateFlow<Boolean> = _isOffline.asStateFlow()
 
+    // Real My Bingwa catalogue. name = allowance, validity = the duration shown
+    // next to it on the card, validityBand = the Offers filter band, dailyRule =
+    // the "Buy once a day" / "Buy many times" tag.
+    private fun dataOffer(
+        id: String, name: String, validity: String, band: String, price: Int,
+        once: Boolean, category: OfferCategory = OfferCategory.DATA, favourite: Boolean = false
+    ) = OfferItem(
+        id = id,
+        name = name,
+        allowance = name,
+        priceKsh = price,
+        validity = validity,
+        validityBand = band,
+        category = category,
+        dailyRule = if (once) DailyRule.ONCE_PER_DAY else DailyRule.BUY_AGAIN_TODAY,
+        isFavourite = favourite,
+        description = "$name of ${category.label.lowercase()} valid $validity."
+    )
+
     private val initialOffers = listOf(
-        OfferItem(
-            id = "off_1",
-            name = "1 GB Hourly",
-            allowance = "1 GB",
-            priceKsh = 19,
-            validity = "1 hour",
-            category = OfferCategory.DATA,
-            dailyRule = DailyRule.BUY_AGAIN_TODAY,
-            commercialLabel = "Popular",
-            isPopular = true,
-            description = "High-speed 1 GB internet bundle valid for 60 minutes from purchase."
-        ),
-        OfferItem(
-            id = "off_2",
-            name = "250 MB Daily",
-            allowance = "250 MB",
-            priceKsh = 20,
-            validity = "24 hours",
-            category = OfferCategory.DATA,
-            dailyRule = DailyRule.ONCE_PER_DAY,
-            description = "Stay connected all day with 250 MB data valid for 24 hours."
-        ),
-        OfferItem(
-            id = "off_3",
-            name = "1.5 GB 3-Hour",
-            allowance = "1.5 GB",
-            priceKsh = 50,
-            validity = "3 hours",
-            category = OfferCategory.DATA,
-            dailyRule = DailyRule.BUY_AGAIN_TODAY,
-            description = "Stream and download with 1.5 GB fast data valid for 3 hours."
-        ),
-        OfferItem(
-            id = "off_4",
-            name = "1.25 GB Midnight",
-            allowance = "1.25 GB",
-            priceKsh = 55,
-            validity = "Till midnight",
-            category = OfferCategory.DATA,
-            dailyRule = DailyRule.ONCE_PER_DAY,
-            description = "1.25 GB data valid until 11:59 PM today."
-        ),
-        OfferItem(
-            id = "off_5",
-            name = "2 GB Daily Power",
-            allowance = "2 GB",
-            priceKsh = 110,
-            validity = "24 hours",
-            category = OfferCategory.DATA,
-            dailyRule = DailyRule.ONCE_PER_DAY,
-            commercialLabel = "Best value",
-            isPopular = true,
-            description = "2 GB superfast data bundle for 24 hours. Best value for heavy browsing."
-        ),
-        OfferItem(
-            id = "off_6",
-            name = "20 SMS Bundle",
-            allowance = "20 SMS",
-            priceKsh = 5,
-            validity = "24 hours",
-            category = OfferCategory.SMS,
-            dailyRule = DailyRule.BUY_AGAIN_TODAY,
-            description = "Send up to 20 SMS messages across networks for 24 hours."
-        ),
-        OfferItem(
-            id = "off_7",
-            name = "200 SMS Daily",
-            allowance = "200 SMS",
-            priceKsh = 10,
-            validity = "24 hours",
-            category = OfferCategory.SMS,
-            dailyRule = DailyRule.ONCE_PER_DAY,
-            description = "200 local SMS valid for 24 hours."
-        ),
-        OfferItem(
-            id = "off_8",
-            name = "1,000 SMS Weekly",
-            allowance = "1,000 SMS",
-            priceKsh = 30,
-            validity = "7 days",
-            category = OfferCategory.SMS,
-            dailyRule = DailyRule.ONCE_PER_DAY,
-            description = "1,000 SMS for 7 days. Text freely all week."
-        ),
-        OfferItem(
-            id = "off_9",
-            name = "20 Mins Midnight",
-            allowance = "20 minutes",
-            priceKsh = 22,
-            validity = "Till midnight",
-            category = OfferCategory.MINUTES,
-            dailyRule = DailyRule.BUY_AGAIN_TODAY,
-            description = "20 calling minutes to any Safaricom line until midnight."
-        ),
-        OfferItem(
-            id = "off_10",
-            name = "35 Mins 2-Hour",
-            allowance = "35 minutes",
-            priceKsh = 23,
-            validity = "2 hours",
-            category = OfferCategory.MINUTES,
-            dailyRule = DailyRule.BUY_AGAIN_TODAY,
-            description = "35 call minutes valid for 2 hours."
-        ),
-        OfferItem(
-            id = "off_11",
-            name = "50 Mins Daily",
-            allowance = "50 minutes",
-            priceKsh = 51,
-            validity = "Till midnight",
-            category = OfferCategory.MINUTES,
-            dailyRule = DailyRule.ONCE_PER_DAY,
-            description = "50 talk time minutes valid until midnight."
-        ),
-        OfferItem(
-            id = "off_12",
-            name = "Weekend Mix",
-            allowance = "2 GB + 50 SMS",
-            priceKsh = 99,
-            validity = "Weekend",
-            category = OfferCategory.SPECIAL,
-            dailyRule = DailyRule.BUY_AGAIN_TODAY,
-            commercialLabel = "Limited offer",
-            description = "Weekend special bundle offering 2 GB data plus 50 SMS."
-        ),
-        OfferItem(
-            id = "off_13",
-            name = "Daily Connect",
-            allowance = "500 MB + 20 mins",
-            priceKsh = 45,
-            validity = "24 hours",
-            category = OfferCategory.SPECIAL,
-            dailyRule = DailyRule.BUY_AGAIN_TODAY,
-            commercialLabel = "Best value",
-            description = "Combo offer with 500 MB data and 20 voice minutes for 24 hours."
-        ),
-        OfferItem(
-            id = "off_14",
-            name = "3 GB Weekly",
-            allowance = "3 GB",
-            priceKsh = 250,
-            validity = "7 days",
-            category = OfferCategory.DATA,
-            dailyRule = DailyRule.BUY_AGAIN_TODAY,
-            purchasePolicy = PurchasePolicy.MULTIPLE_PER_DAY,
-            commercialLabel = "Popular",
-            isPopular = true,
-            description = "3 GB of fast data valid for a full 7 days. Great for a steady week online."
-        ),
-        OfferItem(
-            id = "off_15",
-            name = "8 GB Monthly",
-            allowance = "8 GB",
-            priceKsh = 1000,
-            validity = "30 days",
-            category = OfferCategory.DATA,
-            dailyRule = DailyRule.BUY_AGAIN_TODAY,
-            purchasePolicy = PurchasePolicy.MULTIPLE_PER_DAY,
-            commercialLabel = "Best value",
-            isPopular = true,
-            description = "8 GB of data valid for 30 days. The best value for heavy monthly browsing."
-        ),
-        OfferItem(
-            id = "off_16",
-            name = "Monthly Mega",
-            allowance = "15 GB + 400 mins",
-            priceKsh = 1500,
-            validity = "30 days",
-            category = OfferCategory.SPECIAL,
-            dailyRule = DailyRule.BUY_AGAIN_TODAY,
-            purchasePolicy = PurchasePolicy.MULTIPLE_PER_DAY,
-            commercialLabel = "Limited offer",
-            description = "15 GB data plus 400 voice minutes valid for 30 days. Everything for the month."
-        )
+        // Data
+        dataOffer("data_1", "1GB", "1 Hr", "Hourly", 19, once = true),
+        dataOffer("data_2", "250MB", "24 Hrs", "Daily", 20, once = true),
+        dataOffer("data_3", "1.5GB", "3 Hrs", "Hourly", 50, once = true),
+        dataOffer("data_4", "1.25GB", "Midnight", "Daily", 55, once = true),
+        dataOffer("data_5", "1GB", "24 Hrs", "Daily", 95, once = true),
+        dataOffer("data_6", "2GB", "24 Hrs", "Daily", 110, once = false, favourite = true),
+        dataOffer("data_7", "350MB", "7 days", "Weekly", 49, once = true),
+        dataOffer("data_8", "2.5GB", "7 days", "Weekly", 300, once = true),
+        dataOffer("data_9", "6GB", "7 days", "Weekly", 700, once = true),
+        dataOffer("data_10", "1.2GB", "30 days", "Monthly", 250, once = true),
+        dataOffer("data_11", "2.5GB", "30 days", "Monthly", 500, once = true),
+        dataOffer("data_12", "10GB", "30 days", "Monthly", 1000, once = true),
+        dataOffer("data_13", "8GB + 400 Min", "30 days", "Monthly", 1005, once = true),
+        // SMS
+        dataOffer("sms_1", "10 SMS", "24 Hrs", "Daily", 5, once = false, category = OfferCategory.SMS),
+        dataOffer("sms_2", "200 SMS", "24 Hrs", "Daily", 10, once = false, category = OfferCategory.SMS, favourite = true),
+        dataOffer("sms_3", "1,000 SMS", "7 days", "Weekly", 30, once = false, category = OfferCategory.SMS),
+        dataOffer("sms_4", "1,500 SMS", "30 days", "Monthly", 101, once = false, category = OfferCategory.SMS),
+        dataOffer("sms_5", "3,500 SMS", "30 days", "Monthly", 201, once = false, category = OfferCategory.SMS),
+        // Minutes
+        dataOffer("min_1", "20 Min", "Midnight", "Daily", 22, once = false, category = OfferCategory.MINUTES),
+        dataOffer("min_2", "35 Min", "2 Hrs", "Hourly", 23, once = false, category = OfferCategory.MINUTES),
+        dataOffer("min_3", "45 Min", "3 Hrs", "Hourly", 24, once = false, category = OfferCategory.MINUTES),
+        dataOffer("min_4", "50 Min", "Midnight", "Daily", 48, once = false, category = OfferCategory.MINUTES, favourite = true),
+        dataOffer("min_5", "250 Min", "7 days", "Weekly", 205, once = false, category = OfferCategory.MINUTES),
+        dataOffer("min_6", "100 Min", "Midnight", "Daily", 105, once = false, category = OfferCategory.MINUTES),
+        dataOffer("min_7", "300 Min", "30 days", "Monthly", 499, once = false, category = OfferCategory.MINUTES),
+        dataOffer("min_8", "800 Min", "30 days", "Monthly", 950, once = false, category = OfferCategory.MINUTES),
+        // Special
+        dataOffer("spec_1", "1GB", "1 Hr", "Hourly", 21, once = true, category = OfferCategory.SPECIAL),
+        dataOffer("spec_2", "1.5GB", "3 Hrs", "Hourly", 51, once = true, category = OfferCategory.SPECIAL),
+        dataOffer("spec_3", "2GB", "24 Hrs", "Daily", 110, once = false, category = OfferCategory.SPECIAL)
     )
 
     private val _offers = MutableStateFlow(initialOffers)
@@ -266,47 +144,47 @@ class FakeBingwaRepositoryImpl(
     // No gradients: each slide paints a single brand colour (see PromotionAccent).
     private val initialPromotions = listOf(
         Promotion(
-            id = "promo_monthly_mega",
+            id = "promo_8gb_400min",
             kind = PromotionKind.OFFER,
             tag = "HOT DEAL",
-            headline = "15 GB + 400 mins",
-            subhead = "Monthly Mega · everything you need for KSh 1,500",
+            headline = "8GB + 400 Min",
+            subhead = "The monthly mega bundle · 30 days for KSh 1,005",
             ctaLabel = "Buy now",
             accent = PromotionAccent.GREEN,
-            linkedOfferId = "off_16",
+            linkedOfferId = "data_13",
             priorityWeight = 100
         ),
         Promotion(
-            id = "promo_8gb_month",
+            id = "promo_10gb_month",
             kind = PromotionKind.OFFER,
             tag = "BEST VALUE",
-            headline = "8 GB for KSh 1,000",
-            subhead = "Valid 30 days · the calmest way to stay online all month",
+            headline = "10 GB for KSh 1,000",
+            subhead = "Valid 30 days · stay online all month",
             ctaLabel = "Buy now",
             accent = PromotionAccent.NAVY,
-            linkedOfferId = "off_15",
+            linkedOfferId = "data_12",
             priorityWeight = 90
         ),
         Promotion(
-            id = "promo_3gb_week",
+            id = "promo_6gb_week",
             kind = PromotionKind.OFFER,
             tag = "POPULAR",
-            headline = "3 GB Weekly",
-            subhead = "A full week of data for KSh 250",
+            headline = "6 GB Weekly",
+            subhead = "A full week of data for KSh 700",
             ctaLabel = "Buy now",
             accent = PromotionAccent.BLUE,
-            linkedOfferId = "off_14",
+            linkedOfferId = "data_9",
             priorityWeight = 70
         ),
         Promotion(
-            id = "promo_weekend_mix",
+            id = "promo_2gb_daily",
             kind = PromotionKind.OFFER,
-            tag = "LIMITED",
-            headline = "Weekend Mix",
-            subhead = "2 GB + 50 SMS for KSh 99 — this weekend only",
+            tag = "FAVOURITE",
+            headline = "2GB for KSh 110",
+            subhead = "24 hours of data — buy it as many times as you like",
             ctaLabel = "Buy now",
             accent = PromotionAccent.ORANGE,
-            linkedOfferId = "off_12",
+            linkedOfferId = "data_6",
             priorityWeight = 60
         ),
         Promotion(
@@ -341,9 +219,9 @@ class FakeBingwaRepositoryImpl(
     private val initialPurchases = listOf(
         PurchaseRecord(
             id = "pur_101",
-            offerId = "off_1",
-            offerName = "1 GB Hourly",
-            allowance = "1 GB",
+            offerId = "data_1",
+            offerName = "1GB",
+            allowance = "1GB",
             priceKsh = 19,
             recipientNumber = "0727 921 038",
             payerNumber = "0727 921 038",
@@ -354,9 +232,9 @@ class FakeBingwaRepositoryImpl(
         ),
         PurchaseRecord(
             id = "pur_102",
-            offerId = "off_6",
-            offerName = "20 SMS Bundle",
-            allowance = "20 SMS",
+            offerId = "sms_1",
+            offerName = "10 SMS",
+            allowance = "10 SMS",
             priceKsh = 5,
             recipientNumber = "0712 345 678",
             payerNumber = "0727 921 038",

@@ -10,6 +10,25 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ## [Unreleased]
 
+### Changed
+
+- **Home simplified (per owner feedback):** removed the Home search bar and the
+  Popular / Bought today / Buy again sections. After the promotion billboard the
+  Home now shows only **Your favourites** (vertical list) and **You may also
+  like** (a horizontally swipeable row of similar offers).
+- **Offer card reverted to the classic compact design** (category tag, name +
+  validity, price, buy-tag, and a **Buy** button). The earlier Phase 3 card
+  redesign was undone — only the underlying feature logic was wanted, not a UI
+  change. Tapping a card or its Buy button opens the purchase sheet directly
+  (the interim offer-details sheet was removed).
+- **Catalogue replaced with the real My Bingwa offers** (Data, SMS, Minutes,
+  Special) with correct prices, validity, per-day tags and validity bands; the
+  offer model gained an explicit `validityBand` so the Offers validity filter is
+  exact. Billboard promotions now advertise the real high-value monthly/weekly
+  offers.
+- **Billboard CTA** moved to the right and vertically centred, with more height/
+  padding so its label is never clipped.
+
 ### Added
 
 - **Checkout & payment state machine (Phase 4):** real payment logic behind a

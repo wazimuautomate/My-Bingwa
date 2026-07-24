@@ -51,18 +51,23 @@ fun validityRankMinutes(validity: String): Int {
         v.contains("month") -> (number ?: 1) * 30 * 24 * 60
         v.contains("week") || v.contains("weekend") -> (number ?: 1) * 7 * 24 * 60
         v.contains("day") -> (number ?: 1) * 24 * 60
-        v.contains("hour") -> (number ?: 1) * 60
+        v.contains("midnight") -> 12 * 60 // "midnight": treat as a partial day
+        v.contains("hour") || v.contains("hr") -> (number ?: 1) * 60
         v.contains("min") -> number ?: 30
-        v.contains("midnight") -> 12 * 60 // "till midnight": treat as a partial day
         else -> 24 * 60
     }
 }
 
 private fun matchesValidityFilter(offer: OfferItem, filter: ValidityFilter): Boolean {
+    if (filter == ValidityFilter.ALL) return true
+    // Prefer the explicit band (HOURLY/DAILY/WEEKLY/MONTHLY) when the offer sets one.
+    if (offer.validityBand.isNotEmpty()) {
+        return offer.validityBand.equals(filter.name, ignoreCase = true)
+    }
     val v = offer.validity.lowercase()
     return when (filter) {
         ValidityFilter.ALL -> true
-        ValidityFilter.HOURLY -> v.contains("hour") || v.contains("min")
+        ValidityFilter.HOURLY -> v.contains("hour") || v.contains("hr")
         ValidityFilter.DAILY -> v.contains("day") || v.contains("24") || v.contains("midnight")
         ValidityFilter.WEEKLY -> v.contains("week") || v.contains("7")
         ValidityFilter.MONTHLY -> v.contains("month") || v.contains("30")

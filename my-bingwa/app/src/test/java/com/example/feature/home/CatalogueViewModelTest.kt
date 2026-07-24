@@ -42,13 +42,13 @@ class CatalogueViewModelTest {
     private fun newViewModel() = CatalogueViewModel(FakeBingwaRepositoryImpl(), clock = fixedClock)
 
     @Test
-    fun `home state exposes popular offers and a highest-weight promotion first`() = runTest(mainDispatcher) {
+    fun `home state exposes favourites and a highest-weight promotion first`() = runTest(mainDispatcher) {
         val vm = newViewModel()
         backgroundScope.launch { vm.homeUiState.collect {} }
         runCurrent()
 
         val state = vm.homeUiState.value
-        assertTrue(state.sections.popular.isNotEmpty())
+        assertTrue(state.sections.favourites.isNotEmpty())
         assertTrue(state.promotions.isNotEmpty())
         assertEquals(
             state.promotions.maxOf { it.priorityWeight },
@@ -62,7 +62,7 @@ class CatalogueViewModelTest {
         backgroundScope.launch { vm.homeUiState.collect {} }
         runCurrent()
 
-        val offer = vm.homeUiState.value.sections.popular.first { !it.isFavourite }
+        val offer = vm.homeUiState.value.sections.suggestions.first { !it.isFavourite }
 
         vm.toggleFavourite(offer)
         runCurrent()

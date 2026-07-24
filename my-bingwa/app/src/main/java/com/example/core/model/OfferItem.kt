@@ -1,7 +1,7 @@
 package com.example.core.model
 
 enum class DailyRule(val displayText: String) {
-    ONCE_PER_DAY("Once per day"),
+    ONCE_PER_DAY("Buy once a day"),
     BUY_AGAIN_TODAY("Buy many times")
 }
 
@@ -29,6 +29,11 @@ data class OfferItem(
     val allowance: String,
     val priceKsh: Int,
     val validity: String,
+    // Which validity band the offer belongs to for the Offers filter:
+    // "Hourly" | "Daily" | "Weekly" | "Monthly". Stored explicitly (not parsed
+    // from the validity string) so filtering is exact. Empty falls back to
+    // parsing the validity string.
+    val validityBand: String = "",
     val category: OfferCategory,
     val dailyRule: DailyRule,
     val purchasePolicy: PurchasePolicy = when (dailyRule) {
