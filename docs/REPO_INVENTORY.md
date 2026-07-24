@@ -19,7 +19,7 @@ conflict.
 | Project type | Native Android, Kotlin, Jetpack Compose + Material 3 |
 | Gradle root | `my-bingwa/` |
 | Modules | Single `:app` module (monolithic) |
-| Gradle wrapper | **Added in Phase 0** — Gradle `9.1.0`, SHA-256 pinned |
+| Gradle wrapper | **Added in Phase 0** — Gradle `9.3.1` (AGP 9.1.1 minimum), SHA-256 pinned |
 | Android Gradle Plugin | `9.1.1` |
 | Kotlin | `2.2.10` |
 | Compose BOM | `2024.09.00` |

@@ -40,7 +40,7 @@ The clean, authoritative build runs in GitHub Actions.
 
 ### Current tooling (imported baseline)
 
-- Gradle **9.1.0** (checked-in wrapper)
+- Gradle **9.3.1** (checked-in wrapper)
 - Android Gradle Plugin **9.1.1**
 - Kotlin **2.2.10**, Jetpack Compose + Material 3
 - `minSdk 24`, `targetSdk 36`, `compileSdk 36`

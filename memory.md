@@ -75,7 +75,7 @@ development. It is not yet a production architecture.
 
 **Recorded build facts (unchanged in Phase 0):**
 
-- Kotlin `2.2.10`, AGP `9.1.1`, Gradle wrapper `9.1.0` (added), Compose BOM
+- Kotlin `2.2.10`, AGP `9.1.1`, Gradle wrapper `9.3.1` (added), Compose BOM
   `2024.09.00`, Material 3.
 - `namespace = com.example` (placeholder), `applicationId =
   com.aistudio.mybingwa.k3p9zq` (AI Studio placeholder — unresolved).
@@ -224,3 +224,30 @@ destinations.
   merge `feature/bootstrap-generated-ui` into `main` and push. If it fails on
   AGP 9.1.1 / `compileSdk 36.1` SDK provisioning, capture the exact error and
   adjust the SDK/AGP setup — do not weaken tests.
+
+### 2026-07-24 22:10 EAT — Phase 0 follow-up: public repo, CI ran, Gradle bumped
+
+- **Objective:** Get a real CI result and a debug APK.
+- **Result:** Progressing. Owner made the repo **public** (Actions now free), so
+  the job ran. First real run **failed at `assembleDebug`** with a precise,
+  fixable cause; applied the fix and re-triggered.
+- **Root cause:** AGP `9.1.1` requires **Gradle ≥ 9.3.1**; the wrapper was pinned
+  to `9.1.0` (AGP version numbers do not map 1:1 to Gradle). Everything else
+  worked: JDK 17, Android SDK provisioning for `compileSdk 36 (minorApiLevel 1)`,
+  Gradle setup, wrapper execution.
+- **Changed:** Bumped wrapper to **Gradle 9.3.1** (`gradle-wrapper.properties`
+  distributionUrl + SHA-256 `b266d5ff…ff06`; wrapper jar re-fetched from the
+  `v9.3.1` tag, PK-valid). Removed the invalid `build-root-directory` input from
+  `gradle/actions/setup-gradle@v4` in the workflow. Synced the Gradle version in
+  `README.md`, `CHANGELOG.md`, `docs/REPO_INVENTORY.md` and the current-state
+  section.
+- **Decisions/assumptions:** Kept AGP `9.1.1` (already current) rather than
+  chasing a newer AGP under time pressure — Gradle 9.3.1 is a current stable and
+  the correct minimal fix. Broader dependency modernisation is Phase 1 work.
+- **Git:** `wazimuautomate/My-Bingwa` is now **public**. Fix committed on
+  `feature/bootstrap-generated-ui`; push auto-triggers CI. `main` still unmerged.
+- **Risks/blockers:** Remaining unknown is whether the `test`/`lint` gate passes
+  (Roborazzi screenshot renders without bundled fonts); the APK is uploaded
+  before that gate regardless.
+- **Next:** Watch the new run; if the APK assembles, merge to `main`; capture any
+  test/lint failure without weakening tests.
