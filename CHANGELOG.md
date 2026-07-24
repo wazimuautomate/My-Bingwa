@@ -12,6 +12,39 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Added
 
+- **Catalogue experience (Phase 3):** real logic for Home, Offers, offer
+  details, search, filters, sorting, favourites, promotions and daily purchase
+  awareness, replacing the demo screens.
+  - `CatalogueViewModel` derives immutable `HomeUiState`/`OffersUiState` from the
+    repository flows (screen-level ViewModel, injectable clock for tests).
+  - `CatalogueLogic` — pure, unit-tested functions for filtering, five sort
+    orders (incl. shortest/longest validity), Nairobi-day daily purchase state,
+    Home section derivation, restrained personalised suggestions and promotion
+    selection.
+  - Home now follows the Plan.md §5.2 order: greeting, search, category
+    shortcuts, one promotion billboard, Popular, Bought today, More offers you
+    can buy, Buy again, Your favourites and a restrained "You might also like".
+  - `PromotionBillboard` — a swipeable advert surface (the "television"): solid
+    brand-colour slides (no gradients), optional bundled artwork, manual-swipe
+    carousel with page indicators (no auto-rotation), and a breathing CTA that
+    respects reduced motion. Rotates the seller's biggest weekly/monthly/
+    high-value offers plus announcements and app updates.
+  - `OfferDetailsSheet` — offer details bottom sheet (allowance, price, validity,
+    daily state, favourite, **Buy bundle**) that hands the purchase to checkout.
+  - Favourite toggle with an **Undo** snackbar on Home and Offers.
+  - Daily purchase awareness presentation: Available today / Bought today /
+    Available again tomorrow / {n} purchases left today / Waiting to verify,
+    per-recipient and per Africa/Nairobi day.
+  - Offers filter sheet now offers category, **price range**, validity and all
+    **five** sort orders; results, query, filters, sort and scroll position are
+    preserved across tab switches.
+  - Loading (skeleton), empty-from-filters, empty-catalogue and offline states
+    for both Home and Offers.
+  - New core models: `Promotion` (+ `PromotionKind`/`PromotionAccent`),
+    `PurchasePolicy` and `OfferDailyState`/`DailyStateKind`.
+  - Repository contract extended with `promotions`, `catalogueLoading`,
+    `setFavourite(id, isFavourite)` and `refreshCatalogue()` (fake pool seeded;
+    Phase 6/7 syncs real data into Room).
 - Bundled brand typefaces: Outfit (variable) and Poppins (Regular/Medium/
   SemiBold/Bold static) under `app/src/main/res/font`, with OFL licences kept in
   `app/licenses/`. Typography now maps every Material 3 role to Outfit/Poppins,
@@ -42,6 +75,11 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Changed
 
+- Offer cards are now pure selection surfaces: the compact full-size **Buy**
+  button was removed (Plan.md §5.3) — tapping a card opens offer details / the
+  purchase sheet. Cards now present calm daily-state labels.
+- Home promotion surface no longer uses a gradient banner; it is the solid
+  brand-colour `PromotionBillboard`.
 - Typography engine switched from the downloadable Google Fonts provider (which
   needed real Google certificates and silently fell back to the system font) to
   the bundled font files.
@@ -54,6 +92,14 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Fixed
 
+- **Bottom-navigation bug:** tapping Home from Offers could get stuck, and
+  tapping Home from Help/Activity could land on Offers. Root cause was mixing
+  plain `navigate()` calls to routes that are also bottom-nav tabs with the
+  save/restore tab state machine, plus popping to `graph.startDestinationId`
+  (which can still be `onboarding`). All jumps to a tab route now use one
+  consistent `popUpTo("home"){ saveState }` + `launchSingleTop` +
+  `restoreState`, guarded against re-navigating the current route; reselecting a
+  tab scrolls its list to the top.
 - Debug build no longer references a non-existent, git-ignored
   `debug.keystore`; it now uses AGP's auto-generated debug signing config, which
   unblocks `assembleDebug` in a clean CI environment.

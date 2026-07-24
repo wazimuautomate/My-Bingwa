@@ -7,6 +7,10 @@ import com.example.core.model.OfferCategory
 import com.example.core.model.OfferItem
 import com.example.core.model.PaymentMethod
 import com.example.core.model.PaymentStatus
+import com.example.core.model.Promotion
+import com.example.core.model.PromotionAccent
+import com.example.core.model.PromotionKind
+import com.example.core.model.PurchasePolicy
 import com.example.core.model.PurchaseRecord
 import com.example.core.model.UserProfile
 import kotlinx.coroutines.delay
@@ -170,11 +174,130 @@ class FakeBingwaRepositoryImpl : BingwaRepository {
             dailyRule = DailyRule.BUY_AGAIN_TODAY,
             commercialLabel = "Best value",
             description = "Combo offer with 500 MB data and 20 voice minutes for 24 hours."
+        ),
+        OfferItem(
+            id = "off_14",
+            name = "3 GB Weekly",
+            allowance = "3 GB",
+            priceKsh = 250,
+            validity = "7 days",
+            category = OfferCategory.DATA,
+            dailyRule = DailyRule.BUY_AGAIN_TODAY,
+            purchasePolicy = PurchasePolicy.MULTIPLE_PER_DAY,
+            commercialLabel = "Popular",
+            isPopular = true,
+            description = "3 GB of fast data valid for a full 7 days. Great for a steady week online."
+        ),
+        OfferItem(
+            id = "off_15",
+            name = "8 GB Monthly",
+            allowance = "8 GB",
+            priceKsh = 1000,
+            validity = "30 days",
+            category = OfferCategory.DATA,
+            dailyRule = DailyRule.BUY_AGAIN_TODAY,
+            purchasePolicy = PurchasePolicy.MULTIPLE_PER_DAY,
+            commercialLabel = "Best value",
+            isPopular = true,
+            description = "8 GB of data valid for 30 days. The best value for heavy monthly browsing."
+        ),
+        OfferItem(
+            id = "off_16",
+            name = "Monthly Mega",
+            allowance = "15 GB + 400 mins",
+            priceKsh = 1500,
+            validity = "30 days",
+            category = OfferCategory.SPECIAL,
+            dailyRule = DailyRule.BUY_AGAIN_TODAY,
+            purchasePolicy = PurchasePolicy.MULTIPLE_PER_DAY,
+            commercialLabel = "Limited offer",
+            description = "15 GB data plus 400 voice minutes valid for 30 days. Everything for the month."
         )
     )
 
     private val _offers = MutableStateFlow(initialOffers)
     override val offers: StateFlow<List<OfferItem>> = _offers.asStateFlow()
+
+    // The catalogue is cached, so the first load resolves immediately. The flag
+    // still exists so Home/Offers can show skeletons on a cold, empty cache and
+    // so Phase 6/7 can drive it from a real Room-then-network refresh.
+    private val _catalogueLoading = MutableStateFlow(false)
+    override val catalogueLoading: StateFlow<Boolean> = _catalogueLoading.asStateFlow()
+
+    // Billboard promotions pool. In version 1 this is seeded here; Phase 6/7 syncs
+    // it from the backend into Room (Plan.md §5.13). Slides lead with the seller's
+    // biggest offers (weekly/monthly/high-value) plus announcements and app news.
+    // No gradients: each slide paints a single brand colour (see PromotionAccent).
+    private val initialPromotions = listOf(
+        Promotion(
+            id = "promo_monthly_mega",
+            kind = PromotionKind.OFFER,
+            tag = "HOT DEAL",
+            headline = "15 GB + 400 mins",
+            subhead = "Monthly Mega · everything you need for KSh 1,500",
+            ctaLabel = "Buy now",
+            accent = PromotionAccent.GREEN,
+            linkedOfferId = "off_16",
+            priorityWeight = 100
+        ),
+        Promotion(
+            id = "promo_8gb_month",
+            kind = PromotionKind.OFFER,
+            tag = "BEST VALUE",
+            headline = "8 GB for KSh 1,000",
+            subhead = "Valid 30 days · the calmest way to stay online all month",
+            ctaLabel = "Buy now",
+            accent = PromotionAccent.NAVY,
+            linkedOfferId = "off_15",
+            priorityWeight = 90
+        ),
+        Promotion(
+            id = "promo_3gb_week",
+            kind = PromotionKind.OFFER,
+            tag = "POPULAR",
+            headline = "3 GB Weekly",
+            subhead = "A full week of data for KSh 250",
+            ctaLabel = "Buy now",
+            accent = PromotionAccent.BLUE,
+            linkedOfferId = "off_14",
+            priorityWeight = 70
+        ),
+        Promotion(
+            id = "promo_weekend_mix",
+            kind = PromotionKind.OFFER,
+            tag = "LIMITED",
+            headline = "Weekend Mix",
+            subhead = "2 GB + 50 SMS for KSh 99 — this weekend only",
+            ctaLabel = "Buy now",
+            accent = PromotionAccent.ORANGE,
+            linkedOfferId = "off_12",
+            priorityWeight = 60
+        ),
+        Promotion(
+            id = "promo_data_browse",
+            kind = PromotionKind.ANNOUNCEMENT,
+            tag = "BROWSE",
+            headline = "All data bundles",
+            subhead = "From hourly to monthly — find the one that fits today",
+            ctaLabel = "See offers",
+            accent = PromotionAccent.BLUE,
+            linkedCategory = OfferCategory.DATA,
+            priorityWeight = 30
+        ),
+        Promotion(
+            id = "promo_app_update",
+            kind = PromotionKind.UPDATE,
+            tag = "WHAT'S NEW",
+            headline = "Smoother My Bingwa",
+            subhead = "Faster Home, clearer offers and a fresh promotions board",
+            ctaLabel = "Got it",
+            accent = PromotionAccent.NAVY,
+            priorityWeight = 20
+        )
+    )
+
+    private val _promotions = MutableStateFlow(initialPromotions)
+    override val promotions: StateFlow<List<Promotion>> = _promotions.asStateFlow()
 
     private val _filterState = MutableStateFlow(OfferFilterState())
     override val filterState: StateFlow<OfferFilterState> = _filterState.asStateFlow()
@@ -293,6 +416,28 @@ class FakeBingwaRepositoryImpl : BingwaRepository {
                 if (offer.id == offerId) offer.copy(isFavourite = !offer.isFavourite) else offer
             }
         }
+    }
+
+    override fun setFavourite(offerId: String, isFavourite: Boolean) {
+        _offers.update { list ->
+            list.map { offer ->
+                if (offer.id == offerId) offer.copy(isFavourite = isFavourite) else offer
+            }
+        }
+    }
+
+    override suspend fun refreshCatalogue() {
+        _catalogueLoading.value = true
+        delay(400) // Simulate a cached-first read; the cache is already warm.
+        _offers.value = initialOffers.map { fresh ->
+            // Preserve the customer's local favourite/bought-today state across a refresh.
+            val current = _offers.value.find { it.id == fresh.id }
+            if (current != null) fresh.copy(
+                isFavourite = current.isFavourite,
+                isBoughtToday = current.isBoughtToday
+            ) else fresh
+        }
+        _catalogueLoading.value = false
     }
 
     override fun setDevStkOutcome(outcome: DevStkOutcome) {

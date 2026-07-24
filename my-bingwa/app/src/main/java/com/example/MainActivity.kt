@@ -1,15 +1,16 @@
 package com.example
 
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -19,20 +20,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.core.model.AppThemeSetting
-import com.example.core.model.OfferCategory
 import com.example.core.model.OfferItem
-import com.example.core.model.PurchaseRecord
-import com.example.core.ui.BottomNavDestination
+import com.example.core.model.Promotion
+import com.example.core.model.PromotionKind
 import com.example.core.ui.MyBingwaBottomNav
+import com.example.data.fake.BingwaRepository
 import com.example.data.fake.FakeBingwaRepositoryImpl
 import com.example.feature.activity.ActivityScreen
 import com.example.feature.help.HelpScreen
+import com.example.feature.home.CatalogueViewModel
 import com.example.feature.home.HomeScreen
+import com.example.feature.home.OfferDetailsSheet
+import com.example.feature.home.dailyStateFor
 import com.example.feature.notifications.NotificationsScreen
 import com.example.feature.offers.OffersScreen
 import com.example.feature.onboarding.OnboardingScreen
@@ -53,9 +61,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            val userProfile by repository.userProfile.collectAsState()
             val appTheme by repository.appTheme.collectAsState()
             val isOffline by repository.isOffline.collectAsState()
+            val userProfile by repository.userProfile.collectAsState()
 
             val darkTheme = when (appTheme) {
                 AppThemeSetting.SYSTEM -> isSystemInDarkTheme()
@@ -75,29 +83,74 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MyBingwaApp(
-    repository: FakeBingwaRepositoryImpl,
+    repository: BingwaRepository,
     startOnboarding: Boolean
 ) {
     val navController = rememberNavController()
-    val coroutineScope = rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // Reduced-motion proxy: honour the device animator-duration-scale = 0 setting
+    // (design.md §11 "Respect Android reduced-motion settings").
+    val reducedMotion = remember {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }
+
+    val catalogueViewModel: CatalogueViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                CatalogueViewModel(repository) as T
+        }
+    )
+
+    val homeUiState by catalogueViewModel.homeUiState.collectAsState()
+    val offersUiState by catalogueViewModel.offersUiState.collectAsState()
 
     val userProfile by repository.userProfile.collectAsState()
     val appTheme by repository.appTheme.collectAsState()
     val isOffline by repository.isOffline.collectAsState()
     val offers by repository.offers.collectAsState()
-    val filterState by repository.filterState.collectAsState()
     val purchases by repository.purchases.collectAsState()
     val notifications by repository.notifications.collectAsState()
     val recentRecipients by repository.recentRecipients.collectAsState()
+
+    // Hoisted so list position and filters survive tab switches (design.md §14.4).
+    val homeListState = rememberLazyListState()
+    val offersListState = rememberLazyListState()
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: if (startOnboarding) "onboarding" else "home"
 
     var activeOfferForPurchase by remember { mutableStateOf<OfferItem?>(null) }
+    var detailsOffer by remember { mutableStateOf<OfferItem?>(null) }
     var prefilledReportRef by remember { mutableStateOf<String?>(null) }
 
-    // Routes where bottom nav should be visible
     val showBottomBar = currentRoute in listOf("home", "offers", "activity", "help", "settings")
+
+    // Resolve details/purchase offers against the live catalogue so favourite
+    // toggles inside a sheet stay reflected.
+    fun liveOffer(offer: OfferItem): OfferItem = offers.find { it.id == offer.id } ?: offer
+
+    val onUndoFavourite: (String) -> Unit = { id -> repository.setFavourite(id, true) }
+
+    val onPromotionAction: (Promotion) -> Unit = { promo ->
+        when (promo.kind) {
+            PromotionKind.OFFER -> {
+                val target = promo.linkedOfferId?.let { id -> offers.find { it.id == id } }
+                if (target != null) detailsOffer = target
+            }
+            PromotionKind.ANNOUNCEMENT -> {
+                promo.linkedCategory?.let { repository.setCategoryFilter(it) }
+                navController.navigate("offers") {
+                    popUpTo("home") { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+            PromotionKind.UPDATE -> navController.navigate("notifications")
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -105,10 +158,24 @@ fun MyBingwaApp(
                 MyBingwaBottomNav(
                     currentRoute = currentRoute,
                     onNavigate = { dest ->
-                        navController.navigate(dest.route) {
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
+                        if (currentRoute != dest.route) {
+                            navController.navigate(dest.route) {
+                                // Pop back to the real Home root (not graph.startDestination,
+                                // which may still be "onboarding" this session and would
+                                // silently break Home navigation). Save/restore each tab's
+                                // state so filters and scroll are preserved.
+                                popUpTo("home") { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        } else {
+                            // Reselecting the active tab returns it to the top (design.md §12.2).
+                            scope.launch {
+                                when (dest.route) {
+                                    "home" -> homeListState.animateScrollToItem(0)
+                                    "offers" -> offersListState.animateScrollToItem(0)
+                                }
+                            }
                         }
                     }
                 )
@@ -139,36 +206,45 @@ fun MyBingwaApp(
 
                 composable("home") {
                     HomeScreen(
-                        profile = userProfile,
-                        isOffline = isOffline,
+                        state = homeUiState,
                         unreadNotifCount = notifications.count { !it.isRead },
-                        offers = offers,
-                        recentPurchases = purchases,
+                        reducedMotion = reducedMotion,
+                        listState = homeListState,
                         onCategoryClick = { cat ->
                             repository.setCategoryFilter(cat)
-                            navController.navigate("offers")
+                            navController.navigate("offers") {
+                                popUpTo("home") { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
                         },
-                        onOfferSelect = { offer -> activeOfferForPurchase = offer },
-                        onOfferBuy = { offer -> activeOfferForPurchase = offer },
-                        onFavouriteToggle = { offer -> repository.toggleFavourite(offer.id) },
+                        onOfferSelect = { offer -> detailsOffer = offer },
+                        onFavouriteToggle = { offer -> repository.setFavourite(offer.id, !offer.isFavourite) },
+                        onUndoFavourite = onUndoFavourite,
+                        onPromotionAction = onPromotionAction,
                         onNotifClick = { navController.navigate("notifications") },
                         onProfileClick = { navController.navigate("settings") },
-                        onSearchClick = { navController.navigate("offers") }
+                        onSearchClick = {
+                            navController.navigate("offers") {
+                                popUpTo("home") { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
                     )
                 }
 
                 composable("offers") {
                     OffersScreen(
-                        offers = offers,
-                        filterState = filterState,
-                        isOffline = isOffline,
+                        state = offersUiState,
+                        listState = offersListState,
                         onSearchQueryChange = { repository.setSearchQuery(it) },
                         onCategorySelect = { repository.setCategoryFilter(it) },
                         onFilterStateChange = { repository.setFilterState(it) },
                         onClearFilters = { repository.clearFilters() },
-                        onOfferSelect = { offer -> activeOfferForPurchase = offer },
-                        onOfferBuy = { offer -> activeOfferForPurchase = offer },
-                        onFavouriteToggle = { offer -> repository.toggleFavourite(offer.id) }
+                        onOfferSelect = { offer -> detailsOffer = offer },
+                        onFavouriteToggle = { offer -> repository.setFavourite(offer.id, !offer.isFavourite) },
+                        onUndoFavourite = onUndoFavourite
                     )
                 }
 
@@ -179,7 +255,13 @@ fun MyBingwaApp(
                         onDeleteRecord = { id -> repository.deletePurchaseRecord(id) },
                         onDeleteRecords = { ids -> repository.deletePurchaseRecords(ids) },
                         onUndoDelete = { rec -> repository.undoDeletePurchaseRecord(rec) },
-                        onBrowseOffers = { navController.navigate("offers") },
+                        onBrowseOffers = {
+                            navController.navigate("offers") {
+                                popUpTo("home") { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                         onReportProblem = { rec ->
                             prefilledReportRef = rec.mpesaCode
                             navController.navigate("help")
@@ -221,23 +303,41 @@ fun MyBingwaApp(
                 }
             }
 
-            // Fast Purchase Flow Bottom Sheet Overlay
-            activeOfferForPurchase?.let { offer ->
+            // Offer details sheet — opens from any offer card / promotion, hands
+            // the actual purchase to the checkout sheet.
+            detailsOffer?.let { snapshot ->
+                val offer = liveOffer(snapshot)
+                OfferDetailsSheet(
+                    offer = offer,
+                    dailyState = dailyStateFor(offer, purchases, userProfile.primaryNumber, System.currentTimeMillis()),
+                    isOffline = isOffline,
+                    onBuy = {
+                        detailsOffer = null
+                        activeOfferForPurchase = offer
+                    },
+                    onToggleFavourite = { repository.setFavourite(offer.id, !offer.isFavourite) },
+                    onDismiss = { detailsOffer = null }
+                )
+            }
+
+            // Purchase flow bottom sheet overlay (Phase 4 owns the state machine).
+            activeOfferForPurchase?.let { snapshot ->
+                val offer = liveOffer(snapshot)
                 PurchaseBottomSheet(
                     offer = offer,
                     userPrimaryNumber = userProfile.primaryNumber,
                     recentRecipients = recentRecipients,
                     isOffline = isOffline,
-                    onExecuteStkPush = { off, rec, pay ->
-                        repository.executeMpesaStkPush(off, rec, pay)
-                    },
-                    onExecuteOfflinePayment = { off, rec, pay, till ->
-                        repository.executeOfflinePayment(off, rec, pay, till)
-                    },
+                    onExecuteStkPush = { off, rec, pay -> repository.executeMpesaStkPush(off, rec, pay) },
+                    onExecuteOfflinePayment = { off, rec, pay, till -> repository.executeOfflinePayment(off, rec, pay, till) },
                     onDismiss = { activeOfferForPurchase = null },
                     onViewActivity = {
                         activeOfferForPurchase = null
-                        navController.navigate("activity")
+                        navController.navigate("activity") {
+                            popUpTo("home") { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
                 )
             }
