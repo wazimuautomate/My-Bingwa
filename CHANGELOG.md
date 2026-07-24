@@ -60,6 +60,9 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 - Corrected `ExampleRobolectricTest` to expect the real app name "My Bingwa"
   (was the template default "My Application"), so the unit-test gate passes
   truthfully.
+- Pinned `ExampleRobolectricTest` to `@Config(sdk = [34])`; Robolectric 4.16.1
+  has no SDK 36 sandbox and threw `UnsupportedOperationException`, failing the
+  test gate the first time CI reached it (after the KSP crash was removed).
 
 ### Removed
 
