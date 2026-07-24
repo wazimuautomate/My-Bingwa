@@ -59,7 +59,7 @@ val DarkError = Color(0xFFFFB4AB)
 val DarkErrorContainer = Color(0xFF93000A)
 val DarkScrim = Color(0xB8000000)
 
-// Category Accents
+// Category Accents — light theme (design.md §7.3)
 val DataCategoryBlue = Color(0xFF3BA9FF)
 val DataCategoryContainer = Color(0xFFE2F1FF)
 
@@ -73,3 +73,11 @@ val SmsCategoryDarkContent = Color(0xFF381E72)
 val SpecialCategoryOrange = Color(0xFFFF8A00)
 val SpecialCategoryContainer = Color(0xFFFFF0DC)
 val SpecialCategoryDarkContent = Color(0xFF683800)
+
+// Category accents — dark theme (designed, not inverted). Containers are a
+// faint tint of the accent over the dark surface; on-container is a light tint
+// of the accent so chip text and icons stay legible on dark.
+val DataCategoryOnDark = Color(0xFF9AD2FF)
+val MinutesCategoryOnDark = Color(0xFF7EE6A2)
+val SmsCategoryOnDark = Color(0xFFCFC4FF)
+val SpecialCategoryOnDark = Color(0xFFFFC98A)

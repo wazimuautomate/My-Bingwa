@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launch splash background — brand app canvas (dark). -->
+    <color name="splash_background">#FF0E1512</color>
+</resources>

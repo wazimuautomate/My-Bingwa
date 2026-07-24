@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -45,6 +46,9 @@ class MainActivity : ComponentActivity() {
     private val repository = FakeBingwaRepositoryImpl()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Install the system splash before super/setContent so the branded
+        // launch mark shows on cold start, then hands off to the app theme.
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
