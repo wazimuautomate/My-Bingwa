@@ -485,3 +485,29 @@ destinations.
   watch GitHub Actions; fix any compile error on-branch without weakening tests;
   hand off to the integration coordinator with the nav-fix note. For full advert
   media, add Coil + a promo image/gif host (business input) later.
+
+### 2026-07-24 23:55 EAT — Phase 3 follow-up: CI green, debug APK produced
+
+- **Objective:** Get an authoritative build/test result for the Phase 3 branch.
+- **Result:** **Green.** First push (`340026c`) failed `compileDebugKotlin` with
+  import-only errors: `OfferDetailsSheet`/`CatalogueViewModel` referenced
+  `OfferDailyState`/`DailyStateKind` without importing them (the types moved to
+  `core.model`), and `PromotionBillboard` used `by animateDpAsState/animateFloatAsState`
+  without `androidx.compose.runtime.getValue`. Fixed in `67a8290` (imports only,
+  no behaviour change). Re-run **passed every gate**: assembleDebug + debug-APK
+  upload + unit tests (`CatalogueLogicTest`, `CatalogueViewModelTest`, and the
+  three Robolectric Compose tests) + lint.
+- **Verification:** GitHub Actions "Feature debug build" run `30118626852` on
+  `feature/catalogue-experience` @ `67a8290` = success (2m42s). All Phase 3 tests
+  ran and passed on the runner. Not yet installed on a physical phone.
+- **Git:** `feature/catalogue-experience` green at `67a8290`, pushed. `main`
+  untouched (coordinator owns it).
+- **Artifact:** `my-bingwa-debug-67a8290` (18 MB, under the 30 MB target) →
+  `My-Bingwa-Debug-67a8290.apk` (debug, versionName 1.0 / versionCode 1).
+  Workflow "Feature debug build", run `30118626852`.
+- **Risks/blockers:** Physical-phone acceptance pending (fonts, billboard swipe +
+  breathing CTA, light/dark, 200% text, reduced motion, nav Home-from-Offers).
+  Animated-GIF/remote promo media still needs Coil + a media host (unchanged).
+- **Next:** Install `My-Bingwa-Debug-67a8290.apk` on the phone and verify the
+  nav fix + billboard + personalisation; then the integration coordinator merges
+  `feature/catalogue-experience` (note the intentional MainActivity nav change).
