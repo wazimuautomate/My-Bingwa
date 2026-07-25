@@ -1,0 +1,71 @@
+package com.example.data.persistence
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import com.example.core.model.NotificationItem
+import com.example.core.model.PurchaseRecord
+import com.example.core.model.UserProfile
+import com.example.data.payment.ActiveOrder
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.flow.first
+
+/**
+ * The customer's installation-local state, serialised as one JSON document under a
+ * single Preferences DataStore key.
+ *
+ * This is the real replacement for the old "everything lives in memory and resets on
+ * restart" behaviour: name, profile, favourites, Activity (purchases), notifications,
+ * recent recipients and any in-flight order now survive process death — exactly what
+ * CLAUDE.md §2 means by "Name, profile, Activity and favourites are local to the
+ * installation". No network, no account, no cloud sync; strictly on-device.
+ *
+ * Serialisation is Moshi reflection (already used by the payment layer) so it needs
+ * no codegen/KSP. The whole document is small (a few purchases + notifications), so a
+ * full rewrite per change is cheap and avoids a partial-write inconsistency.
+ */
+private val Context.localDataStore: DataStore<Preferences> by preferencesDataStore(name = "mybingwa_local")
+
+/**
+ * A plain, serialisable snapshot of the persisted installation state. [initialized]
+ * distinguishes "never saved on this device" (fresh install → keep seeded demo data)
+ * from "saved, and legitimately empty" (e.g. after Clear local data).
+ */
+data class PersistedState(
+    val profile: UserProfile? = null,
+    val theme: String? = null,
+    val favouriteIds: List<String> = emptyList(),
+    val boughtTodayIds: List<String> = emptyList(),
+    val purchases: List<PurchaseRecord> = emptyList(),
+    val notifications: List<NotificationItem> = emptyList(),
+    val recentRecipients: List<String> = emptyList(),
+    val activeOrder: ActiveOrder? = null,
+    val initialized: Boolean = false
+)
+
+class LocalStore(private val context: Context) {
+
+    private val moshi: Moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+    private val adapter = moshi.adapter(PersistedState::class.java)
+
+    /** Reads the saved snapshot, or null when nothing has ever been saved / it is unreadable. */
+    suspend fun load(): PersistedState? {
+        val prefs = context.localDataStore.data.first()
+        val json = prefs[STATE_KEY] ?: return null
+        return runCatching { adapter.fromJson(json) }.getOrNull()
+    }
+
+    /** Overwrites the saved snapshot. [PersistedState.initialized] is forced true. */
+    suspend fun save(state: PersistedState) {
+        val json = adapter.toJson(state.copy(initialized = true))
+        context.localDataStore.edit { it[STATE_KEY] = json }
+    }
+
+    private companion object {
+        val STATE_KEY = stringPreferencesKey("state_json")
+    }
+}

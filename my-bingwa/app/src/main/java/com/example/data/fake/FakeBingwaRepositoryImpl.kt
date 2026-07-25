@@ -31,38 +31,54 @@ import com.example.data.payment.PaymentTransportException
 import com.example.data.payment.SimulatedPaymentGateway
 import com.example.data.payment.StkPushRequest
 import com.example.data.payment.StkStatusQuery
+import com.example.data.persistence.LocalStore
+import com.example.data.persistence.PersistedState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
- * In-memory app-readable data source. [gateway] handles online M-Pesa (real backend
- * proxy in a configured build, a labelled simulation otherwise); [configProvider]
- * supplies the signed offline Till/Paybill config. When no gateway is injected, a
- * dev [SimulatedPaymentGateway] is wired to [devStkOutcome] so every result screen
- * can be exercised on a phone.
+ * App-readable data source. State lives in [MutableStateFlow]s and — when a
+ * [localStore] is injected (the running app always injects one) — is loaded from and
+ * saved to on-device persistence, so name, profile, favourites, Activity,
+ * notifications and any in-flight order survive process death. Unit tests inject no
+ * store and run purely in memory.
+ *
+ * [gateway] handles online M-Pesa (real backend proxy in a configured build).
+ * [fallbackGateway] is used when no backend is configured — a labelled simulation in
+ * debug, or an honest-failing [UnavailablePaymentGateway] in release so a
+ * misconfigured production build never fabricates a success. [configProvider] supplies
+ * the offline Till/Paybill config.
  */
 class FakeBingwaRepositoryImpl(
     gateway: PaymentGateway? = null,
+    fallbackGateway: PaymentGateway? = null,
     private val configProvider: OfflinePaymentConfigProvider = CachedOfflineConfigProvider(),
     private val configSource: RemoteConfigSource? = null,
-    private val catalogueSource: RemoteCatalogueSource? = null
+    private val catalogueSource: RemoteCatalogueSource? = null,
+    private val localStore: LocalStore? = null
 ) : BingwaRepository {
 
-    // Buy-for-myself gateway: the real backend proxy when configured, otherwise a
-    // dev simulation wired to the DevStkOutcome switch.
-    private val selfGateway: PaymentGateway = gateway ?: SimulatedPaymentGateway(
+    // Fallback used when no real backend is configured. MainActivity injects a
+    // labelled simulation for debug builds and an UnavailablePaymentGateway for
+    // release (which fails honestly rather than faking a success). With no injection
+    // (unit tests) it defaults to a dev simulation wired to the DevStkOutcome switch.
+    private val fallback: PaymentGateway = fallbackGateway ?: SimulatedPaymentGateway(
         terminalOutcome = { devOutcomeToState(_devStkOutcome.value) }
     )
 
-    // Buy-for-another stays mocked in this phase (product decision), so it always
-    // uses a simulation even once the backend base URL is set for self-purchases.
-    private val anotherNumberGateway: PaymentGateway = SimulatedPaymentGateway(
-        terminalOutcome = { devOutcomeToState(_devStkOutcome.value) }
-    )
+    // Both routes use the real backend gateway when one is configured. Buy-for-another
+    // is no longer permanently mocked: it goes through the same gateway, and the
+    // request's forSelf=false tells the backend to use the Paybill + recipient route.
+    private val selfGateway: PaymentGateway = gateway ?: fallback
+    private val anotherNumberGateway: PaymentGateway = gateway ?: fallback
 
     private val defaultProfile = UserProfile(
         name = "Bonke",
@@ -305,16 +321,110 @@ class FakeBingwaRepositoryImpl(
     private val _appConfig = MutableStateFlow(configSource?.cached() ?: AppConfig.DEFAULT)
     override val appConfig: StateFlow<AppConfig> = _appConfig.asStateFlow()
 
+    // --- Real on-device persistence (installation-local; no cloud/account) ---------
+    // When a LocalStore is injected, state is loaded from disk on start and every
+    // mutation re-saves the whole (small) snapshot, so name, profile, favourites,
+    // Activity, notifications and any in-flight order survive process death. Unit
+    // tests inject no store and behave exactly as the old in-memory repository.
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val saveTick = MutableStateFlow(0L)
+
+    init {
+        val store = localStore
+        if (store != null) {
+            ioScope.launch {
+                restoreFromDisk(store)
+                // Persist on every subsequent mutation (StateFlow conflates bursts).
+                saveTick.collect { store.save(currentSnapshot()) }
+            }
+        }
+    }
+
+    private suspend fun restoreFromDisk(store: LocalStore) {
+        val s = store.load() ?: return
+        // A never-saved device keeps the seeded demo content; only override once the
+        // customer has real saved state (also lets Clear local data persist as empty).
+        if (!s.initialized) return
+        s.profile?.let { _userProfile.value = it }
+        s.theme?.let { name ->
+            runCatching { AppThemeSetting.valueOf(name) }.getOrNull()?.let { _appTheme.value = it }
+        }
+        _purchases.value = s.purchases
+        _notifications.value = s.notifications
+        _recentRecipients.value = s.recentRecipients
+        val favs = s.favouriteIds.toSet()
+        val bought = s.boughtTodayIds.toSet()
+        _offers.update { list ->
+            list.map { it.copy(isFavourite = favs.contains(it.id), isBoughtToday = bought.contains(it.id)) }
+        }
+        // Safe process-death payment restore: an order still in-flight when the app
+        // died is settled to an honest "Waiting to verify" — never silently lost and
+        // never re-charged — so the customer can follow it up in Activity.
+        s.activeOrder?.let { restoreUnfinishedOrder(it) }
+    }
+
+    private fun restoreUnfinishedOrder(order: ActiveOrder) {
+        _activeOrder.value = null
+        // Idempotent: if it already produced a record, do nothing.
+        if (_purchases.value.any { it.clientRequestId == order.clientRequestId }) return
+        val record = PurchaseRecord(
+            id = "pur_" + UUID.randomUUID().toString().take(8),
+            offerId = order.offerId,
+            offerName = order.offerName,
+            allowance = order.offerName,
+            priceKsh = order.priceKsh,
+            recipientNumber = order.recipientNumber,
+            payerNumber = order.payerNumber,
+            mpesaCode = "-",
+            timestampMillis = System.currentTimeMillis(),
+            status = PaymentStatus.WAITING_VERIFY,
+            paymentMethod = PaymentMethod.STK_PUSH,
+            clientRequestId = order.clientRequestId,
+            orderReference = order.orderReference ?: ""
+        )
+        _purchases.update { listOf(record) + it }
+    }
+
+    private fun currentSnapshot(): PersistedState = PersistedState(
+        profile = _userProfile.value,
+        theme = _appTheme.value.name,
+        favouriteIds = _offers.value.filter { it.isFavourite }.map { it.id },
+        boughtTodayIds = _offers.value.filter { it.isBoughtToday }.map { it.id },
+        purchases = _purchases.value,
+        notifications = _notifications.value,
+        recentRecipients = _recentRecipients.value,
+        activeOrder = _activeOrder.value,
+        initialized = true
+    )
+
+    /** Signal a save of the current snapshot (no-op when persistence is disabled). */
+    private fun persist() {
+        if (localStore != null) saveTick.value = saveTick.value + 1
+    }
+
     override fun updateProfile(name: String, primaryNumber: String) {
         _userProfile.update { it.copy(name = name, primaryNumber = primaryNumber) }
+        persist()
+    }
+
+    override fun setNotificationsEnabled(enabled: Boolean) {
+        _userProfile.update { it.copy(notificationsEnabled = enabled) }
+        persist()
+    }
+
+    override fun setSmsAlertsEnabled(enabled: Boolean) {
+        _userProfile.update { it.copy(smsAlertsEnabled = enabled) }
+        persist()
     }
 
     override fun setOnboardingCompleted(completed: Boolean) {
         _userProfile.update { it.copy(isOnboardingCompleted = completed) }
+        persist()
     }
 
     override fun setAppTheme(theme: AppThemeSetting) {
         _appTheme.value = theme
+        persist()
     }
 
     override fun toggleOfflineMode() {
@@ -347,6 +457,7 @@ class FakeBingwaRepositoryImpl(
                 if (offer.id == offerId) offer.copy(isFavourite = !offer.isFavourite) else offer
             }
         }
+        persist()
     }
 
     override fun setFavourite(offerId: String, isFavourite: Boolean) {
@@ -355,6 +466,7 @@ class FakeBingwaRepositoryImpl(
                 if (offer.id == offerId) offer.copy(isFavourite = isFavourite) else offer
             }
         }
+        persist()
     }
 
     override suspend fun refreshCatalogue() {
@@ -413,16 +525,19 @@ class FakeBingwaRepositoryImpl(
             priceKsh = offer.priceKsh,
             recipientNumber = recipientNumber,
             payerNumber = payerNumber,
-            isForSelf = recipientNumber == payerNumber,
+            isForSelf = isForSelf,
             state = PaymentTxnState.DRAFT
         )
+        // Persist the in-flight order so a process death mid-payment can be restored.
+        persist()
 
         val request = StkPushRequest(
             offerId = offer.id,
             amountKsh = offer.priceKsh,
             payerMsisdn = payerMsisdn,
             recipientMsisdn = recipientMsisdn,
-            clientRequestId = clientRequestId
+            clientRequestId = clientRequestId,
+            forSelf = isForSelf
         )
 
         var result = try {
@@ -537,6 +652,7 @@ class FakeBingwaRepositoryImpl(
         if (recipientNumber.isNotBlank() && !_recentRecipients.value.contains(recipientNumber)) {
             _recentRecipients.update { listOf(recipientNumber) + it }
         }
+        persist()
         return record
     }
 
@@ -565,18 +681,22 @@ class FakeBingwaRepositoryImpl(
 
     override fun clearActiveOrder() {
         _activeOrder.value = null
+        persist()
     }
 
     override fun deletePurchaseRecord(recordId: String) {
         _purchases.update { list -> list.filterNot { it.id == recordId } }
+        persist()
     }
 
     override fun deletePurchaseRecords(recordIds: List<String>) {
         _purchases.update { list -> list.filterNot { recordIds.contains(it.id) } }
+        persist()
     }
 
     override fun undoDeletePurchaseRecord(record: PurchaseRecord) {
         _purchases.update { listOf(record) + it }
+        persist()
     }
 
     override fun setConnectionState(state: ConnectionState) {
@@ -601,6 +721,7 @@ class FakeBingwaRepositoryImpl(
                 server
             }
         }
+        persist()
     }
 
     override fun onBundleDeliveryDetected(category: OfferCategory) {
@@ -630,6 +751,7 @@ class FakeBingwaRepositoryImpl(
             deepLinkRoute = "activity"
         )
         _notifications.update { listOf(newNotif) + it }
+        persist()
     }
 
     override fun onLowBalanceDetected(category: OfferCategory) {
@@ -645,6 +767,7 @@ class FakeBingwaRepositoryImpl(
             deepLinkRoute = "offers"
         )
         _notifications.update { listOf(newNotif) + it }
+        persist()
     }
 
     /**
@@ -676,18 +799,22 @@ class FakeBingwaRepositoryImpl(
         _notifications.update { list ->
             list.map { if (it.id == id) it.copy(isRead = true) else it }
         }
+        persist()
     }
 
     override fun markAllNotificationsRead() {
         _notifications.update { list -> list.map { it.copy(isRead = true) } }
+        persist()
     }
 
     override fun deleteNotification(id: String) {
         _notifications.update { list -> list.filterNot { it.id == id } }
+        persist()
     }
 
     override fun clearAllNotifications() {
         _notifications.value = emptyList()
+        persist()
     }
 
     override fun clearAllLocalData() {
@@ -697,6 +824,7 @@ class FakeBingwaRepositoryImpl(
         _notifications.value = emptyList()
         _recentRecipients.value = emptyList()
         _activeOrder.value = null
+        persist()
     }
 
     private companion object {

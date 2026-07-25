@@ -32,7 +32,9 @@ data class StkRequestDto(
     @Json(name = "amountKsh") val amountKsh: Int,
     @Json(name = "payerMsisdn") val payerMsisdn: String,
     @Json(name = "recipientMsisdn") val recipientMsisdn: String,
-    @Json(name = "clientRequestId") val clientRequestId: String
+    @Json(name = "clientRequestId") val clientRequestId: String,
+    /** Till/Buy-Goods route when true; Paybill + recipient account when false. */
+    @Json(name = "forSelf") val forSelf: Boolean = true
 )
 
 data class StkResponseDto(

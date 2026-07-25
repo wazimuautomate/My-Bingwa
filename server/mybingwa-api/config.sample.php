@@ -38,11 +38,43 @@ return [
     'party_b' => 'PUT_TILL_NUMBER',
 
     // 'CustomerBuyGoodsOnline' for a Till, 'CustomerPayBillOnline' for a Paybill.
+    // This is the SELF / buy-for-myself route (Till). Buy-for-another always uses
+    // 'CustomerPayBillOnline' regardless of this value (see paybill_shortcode below).
     'transaction_type' => 'CustomerBuyGoodsOnline',
 
+    // ---- Buy-for-another (Paybill) route ----------------------------------
+    // When the app sends forSelf=false (route "another"), the STK is sent as a
+    // Paybill payment and the AccountReference is the bundle recipient's number.
+    // paybill_shortcode is the Paybill number used BOTH as BusinessShortCode and
+    // in the STK password. If omitted, it falls back to business_shortcode above.
+    'paybill_shortcode' => 'PUT_PAYBILL_SHORTCODE',
+    // Optional: a separate passkey for the Paybill product. If omitted, the Till
+    // 'passkey' above is reused. Only set this if Daraja gave you a distinct one.
+    'paybill_passkey' => 'PUT_PAYBILL_PASSKEY_OPTIONAL',
+
+    // ---- Daraja callback (result webhook) authenticity --------------------
+    // Daraja cannot send a custom header, so callback.php is protected by a
+    // shared-secret token in its URL: callback.php?token=<callback_secret>.
+    // A POST without the correct token (or from a disallowed IP) is acked but
+    // IGNORED — this is what stops attackers spoofing a "paid" result.
+    // Use a long random string. It MUST match the ?token=... in callback_url.
+    'callback_secret' => 'PUT_A_LONG_RANDOM_CALLBACK_TOKEN',
+
+    // Optional Safaricom source-IP allowlist. Empty array = allow all IPs.
+    // To lock down, list Daraja's callback egress IPs, e.g.
+    //   'callback_ip_allowlist' => ['196.201.214.200', '196.201.214.206'],
+    'callback_ip_allowlist' => [],
+
+    // Optional: if a proxy/CDN you CONTROL fronts this server, name the PHP
+    // $_SERVER key that carries the real client IP (e.g. 'HTTP_X_FORWARDED_FOR').
+    // Leave '' when Daraja hits this server directly — otherwise it is spoofable.
+    'trusted_proxy_header' => '',
+
     // Public HTTPS URL where Daraja posts the result. Must be THIS server's
-    // callback.php, e.g. https://mybingwa.blazetechscope.com/callback.php
-    'callback_url' => 'https://PUT_YOUR_DOMAIN/callback.php',
+    // callback.php AND MUST include the secret token, and must be exactly the URL
+    // you register in the Daraja portal, e.g.
+    //   https://mybingwa.blazetechscope.com/callback.php?token=PUT_A_LONG_RANDOM_CALLBACK_TOKEN
+    'callback_url' => 'https://PUT_YOUR_DOMAIN/callback.php?token=PUT_A_LONG_RANDOM_CALLBACK_TOKEN',
 
     // ---- Admin panel login (admin/ folder) --------------------------------
     // Used to sign in to the offers/settings/templates manager. Change these.

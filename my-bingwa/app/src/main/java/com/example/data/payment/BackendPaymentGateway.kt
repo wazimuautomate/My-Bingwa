@@ -33,7 +33,8 @@ class BackendPaymentGateway(
                     amountKsh = request.amountKsh,
                     payerMsisdn = request.payerMsisdn,
                     recipientMsisdn = request.recipientMsisdn,
-                    clientRequestId = request.clientRequestId
+                    clientRequestId = request.clientRequestId,
+                    forSelf = request.forSelf
                 )
             )
         } catch (io: IOException) {

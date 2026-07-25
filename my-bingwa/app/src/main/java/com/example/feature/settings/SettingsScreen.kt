@@ -95,9 +95,9 @@ fun SettingsScreen(
     // near the bottom of this composable can also read and update them).
     var notificationsEnabled by remember(profile.notificationsEnabled) { mutableStateOf(profile.notificationsEnabled) }
     var showPushRationale by remember { mutableStateOf(false) }
-    // Local opt-in for Safaricom SMS detection. The OS RECEIVE_SMS grant is
-    // authoritative; this only tracks the customer's in-app choice.
-    var smsAlertsEnabled by remember { mutableStateOf(false) }
+    // Reflects the real OS RECEIVE_SMS grant (MainActivity writes it into the
+    // persisted profile), so the toggle no longer resets to off on every visit.
+    var smsAlertsEnabled by remember(profile.smsAlertsEnabled) { mutableStateOf(profile.smsAlertsEnabled) }
     var showSmsRationale by remember { mutableStateOf(false) }
 
     Column(
