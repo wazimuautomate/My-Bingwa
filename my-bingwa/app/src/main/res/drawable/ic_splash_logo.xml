@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launch-splash icon. Uses the real approved brand mark (img_onboarding_logo),
+  but centred inside a larger transparent canvas so the Android 12+ splash
+  circular safe-zone never crops the mark's diagonal extremities (the swoosh /
+  raised-hand square). Material splash spec: content fits within a ~192dp circle
+  inside a 288dp canvas.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Transparent 288dp canvas establishes the safe-zone padding. -->
+    <item>
+        <shape android:shape="rectangle">
+            <size
+                android:width="288dp"
+                android:height="288dp" />
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+
+    <!-- Real brand mark, scaled down and centred well within the safe zone. -->
+    <item
+        android:width="168dp"
+        android:height="168dp"
+        android:gravity="center">
+        <bitmap android:src="@drawable/img_onboarding_logo" />
+    </item>
+
+</layer-list>
