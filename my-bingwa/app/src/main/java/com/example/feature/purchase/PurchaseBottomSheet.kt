@@ -1,11 +1,18 @@
 package com.example.feature.purchase
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.telecom.PhoneAccountHandle
+import android.telecom.TelecomManager
+import android.telephony.SubscriptionManager
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -55,10 +62,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.core.model.OfferItem
 import com.example.core.model.PaymentStatus
 import com.example.core.model.PurchaseRecord
@@ -207,6 +218,7 @@ fun PurchaseBottomSheet(
                         offer = offer,
                         isTill = isForSelf,
                         recipientNumber = recipientNumber,
+                        payerNumber = payerNumber,
                         config = offlineConfig(),
                         onSubmitOffline = { receipt ->
                             coroutineScope.launch {
@@ -797,6 +809,7 @@ private fun OfflinePaymentInstructionsStep(
     offer: OfferItem,
     isTill: Boolean,
     recipientNumber: String,
+    payerNumber: String,
     config: OfflinePaymentConfig?,
     onSubmitOffline: (String?) -> Unit,
     onCancel: () -> Unit
@@ -835,12 +848,17 @@ private fun OfflinePaymentInstructionsStep(
     }
 
     val context = LocalContext.current
-    var receipt by rememberSaveable { mutableStateOf("") }
     val till = config.tillNumber
     val paybill = config.paybillNumber
     // The value copied for one-tap paste: Till for own number, Paybill for another.
     val copyLabel = if (isTill) "Till number" else "Paybill number"
     val copyValue = if (isTill) till else paybill
+
+    // Opening M-Pesa on the SIM whose number the user declared as theirs needs
+    // READ_PHONE_STATE (best-effort; falls back to the default SIM if unavailable).
+    val phonePermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { copyAndOpenMpesa(context, copyLabel, copyValue, payerNumber) }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -850,29 +868,37 @@ private fun OfflinePaymentInstructionsStep(
             text = if (isTill) "Pay using M-Pesa Till" else "Pay using M-Pesa Paybill",
             style = TypographySheetHeading,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Calm offline context banner (design.md §14.9).
+        // Calm offline context banner (design.md §14.9), fully centred.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(FieldButtonShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(14.dp)
+                .padding(14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = "No internet needed",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Tap below to copy the ${if (isTill) "Till" else "Paybill"} and open M-Pesa. Use the exact amount and do not change it.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
@@ -882,7 +908,15 @@ private fun OfflinePaymentInstructionsStep(
         // menu so the customer can pay manually (Phase 6 offline behaviour).
         PrimaryButton(
             text = "Copy $copyLabel & open M-Pesa",
-            onClick = { copyAndOpenMpesa(context, copyLabel, copyValue) },
+            onClick = {
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE)
+                    == PackageManager.PERMISSION_GRANTED
+                ) {
+                    copyAndOpenMpesa(context, copyLabel, copyValue, payerNumber)
+                } else {
+                    phonePermLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+                }
+            },
             testTag = "open_mpesa_button"
         )
 
@@ -907,6 +941,7 @@ private fun OfflinePaymentInstructionsStep(
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -934,35 +969,7 @@ private fun OfflinePaymentInstructionsStep(
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Optional receipt capture. With a code → Waiting to verify; without → Payment not confirmed.
-        Text(
-            text = "Enter the M-Pesa receipt code (optional)",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        OutlinedTextField(
-            value = receipt,
-            onValueChange = { receipt = it.uppercase() },
-            placeholder = { Text("e.g. RHK82910AZ") },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("offline_receipt_field")
-        )
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        PrimaryButton(
-            text = "I've paid",
-            onClick = { onSubmitOffline(receipt.trim().ifEmpty { null }) },
-            testTag = "ive_paid_button"
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         SecondaryButton(
             text = "Cancel offline purchase",
@@ -977,36 +984,69 @@ private fun OfflinePaymentInstructionsStep(
  * toast, then open the SIM Toolkit (M-Pesa menu). Falls back to dialling the STK
  * USSD if the SIM Toolkit app is unavailable. Mirrors HelpScreen's opener.
  */
-private fun copyAndOpenMpesa(context: Context, label: String, value: String) {
+private fun copyAndOpenMpesa(context: Context, label: String, value: String, payerNumber: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
     Toast.makeText(context, "$label $value copied — opening M-Pesa", Toast.LENGTH_SHORT).show()
+
+    // Best-effort: run the STK USSD on the SIM whose number the user declared as
+    // theirs (the payer number), not always SIM 1.
+    val handle = phoneAccountForNumber(context, payerNumber)
     try {
+        if (handle != null) {
+            val dial = Intent(Intent.ACTION_DIAL, Uri.parse("tel:*234%23"))
+            dial.putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle)
+            context.startActivity(dial)
+            return
+        }
         val stkIntent = context.packageManager.getLaunchIntentForPackage("com.android.stk")
             ?: Intent(Intent.ACTION_DIAL, Uri.parse("tel:*234%23"))
         context.startActivity(stkIntent)
     } catch (e: Exception) {
-        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:*234%23")))
+        try {
+            context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:*234%23")))
+        } catch (_: Exception) {
+        }
+    }
+}
+
+/**
+ * Best-effort PhoneAccountHandle for the SIM whose MSISDN matches [number] (the
+ * payer's declared M-Pesa number), so the USSD runs on that SIM. Returns null when
+ * it cannot be resolved (no READ_PHONE_STATE, the carrier does not expose the SIM
+ * number, or a single-SIM device), and the caller then uses the default SIM.
+ */
+private fun phoneAccountForNumber(context: Context, number: String): PhoneAccountHandle? {
+    return try {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE)
+            != PackageManager.PERMISSION_GRANTED
+        ) return null
+        val target = number.filter { it.isDigit() }.takeLast(9)
+        if (target.isEmpty()) return null
+        val sm = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+        val sub = sm.activeSubscriptionInfoList?.firstOrNull {
+            (it.number ?: "").filter { c -> c.isDigit() }.takeLast(9) == target
+        } ?: return null
+        val tm = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+        tm.callCapablePhoneAccounts.firstOrNull { it.id == sub.subscriptionId.toString() }
+    } catch (e: Exception) {
+        null
     }
 }
 
 @Composable
 private fun InstructionLine(step: String, text: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(
-            text = "$step.",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.width(24.dp)
-        )
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-    }
+    val stepColor = MaterialTheme.colorScheme.primary
+    Text(
+        text = buildAnnotatedString {
+            withStyle(SpanStyle(color = stepColor, fontWeight = FontWeight.Bold)) {
+                append("$step. ")
+            }
+            append(text)
+        },
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth()
+    )
 }

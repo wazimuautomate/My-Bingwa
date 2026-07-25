@@ -6,6 +6,13 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!--
+      READ_PHONE_STATE is requested only when the user taps "open M-Pesa" for an
+      offline payment, so the STK USSD can run on the SIM whose number the user
+      declared as theirs (not always SIM 1). Best-effort; the app falls back to
+      the default SIM if the permission is denied or the SIM number is unavailable.
+    -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!--
       RECEIVE_SMS powers optional Safaricom bundle-delivery / low-balance
       detection only (SmsDeliveryReceiver reads carrier messages locally to
       confirm delivery honestly and suggest top-ups). It is a Google Play
