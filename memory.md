@@ -901,3 +901,10 @@ destinations.
   (payments table) once; `offers.sql` optional (catalogue sync). After that the online
   buy-for-myself loop is fully real: Paybill STK → callback confirms (token-authed) →
   status.php reflects it → app shows Payment received. Only buy-for-another stays mocked.
+- **END-TO-END VALIDATED LIVE (2026-07-25):** owner deployed the files, imported the
+  schema, and paid a real KSh 1 via the deployed `stk.php` (offerId `test_1`). Poll of
+  `status.php` returned `PAYMENT_CONFIRMED` **with a real mpesaReceipt (UGPQC0JHRW)** —
+  the non-null receipt proves the callback authenticated with `callback_secret` and wrote
+  the row (the query-fallback never writes a receipt). Whole online payment chain confirmed
+  working in production. The temporary `test_1` KSh 1 offer was removed from `offers.php`
+  after the test (owner may re-upload `offers.php` to drop it from the live server too).
