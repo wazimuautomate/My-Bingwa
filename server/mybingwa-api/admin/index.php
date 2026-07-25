@@ -17,8 +17,18 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS offers (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 $pdo->exec("CREATE TABLE IF NOT EXISTS templates (
     id INT AUTO_INCREMENT PRIMARY KEY, tkey VARCHAR(48) NOT NULL, label VARCHAR(80) NOT NULL,
+    ttype VARCHAR(16) NOT NULL DEFAULT 'delivery', sender_id VARCHAR(32) NOT NULL DEFAULT '',
+    category VARCHAR(16) NOT NULL DEFAULT 'DATA',
     pattern VARCHAR(255) NOT NULL, active TINYINT NOT NULL DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+// Upgrade an older templates table (created before type/sender/category existed).
+foreach ([
+    "ALTER TABLE templates ADD COLUMN ttype VARCHAR(16) NOT NULL DEFAULT 'delivery'",
+    "ALTER TABLE templates ADD COLUMN sender_id VARCHAR(32) NOT NULL DEFAULT ''",
+    "ALTER TABLE templates ADD COLUMN category VARCHAR(16) NOT NULL DEFAULT 'DATA'",
+] as $alter) {
+    try { $pdo->exec($alter); } catch (Throwable $e) { /* column already exists */ }
+}
 
 // ---- Handle actions (POST → redirect, so a refresh doesn't resubmit) ----------
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
@@ -58,17 +68,53 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $pdo->prepare('DELETE FROM offers WHERE offer_id = ?')->execute([$_POST['offer_id']]);
         set_flash('Offer deleted.');
     } elseif ($action === 'save_template') {
+        $vals = [
+            $_POST['tkey'] ?? '', $_POST['label'] ?? '', $_POST['ttype'] ?? 'delivery',
+            $_POST['sender_id'] ?? '', $_POST['category'] ?? 'DATA', $_POST['pattern'] ?? '',
+            isset($_POST['active']) ? 1 : 0,
+        ];
         if (!empty($_POST['id'])) {
-            $pdo->prepare('UPDATE templates SET tkey=?, label=?, pattern=?, active=? WHERE id=?')
-                ->execute([$_POST['tkey'], $_POST['label'], $_POST['pattern'], isset($_POST['active']) ? 1 : 0, (int) $_POST['id']]);
+            $pdo->prepare('UPDATE templates SET tkey=?, label=?, ttype=?, sender_id=?, category=?, pattern=?, active=? WHERE id=?')
+                ->execute(array_merge($vals, [(int) $_POST['id']]));
         } else {
-            $pdo->prepare('INSERT INTO templates (tkey, label, pattern, active) VALUES (?, ?, ?, ?)')
-                ->execute([$_POST['tkey'], $_POST['label'], $_POST['pattern'], isset($_POST['active']) ? 1 : 0]);
+            $pdo->prepare('INSERT INTO templates (tkey, label, ttype, sender_id, category, pattern, active) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                ->execute($vals);
         }
         set_flash('Template saved.');
     } elseif ($action === 'delete_template') {
         $pdo->prepare('DELETE FROM templates WHERE id = ?')->execute([(int) $_POST['id']]);
         set_flash('Template deleted.');
+    } elseif ($action === 'load_defaults') {
+        // Upsert the exact data the app ships with (offers, settings, templates).
+        $seed = require __DIR__ . '/seed_data.php';
+
+        $s = $pdo->prepare('INSERT INTO settings (skey, svalue, updated_at) VALUES (?, ?, NOW())
+                            ON DUPLICATE KEY UPDATE svalue=VALUES(svalue), updated_at=NOW()');
+        foreach ($seed['settings'] as $k => $v) {
+            $s->execute([$k, $v]);
+        }
+
+        $o = $pdo->prepare('INSERT INTO offers (offer_id, category, name, price, validity, band, daily_rule, active, sort_order)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+                            ON DUPLICATE KEY UPDATE category=VALUES(category), name=VALUES(name), price=VALUES(price),
+                                validity=VALUES(validity), band=VALUES(band), daily_rule=VALUES(daily_rule),
+                                active=1, sort_order=VALUES(sort_order)');
+        foreach ($seed['offers'] as $row) {
+            [$id, $cat, $name, $price, $validity, $band, $once, $sort] = $row;
+            $o->execute([$id, $cat, $name, $price, $validity, $band, $once ? 'ONCE_PER_DAY' : 'BUY_AGAIN_TODAY', $sort]);
+        }
+
+        // Replace templates with the app's canonical set.
+        $pdo->exec('DELETE FROM templates');
+        $t = $pdo->prepare('INSERT INTO templates (tkey, label, ttype, sender_id, category, pattern, active)
+                            VALUES (?, ?, ?, ?, ?, ?, 1)');
+        foreach ($seed['templates'] as $row) {
+            [$tkey, $type, $sender, $cat, $pattern, $label] = $row;
+            $t->execute([$tkey, $label, $type, $sender, $cat, $pattern]);
+        }
+
+        set_flash('App defaults loaded: ' . count($seed['offers']) . ' offers, ' .
+            count($seed['settings']) . ' settings, ' . count($seed['templates']) . ' templates.');
     }
 
     header('Location: index.php');
@@ -111,6 +157,19 @@ $bands = ['Hourly', 'Daily', 'Weekly', 'Monthly'];
 </div>
 <div class="wrap">
     <?php if ($flash): ?><div class="flash"><?= e($flash) ?></div><?php endif; ?>
+
+    <!-- Load app defaults -->
+    <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div>
+            <h2 style="margin:0">Sync app data</h2>
+            <p class="sub" style="margin:2px 0 0">Fill this server with the exact offers, contact details and notification templates the app ships with. Safe to re-run; it updates matching rows.</p>
+        </div>
+        <form method="post" onsubmit="return confirm('Load the app defaults into the database? Existing offers/settings are updated; templates are replaced.')">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="load_defaults">
+            <button class="btn">Load app defaults</button>
+        </form>
+    </div>
 
     <!-- Payment & support -->
     <div class="card">
@@ -240,11 +299,13 @@ $bands = ['Hourly', 'Daily', 'Weekly', 'Monthly'];
         <h2>Notification templates</h2>
         <p class="sub">Delivery / low-balance SMS patterns the app uses to recognise Safaricom messages. Advanced — leave as-is unless Safaricom changes its wording.</p>
         <table>
-            <tr><th>Key</th><th>Label</th><th>Pattern</th><th>Status</th><th></th></tr>
+            <tr><th>Key</th><th>Type</th><th>Sender</th><th>Category</th><th>Pattern</th><th>Status</th><th></th></tr>
             <?php foreach ($templates as $t): ?>
             <tr>
-                <td class="muted"><?= e($t['tkey']) ?></td>
-                <td><?= e($t['label']) ?></td>
+                <td class="muted"><?= e($t['tkey']) ?><br><span class="muted"><?= e($t['label']) ?></span></td>
+                <td><?= ($t['ttype'] ?? 'delivery') === 'low_balance' ? 'Low balance' : 'Delivery' ?></td>
+                <td class="muted"><?= e($t['sender_id'] ?? '') ?></td>
+                <td><span class="tag <?= strtolower(e($t['category'] ?? 'data')) ?>"><?= e($t['category'] ?? 'DATA') ?></span></td>
                 <td class="muted" style="font-family:monospace;font-size:12px"><?= e($t['pattern']) ?></td>
                 <td><?php if ($t['active']): ?><span class="tag sms">On</span><?php else: ?><span class="tag off">Off</span><?php endif; ?></td>
                 <td>
@@ -257,7 +318,7 @@ $bands = ['Hourly', 'Daily', 'Weekly', 'Monthly'];
                 </td>
             </tr>
             <?php endforeach; ?>
-            <?php if (!$templates): ?><tr><td colspan="5" class="muted">No templates yet.</td></tr><?php endif; ?>
+            <?php if (!$templates): ?><tr><td colspan="7" class="muted">No templates yet — click "Load app defaults" above.</td></tr><?php endif; ?>
         </table>
 
         <h2 style="margin-top:22px">Add template</h2>
@@ -267,15 +328,34 @@ $bands = ['Hourly', 'Daily', 'Weekly', 'Monthly'];
             <div class="row">
                 <div>
                     <label>Key</label>
-                    <input name="tkey" placeholder="delivery_data" required>
+                    <input name="tkey" placeholder="data_bingwa_sokoni" required>
                 </div>
                 <div>
                     <label>Label</label>
                     <input name="label" placeholder="Data delivery" required>
                 </div>
+                <div>
+                    <label>Type</label>
+                    <select name="ttype">
+                        <option value="delivery">Delivery</option>
+                        <option value="low_balance">Low balance</option>
+                    </select>
+                </div>
             </div>
-            <label>Pattern / keywords</label>
-            <input name="pattern" placeholder="e.g. You have received %s of data" required>
+            <div class="row">
+                <div>
+                    <label>Sender ID</label>
+                    <input name="sender_id" placeholder="Safaricom">
+                </div>
+                <div>
+                    <label>Category</label>
+                    <select name="category">
+                        <?php foreach ($cats as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <label>Pattern (regex, case-insensitive)</label>
+            <input name="pattern" placeholder="received\s+\d+\s+SMS" required>
             <label style="display:flex;align-items:center;gap:8px;margin-top:14px">
                 <input type="checkbox" name="active" style="width:auto" checked> Active
             </label>
