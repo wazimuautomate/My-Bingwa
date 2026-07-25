@@ -27,6 +27,28 @@ function require_app_key(array $config): void
     }
 }
 
+/**
+ * The latest PUBLISHED app snapshot from the admin (Admin V2 writes it into the SAME
+ * database under the mb_ prefix). Returns the decoded array, or null if the admin is
+ * not installed / nothing is published yet — so the app-facing endpoints below can
+ * serve exactly what the owner published, and otherwise fall back to the legacy tables.
+ */
+function published_snapshot(PDO $pdo): ?array
+{
+    try {
+        $row = $pdo->query(
+            'SELECT snapshot_json FROM mb_configuration_releases ORDER BY version DESC LIMIT 1'
+        )->fetch();
+        if (!$row || empty($row['snapshot_json'])) {
+            return null;
+        }
+        $decoded = json_decode((string) $row['snapshot_json'], true);
+        return is_array($decoded) ? $decoded : null;
+    } catch (Throwable $e) {
+        return null; // mb_configuration_releases absent → legacy fallback
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Callback authenticity (Daraja cannot send custom headers, so we gate the
 // CallbackURL with a shared-secret path token + an optional source-IP allowlist).

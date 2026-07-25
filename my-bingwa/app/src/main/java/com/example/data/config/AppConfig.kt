@@ -14,14 +14,16 @@ data class AppConfig(
 ) {
     companion object {
         /**
-         * Baked-in defaults = the current live values, so a brand-new install works
-         * offline before its first sync ever runs.
+         * Blank defaults — NO seller numbers are baked into the app. The real Till,
+         * Paybill and support numbers are set by the owner in the admin and synced from
+         * the server; until the first sync completes a fresh install simply has no
+         * numbers to show (screens treat blanks as "not available yet").
          */
         val DEFAULT = AppConfig(
-            tillNumber = "4953696",
-            paybillNumber = "4050595",
-            supportNumber = "0727921038",
-            supportWhatsapp = "254727921038"
+            tillNumber = "",
+            paybillNumber = "",
+            supportNumber = "",
+            supportWhatsapp = ""
         )
     }
 }

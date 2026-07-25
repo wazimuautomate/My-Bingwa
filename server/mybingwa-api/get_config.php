@@ -28,22 +28,34 @@ $out = [
 
 try {
     $pdo = require __DIR__ . '/db.php';
-    $rows = $pdo->query('SELECT skey, svalue, updated_at FROM settings')->fetchAll();
-    $latest = null;
-    foreach ($rows as $row) {
-        switch ($row['skey']) {
-            case 'till_number':      $out['tillNumber'] = $row['svalue']; break;
-            case 'paybill_number':   $out['paybillNumber'] = $row['svalue']; break;
-            case 'support_number':   $out['supportNumber'] = $row['svalue']; break;
-            case 'support_whatsapp': $out['supportWhatsapp'] = $row['svalue']; break;
+    $snap = published_snapshot($pdo);
+    if ($snap !== null && isset($snap['support'])) {
+        // Serve the OFFLINE Till/Paybill + support contacts the owner published in the admin.
+        $s = $snap['support'];
+        $out['tillNumber']      = (string) ($s['tillNumber'] ?? '');
+        $out['paybillNumber']   = (string) ($s['paybillNumber'] ?? '');
+        $out['supportNumber']   = (string) ($s['supportNumber'] ?? '');
+        $out['supportWhatsapp'] = (string) ($s['supportWhatsapp'] ?? '');
+        $out['updatedAt']       = $snap['publishedAt'] ?? null;
+    } else {
+        // Legacy fallback: the unprefixed key/value settings table.
+        $rows = $pdo->query('SELECT skey, svalue, updated_at FROM settings')->fetchAll();
+        $latest = null;
+        foreach ($rows as $row) {
+            switch ($row['skey']) {
+                case 'till_number':      $out['tillNumber'] = $row['svalue']; break;
+                case 'paybill_number':   $out['paybillNumber'] = $row['svalue']; break;
+                case 'support_number':   $out['supportNumber'] = $row['svalue']; break;
+                case 'support_whatsapp': $out['supportWhatsapp'] = $row['svalue']; break;
+            }
+            if ($latest === null || $row['updated_at'] > $latest) {
+                $latest = $row['updated_at'];
+            }
         }
-        if ($latest === null || $row['updated_at'] > $latest) {
-            $latest = $row['updated_at'];
-        }
+        $out['updatedAt'] = $latest;
     }
-    $out['updatedAt'] = $latest;
 } catch (Throwable $e) {
-    // Table not created yet → the config.php defaults above still answer.
+    // Nothing available yet → the config.php defaults above still answer.
 }
 
 json_out($out);

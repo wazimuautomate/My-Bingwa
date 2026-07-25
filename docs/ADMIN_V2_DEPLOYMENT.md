@@ -1,15 +1,21 @@
 # My Bingwa Admin V2 — cPanel Deployment Guide
 
 Admin V2 is plain PHP 8.2+ with **no runtime Composer/Node dependency**. You upload the
-folder, create `config.php`, and open the installer. CSS/JS are pre-built and committed.
+folder, create `config.php`, and open the URL — it installs itself (no phpMyAdmin, no SQL).
 
 ---
 
-## 0. What you upload
+## 0. The two folders you deploy
 
-The whole `server/admin-v2/` folder. It coexists with the existing `server/mybingwa-api/`
-in the **same MySQL database** using the `mb_` table prefix, and it reads the existing
-`payments` table read-only. Nothing in the legacy app is modified.
+| Folder in the repo | Goes to (cPanel) | What it is |
+|---|---|---|
+| `server/mybingwa-api/` | `public_html/` (site root) | The **payment API** the app already uses: `get_config.php`, `get_offers.php`, `stk.php`, `callback.php`, `status.php`, plus `config.php` (Daraja secrets). |
+| `server/admin-v2/` | `public_html/admin/` | The **admin panel** — open at `https://your-domain/admin/`. |
+
+Both share **one** MySQL database: admin-v2 uses the `mb_` table prefix, the payment API
+uses the unprefixed tables (`offers`, `settings`, `templates`, `payments`). Admin-v2 reads
+`payments` read-only. Do **not** also upload the old `mybingwa-api/admin/` folder — the new
+`admin/` replaces it.
 
 ---
 
@@ -21,96 +27,88 @@ in the **same MySQL database** using the `mb_` table prefix, and it reads the ex
 
 ---
 
-## 2. Upload
+## 2. Create the database (one time, point-and-click)
 
-1. In cPanel **File Manager**, upload `server/admin-v2/` into `public_html`, e.g. as
-   `public_html/admin`. You will open it at `https://your-domain/admin/`.
-2. Confirm the folder contains `index.php`, `.htaccess`, `app/`, `config/`, `database/`,
-   `assets/`, `uploads/`, `tests/`.
-3. Ensure `uploads/` and `storage/` are writable by PHP (755 is usually fine on cPanel;
-   the app creates `uploads/` on first image upload).
-
-If mod_rewrite is unavailable on your host, tell your host to enable it, or open the app
-at `https://your-domain/admin/index.php/…` (the router still works via `SCRIPT_NAME`).
+cPanel → **MySQL Databases** → create a database and a user, add the user to the database
+with **All Privileges**. Note the database name, user and password. This is the only manual
+DB step — there is **no phpMyAdmin import and no SQL to run**; every table is created
+automatically.
 
 ---
 
-## 3. Configure
+## 3. Upload the payment API (site root)
 
-1. Copy `config/config.sample.php` to `config/config.php`.
-2. Fill in:
-   - `app_key` — a long random string (`bin2hex(random_bytes(32))`). **Never change it
-     casually** — it encrypts stored secrets (2FA, SMS key).
-   - `db.*` — the **same** database used by the payment API. Keep `prefix` = `mb_`.
-   - `bootstrap_admin` — your name/email; leave `password` blank to get a generated one
-     shown once during install.
+1. Upload the contents of `server/mybingwa-api/` into `public_html/`.
+2. Copy `config.sample.php` → `config.php` and fill in: `app_key`, the Daraja
+   credentials/shortcodes (`business_shortcode`, `party_b`, `paybill_shortcode`, `passkey`,
+   `callback_url`), the fulfilment SMS settings, `admin_user`/`admin_pass`, and the same
+   `db_*` values from step 2. Leave the offline `paybill_number`/`support_number` **blank**
+   — you set those in the admin.
+3. The `payments` table auto-creates on first use (`db.php`) — you do **not** import
+   `schema.sql`.
+
+---
+
+## 4. Upload the admin (public_html/admin)
+
+1. Upload `server/admin-v2/` into `public_html/admin/`.
+2. Copy `config/config.sample.php` → `config/config.php` and fill in:
+   - `app_key` — a long random string (`bin2hex(random_bytes(32))`).
+   - `db.*` — the **same** database as the payment API. Keep `prefix` = `mb_`.
+   - `bootstrap_admin` — your name/email, and **set a password (10+ chars)** for a fully
+     silent install. (If you leave it blank, a generated one is written once to
+     `storage/first-login-password.txt`.)
    - `environment` — `production`.
+3. Make sure `storage/` and `uploads/` are writable (755 is fine on cPanel).
 
-`config/config.php` is git-ignored and blocked from the web by `.htaccess`. For extra
-safety you may place it **outside** `public_html` and point the env var
-`MYBINGWA_ADMIN_CONFIG` at its absolute path.
-
----
-
-## 4. Install (create tables + first Super Admin)
-
-- **Web:** open `https://your-domain/admin/install` and click **Install now**. Save the
-  one-time Super Admin password shown. Then sign in at `/admin/login`.
-- **CLI (SSH), optional:** `php database/migrate.php` then `php database/seed.php`.
-
-The installer is safe to re-run; it only creates the Super Admin when none exists.
+`config/config.php` is git-ignored and blocked from the web by `.htaccess`.
 
 ---
 
-## 5. Enable snapshot signing (recommended before publishing)
+## 5. Open the admin — it installs itself
 
-The app verifies published config with a public key. Generate the keypair **once**,
-outside the repo, ideally outside the web root:
+Open `https://your-domain/admin/`. On this first visit the panel automatically:
 
-```bash
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out mybingwa_admin_private.pem
-openssl rsa -in mybingwa_admin_private.pem -pubout -out mybingwa_admin_public.pem
-```
+- creates every `mb_*` table,
+- seeds the offers/templates/config (with **blank** Till/Paybill — you set them),
+- publishes a **baseline version**, so nothing shows as a "draft".
 
-Point `signing.private_key_path` (and `public_key_path` for the health check) at the PEM
-files in `config/config.php`. Keep an encrypted offline backup of the private key. Embed
-**only** the public key in the Android app. Without a key, publishing still works
-(checksum-only, marked **unsigned**).
+Then sign in with your `bootstrap_admin` email + password.
 
 ---
 
-## 6. First publish
+## 6. First real setup
 
-1. Sign in → **Offers / Support / App configuration** are pre-seeded to match the app.
-2. Go to **Review & publish** → **Publish now**. This creates **v1**, an immutable signed
-   snapshot the sync API serves.
+1. **Support details** → enter your offline Till, Paybill, support phone and WhatsApp.
+2. **Offers / App configuration** → adjust as needed (offer IDs are auto-generated).
+3. Header **Preview changes** → **Publish changes**. This creates the next version the app
+   downloads.
 
 ---
 
 ## 7. Verify
 
-- `https://your-domain/admin/api/v1/health` → `{ ok: true, configVersion: 1, signed: … }`.
-- `https://your-domain/admin/api/v1/app/manifest` → the manifest with an `ETag`.
-- Sign out / permissions / 2FA all reachable under **Settings**.
+- `https://your-domain/admin/api/health` → `{ "ok": true, "configVersion": 1, … }`.
+- `https://your-domain/admin/api/app-data` → the published JSON (offers, support, etc.).
+- The **Payments** page lists the same rows the payment API records.
 
 ---
 
 ## 8. Hardening checklist
 
-- [ ] `config/config.php` present, not downloadable (`/admin/config/config.php` → 403).
+- [ ] `/admin/config/config.php` → 403 (not downloadable).
 - [ ] `/admin/app/…`, `/admin/database/…`, `/admin/storage/…` → 403.
-- [ ] Uploads dir serves images but not scripts (`/admin/uploads/x.php` → denied).
-- [ ] HTTPS enforced; cookies are `Secure`, `HttpOnly`, `SameSite=Lax`.
-- [ ] Super Admin has 2FA enabled (Settings → Two-factor).
-- [ ] Signing key configured and backed up.
+- [ ] `/admin/uploads/x.php` → denied (uploads serve images, not scripts).
+- [ ] HTTPS enforced; cookies `Secure`, `HttpOnly`, `SameSite=Lax`.
 - [ ] `app_key` is long and unique.
+- [ ] Delete `storage/first-login-password.txt` after your first login (if it was created).
 
 ---
 
 ## 9. Updating later
 
-Upload the changed files, then run migrations from **Settings → Run DB migrations**
-(Super Admin) or `php database/migrate.php`. Migrations are additive and idempotent.
+Upload the changed files. Any new database migrations apply **automatically** on the next
+visit (idempotent) — there is no separate migrate step to run.
 
 ---
 
@@ -120,5 +118,5 @@ Upload the changed files, then run migrations from **Settings → Run DB migrati
 php tests/run.php
 ```
 
-Pure-logic tests (canonical JSON, signing checksum, TOTP, crypto, regex safety,
-billboard scoring, publish validation, CSV safety, masking) run without a database.
+Dependency-free logic tests (canonical JSON, checksum, regex safety, billboard tokens,
+publish validation, snapshot diff, CSV safety, masking) run without a database.

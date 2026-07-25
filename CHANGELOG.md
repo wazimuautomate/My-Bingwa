@@ -86,12 +86,21 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
   dashboard cards. Access is now Super Admin (full) + Admin (page-level), the dashboard
   shows only six tiles + latest payments, and every page uses plain customer-friendly
   language. Payment and database functionality is unchanged.
-- **Hardcoded seller numbers removed everywhere.** The Till (`4953696`), Paybill
-  (`40450595`/`4050595`) and personal number (`0727921038`) are no longer baked into the
-  server (`settings.sql`, `get_config.php`, `admin/*`, `config.sample.php`, admin-v2 seed)
-  — they default to blank and are set from the admin **Support** page. The **offline**
-  Till/Paybill shown to customers is now decoupled from the server-side STK shortcode used
-  to initiate payments (which stays only in `mybingwa-api/config.php`).
+- **Hardcoded seller numbers removed everywhere — including the app.** The Till
+  (`4953696`), Paybill (`40450595`/`4050595`) and personal number (`0727921038`) are no
+  longer baked into the server (`settings.sql`, `get_config.php`, `admin/*`,
+  `config.sample.php`, admin-v2 seed) **or the Android app** (`AppConfig.DEFAULT` and
+  `CachedOfflineConfigProvider.DEFAULT` are now blank). They are set once from the admin
+  **Support** page and synced. The **offline** Till/Paybill shown to customers is decoupled
+  from the server-side STK shortcode used to initiate payments (which stays only in
+  `mybingwa-api/config.php`).
+- **The app now shows the admin's published data with no app change.** The payment API's
+  `get_offers.php` / `get_config.php` / `get_templates.php` now serve the latest
+  **published** admin snapshot (read from the shared `mb_configuration_releases` table),
+  falling back to the legacy tables when the admin isn't installed/published. So the
+  existing app — which already syncs these endpoints on connectivity — reflects what the
+  owner publishes, while the admin's own `GET /api/app-data` remains available for direct
+  consumption.
 - **Offer IDs are generated automatically** (`data_14`-style, per category) instead of
   being typed by the operator; existing IDs stay immutable.
 - **App-sync API consolidated to a single `GET /api/app-data`** (was

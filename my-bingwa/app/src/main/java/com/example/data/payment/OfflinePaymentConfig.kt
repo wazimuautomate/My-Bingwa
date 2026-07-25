@@ -67,16 +67,14 @@ class CachedOfflineConfigProvider(
 
     companion object {
         /**
-         * Seller values as used across the app today. Single source of truth for the
-         * checkout sheet's copyable Till/Paybill (fixes the Help-screen Paybill
-         * mismatch by having checkout read config, not a hardcoded literal).
-         *
-         * A far-future validity window keeps the dev build usable; a real config
-         * carries a short, backend-issued window.
+         * Blank Till/Paybill — no seller numbers are baked into the app. The displayed
+         * Till/Paybill always come from the server-synced [AppConfig]; this provider only
+         * gates eligibility (signature/validity window). A far-future window keeps the
+         * gate open so the synced numbers are what the checkout sheet copies.
          */
         val DEFAULT = OfflinePaymentConfig(
-            tillNumber = "4953696",
-            paybillNumber = "4050595",
+            tillNumber = "",
+            paybillNumber = "",
             issuedAtMillis = 0L,
             expiresAtMillis = Long.MAX_VALUE,
             signatureValid = true
