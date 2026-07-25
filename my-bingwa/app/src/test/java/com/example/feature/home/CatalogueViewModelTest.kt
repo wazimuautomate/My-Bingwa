@@ -45,6 +45,11 @@ class CatalogueViewModelTest {
     fun `home state exposes favourites and a highest-weight promotion first`() = runTest(mainDispatcher) {
         val vm = newViewModel()
         backgroundScope.launch { vm.homeUiState.collect {} }
+        backgroundScope.launch { vm.offersUiState.collect {} }
+        runCurrent()
+
+        // Fresh install has no seeded favourites; favourite one so the section shows.
+        vm.toggleFavourite(vm.offersUiState.value.results.first())
         runCurrent()
 
         val state = vm.homeUiState.value
@@ -60,9 +65,10 @@ class CatalogueViewModelTest {
     fun `toggleFavourite adds then removes the offer from favourites`() = runTest(mainDispatcher) {
         val vm = newViewModel()
         backgroundScope.launch { vm.homeUiState.collect {} }
+        backgroundScope.launch { vm.offersUiState.collect {} }
         runCurrent()
 
-        val offer = vm.homeUiState.value.sections.suggestions.first { !it.isFavourite }
+        val offer = vm.offersUiState.value.results.first { !it.isFavourite }
 
         vm.toggleFavourite(offer)
         runCurrent()

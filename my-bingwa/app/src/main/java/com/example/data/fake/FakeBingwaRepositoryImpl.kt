@@ -63,7 +63,12 @@ class FakeBingwaRepositoryImpl(
     private val configProvider: OfflinePaymentConfigProvider = CachedOfflineConfigProvider(),
     private val configSource: RemoteConfigSource? = null,
     private val catalogueSource: RemoteCatalogueSource? = null,
-    private val localStore: LocalStore? = null
+    private val localStore: LocalStore? = null,
+    // Seed data for TESTS only. The real app always uses the empty defaults so a
+    // fresh install has no prefilled Activity / notifications / recipients.
+    seedPurchases: List<PurchaseRecord> = emptyList(),
+    seedNotifications: List<NotificationItem> = emptyList(),
+    seedRecentRecipients: List<String> = emptyList()
 ) : BingwaRepository {
 
     // Fallback used when no real backend is configured. MainActivity injects a
@@ -85,11 +90,14 @@ class FakeBingwaRepositoryImpl(
     // simulation only when no backend is configured.
     private val anotherNumberGateway: PaymentGateway = gateway ?: fallback
 
+    // A fresh install has NO prefilled identity: empty name/number and onboarding
+    // NOT completed, so MainActivity starts on onboarding on first launch and the
+    // customer enters their own details. Never seed real details here.
     private val defaultProfile = UserProfile(
-        name = "Bonke",
-        primaryNumber = "0727 921 038",
-        isOnboardingCompleted = true,
-        notificationsEnabled = true
+        name = "",
+        primaryNumber = "",
+        isOnboardingCompleted = false,
+        notificationsEnabled = false
     )
 
     private val _userProfile = MutableStateFlow(defaultProfile)
@@ -127,7 +135,7 @@ class FakeBingwaRepositoryImpl(
         dataOffer("data_3", "1.5GB", "3 Hrs", "Hourly", 50, once = true),
         dataOffer("data_4", "1.25GB", "Midnight", "Daily", 55, once = true),
         dataOffer("data_5", "1GB", "24 Hrs", "Daily", 95, once = true),
-        dataOffer("data_6", "2GB", "24 Hrs", "Daily", 110, once = false, favourite = true),
+        dataOffer("data_6", "2GB", "24 Hrs", "Daily", 110, once = false),
         dataOffer("data_7", "350MB", "7 days", "Weekly", 49, once = true),
         dataOffer("data_8", "2.5GB", "7 days", "Weekly", 300, once = true),
         dataOffer("data_9", "6GB", "7 days", "Weekly", 700, once = true),
@@ -137,7 +145,7 @@ class FakeBingwaRepositoryImpl(
         dataOffer("data_13", "8GB + 400 Min", "30 days", "Monthly", 1005, once = true),
         // SMS
         dataOffer("sms_1", "10 SMS", "24 Hrs", "Daily", 5, once = false, category = OfferCategory.SMS),
-        dataOffer("sms_2", "200 SMS", "24 Hrs", "Daily", 10, once = false, category = OfferCategory.SMS, favourite = true),
+        dataOffer("sms_2", "200 SMS", "24 Hrs", "Daily", 10, once = false, category = OfferCategory.SMS),
         dataOffer("sms_3", "1,000 SMS", "7 days", "Weekly", 30, once = false, category = OfferCategory.SMS),
         dataOffer("sms_4", "1,500 SMS", "30 days", "Monthly", 101, once = false, category = OfferCategory.SMS),
         dataOffer("sms_5", "3,500 SMS", "30 days", "Monthly", 201, once = false, category = OfferCategory.SMS),
@@ -145,7 +153,7 @@ class FakeBingwaRepositoryImpl(
         dataOffer("min_1", "20 Min", "Midnight", "Daily", 22, once = false, category = OfferCategory.MINUTES),
         dataOffer("min_2", "35 Min", "2 Hrs", "Hourly", 23, once = false, category = OfferCategory.MINUTES),
         dataOffer("min_3", "45 Min", "3 Hrs", "Hourly", 24, once = false, category = OfferCategory.MINUTES),
-        dataOffer("min_4", "50 Min", "Midnight", "Daily", 48, once = false, category = OfferCategory.MINUTES, favourite = true),
+        dataOffer("min_4", "50 Min", "Midnight", "Daily", 48, once = false, category = OfferCategory.MINUTES),
         dataOffer("min_5", "250 Min", "7 days", "Weekly", 205, once = false, category = OfferCategory.MINUTES),
         dataOffer("min_6", "100 Min", "Midnight", "Daily", 105, once = false, category = OfferCategory.MINUTES),
         dataOffer("min_7", "300 Min", "30 days", "Monthly", 499, once = false, category = OfferCategory.MINUTES),
@@ -243,73 +251,17 @@ class FakeBingwaRepositoryImpl(
     private val _filterState = MutableStateFlow(OfferFilterState())
     override val filterState: StateFlow<OfferFilterState> = _filterState.asStateFlow()
 
-    private val initialPurchases = listOf(
-        PurchaseRecord(
-            id = "pur_101",
-            offerId = "data_1",
-            offerName = "1GB",
-            allowance = "1GB",
-            priceKsh = 19,
-            recipientNumber = "0727 921 038",
-            payerNumber = "0727 921 038",
-            mpesaCode = "RHK82910AZ",
-            timestampMillis = System.currentTimeMillis() - (1000 * 60 * 45), // 45 mins ago
-            status = PaymentStatus.RECEIVED,
-            paymentMethod = PaymentMethod.STK_PUSH
-        ),
-        PurchaseRecord(
-            id = "pur_102",
-            offerId = "sms_1",
-            offerName = "10 SMS",
-            allowance = "10 SMS",
-            priceKsh = 5,
-            recipientNumber = "0712 345 678",
-            payerNumber = "0727 921 038",
-            mpesaCode = "RHJ91823BX",
-            timestampMillis = System.currentTimeMillis() - (1000 * 60 * 60 * 26), // Yesterday
-            status = PaymentStatus.RECEIVED,
-            paymentMethod = PaymentMethod.STK_PUSH
-        )
-    )
-
-    private val _purchases = MutableStateFlow(initialPurchases)
+    // Fresh install starts with an empty Activity (no prefilled data); tests seed via
+    // the [seedPurchases] constructor param.
+    private val _purchases = MutableStateFlow(seedPurchases)
     override val purchases: StateFlow<List<PurchaseRecord>> = _purchases.asStateFlow()
 
-    private val initialNotifications = listOf(
-        NotificationItem(
-            id = "notif_1",
-            title = "Your payment was received",
-            body = "The 1 GB offer for 0727 921 038 was recorded.",
-            timestampMillis = System.currentTimeMillis() - (1000 * 60 * 45),
-            isRead = false
-        ),
-        NotificationItem(
-            id = "notif_2",
-            title = "You can buy this offer again",
-            body = "Your 1 GB hourly offer is available whenever you need it.",
-            timestampMillis = System.currentTimeMillis() - (1000 * 60 * 60 * 5),
-            isRead = true
-        ),
-        NotificationItem(
-            id = "notif_3",
-            title = "New offer available",
-            body = "Get 2 GB for KSh 110, valid for 24 hours.",
-            timestampMillis = System.currentTimeMillis() - (1000 * 60 * 60 * 28),
-            isRead = true
-        ),
-        NotificationItem(
-            id = "notif_4",
-            title = "My Bingwa update available",
-            body = "Update for a faster, smoother experience.",
-            timestampMillis = System.currentTimeMillis() - (1000 * 60 * 60 * 48),
-            isRead = true
-        )
-    )
-
-    private val _notifications = MutableStateFlow(initialNotifications)
+    // Fresh install has no notifications and no recent recipients; tests seed via
+    // [seedNotifications] / [seedRecentRecipients].
+    private val _notifications = MutableStateFlow(seedNotifications)
     override val notifications: StateFlow<List<NotificationItem>> = _notifications.asStateFlow()
 
-    private val _recentRecipients = MutableStateFlow(listOf("0727 921 038", "0712 345 678", "0722 000 111"))
+    private val _recentRecipients = MutableStateFlow(seedRecentRecipients)
     override val recentRecipients: StateFlow<List<String>> = _recentRecipients.asStateFlow()
 
     private val _devStkOutcome = MutableStateFlow(DevStkOutcome.SUCCESS)

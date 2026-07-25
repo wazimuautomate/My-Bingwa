@@ -1,6 +1,9 @@
 package com.example.data.fake
 
 import com.example.core.model.OfferCategory
+import com.example.core.model.PaymentMethod
+import com.example.core.model.PaymentStatus
+import com.example.core.model.PurchaseRecord
 import com.example.core.payment.PaymentTxnState
 import com.example.data.payment.SimulatedPaymentGateway
 import org.junit.Assert.assertEquals
@@ -23,6 +26,22 @@ class SmsReconciliationTest {
             terminalOutcome = { PaymentTxnState.PAYMENT_CONFIRMED },
             initiateDelayMillis = 0,
             statusDelayMillis = 0
+        ),
+        // The app no longer seeds demo purchases (fresh install starts empty), so this
+        // test provides its own RECEIVED records to reconcile against (fake numbers).
+        seedPurchases = listOf(
+            PurchaseRecord(
+                id = "seed_data", offerId = "data_1", offerName = "1GB", allowance = "1GB",
+                priceKsh = 19, recipientNumber = "0700000000", payerNumber = "0700000000",
+                mpesaCode = "T1", timestampMillis = 2000L,
+                status = PaymentStatus.RECEIVED, paymentMethod = PaymentMethod.STK_PUSH
+            ),
+            PurchaseRecord(
+                id = "seed_sms", offerId = "sms_1", offerName = "10 SMS", allowance = "10 SMS",
+                priceKsh = 5, recipientNumber = "0711111111", payerNumber = "0700000000",
+                mpesaCode = "T2", timestampMillis = 1000L,
+                status = PaymentStatus.RECEIVED, paymentMethod = PaymentMethod.STK_PUSH
+            )
         )
     )
 

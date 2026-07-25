@@ -1,5 +1,6 @@
 package com.example.data.fake
 
+import com.example.core.model.NotificationItem
 import com.example.data.payment.SimulatedPaymentGateway
 import com.example.core.payment.PaymentTxnState
 import org.junit.Assert.assertEquals
@@ -19,6 +20,12 @@ class NotificationRepositoryTest {
             terminalOutcome = { PaymentTxnState.PAYMENT_CONFIRMED },
             initiateDelayMillis = 0,
             statusDelayMillis = 0
+        ),
+        // The app no longer seeds demo notifications; this test provides its own.
+        seedNotifications = listOf(
+            NotificationItem(id = "n1", title = "Payment received", body = "recorded", timestampMillis = 3L, isRead = false),
+            NotificationItem(id = "n2", title = "Buy again", body = "available", timestampMillis = 2L, isRead = true),
+            NotificationItem(id = "n3", title = "New offer", body = "2GB KSh 110", timestampMillis = 1L, isRead = true)
         )
     )
 
