@@ -3,7 +3,7 @@
   <div><h1>Support details</h1><div class="sub">What the app shows customers. Publish changes to apply them.</div></div>
 </div>
 
-<div class="card" style="max-width:720px">
+<div class="card">
   <form method="post" action="<?= e(url('/support/save')) ?>" data-once>
     <?= App\Core\Csrf::field() ?>
 
@@ -18,12 +18,6 @@
     <div class="form-grid">
       <div class="field"><label>Support phone</label><input type="text" name="support_number" value="<?= e($c['support_number'] ?? '') ?>" placeholder="Enter phone number"></div>
       <div class="field"><label>WhatsApp number</label><input type="text" name="support_whatsapp" value="<?= e($c['support_whatsapp'] ?? '') ?>" placeholder="Enter WhatsApp number"></div>
-    </div>
-
-    <div class="card__head mt"><?= icon('phone', 18) ?><h3>Offline purchase instructions</h3></div>
-    <div class="form-grid">
-      <div class="field full"><label>Own-number offline instructions</label><textarea name="offline_self_instructions"><?= e($c['offline_self_instructions'] ?? '') ?></textarea></div>
-      <div class="field full"><label>Another-number offline instructions</label><textarea name="offline_other_instructions"><?= e($c['offline_other_instructions'] ?? '') ?></textarea></div>
     </div>
 
     <div class="mt"><button class="btn" type="submit"><?= icon('check', 18) ?> Save details</button></div>

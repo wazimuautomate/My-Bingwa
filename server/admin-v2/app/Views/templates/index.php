@@ -19,17 +19,22 @@
             <td><?= (int) $t['match_priority'] ?></td>
             <td><span class="status <?= e($t['status']) ?>"><?= ucfirst($t['status']) ?></span></td>
             <td>
-              <div class="row-actions">
-                <a class="btn btn--secondary btn--sm" href="<?= e(url('/message-templates/' . (int) $t['id'] . '/edit')) ?>"><?= icon('edit', 14) ?></a>
-                <?php if ($t['status'] !== 'active'): ?>
-                  <form method="post" action="<?= e(url('/message-templates/' . (int) $t['id'] . '/status')) ?>"><?= App\Core\Csrf::field() ?><input type="hidden" name="status" value="active"><button class="btn btn--ghost btn--sm" title="Activate"><?= icon('check', 14) ?></button></form>
-                <?php else: ?>
-                  <form method="post" action="<?= e(url('/message-templates/' . (int) $t['id'] . '/status')) ?>" data-confirm="Deactivate this template?"><?= App\Core\Csrf::field() ?><input type="hidden" name="status" value="draft"><button class="btn btn--ghost btn--sm" title="Deactivate"><?= icon('close', 14) ?></button></form>
-                <?php endif; ?>
-                <form method="post" action="<?= e(url('/message-templates/' . (int) $t['id'] . '/duplicate')) ?>"><?= App\Core\Csrf::field() ?><button class="btn btn--ghost btn--sm" title="Duplicate"><?= icon('copy', 14) ?></button></form>
-                <?php if ($t['status'] === 'draft'): ?>
-                  <form method="post" action="<?= e(url('/message-templates/' . (int) $t['id'] . '/delete')) ?>" data-confirm="Delete this draft template?"><?= App\Core\Csrf::field() ?><button class="btn btn--danger btn--sm" title="Delete"><?= icon('trash', 14) ?></button></form>
-                <?php endif; ?>
+              <div class="dropdown">
+                <button class="btn btn--ghost btn--sm" data-dropdown="tpl-menu-<?= (int) $t['id'] ?>" aria-haspopup="true" aria-label="Template actions"><?= icon('more', 16) ?></button>
+                <div class="dropdown-menu dropdown-menu--fixed" id="tpl-menu-<?= (int) $t['id'] ?>">
+                  <button type="button" data-modal-open="#tpl-modal-<?= (int) $t['id'] ?>"><?= icon('eye', 18) ?> View</button>
+                  <a href="<?= e(url('/message-templates/' . (int) $t['id'] . '/edit')) ?>"><?= icon('edit', 18) ?> Edit</a>
+                  <?php if ($t['status'] !== 'active'): ?>
+                    <form method="post" action="<?= e(url('/message-templates/' . (int) $t['id'] . '/status')) ?>"><?= App\Core\Csrf::field() ?><input type="hidden" name="status" value="active"><button type="submit"><?= icon('check', 18) ?> Activate</button></form>
+                  <?php else: ?>
+                    <form method="post" action="<?= e(url('/message-templates/' . (int) $t['id'] . '/status')) ?>" data-confirm="Deactivate this template?"><?= App\Core\Csrf::field() ?><input type="hidden" name="status" value="draft"><button type="submit"><?= icon('close', 18) ?> Deactivate</button></form>
+                  <?php endif; ?>
+                  <form method="post" action="<?= e(url('/message-templates/' . (int) $t['id'] . '/duplicate')) ?>"><?= App\Core\Csrf::field() ?><button type="submit"><?= icon('copy', 18) ?> Duplicate</button></form>
+                  <?php if ($t['status'] === 'draft'): ?>
+                    <div class="divider"></div>
+                    <form method="post" action="<?= e(url('/message-templates/' . (int) $t['id'] . '/delete')) ?>" data-confirm="Delete this draft template?"><?= App\Core\Csrf::field() ?><button type="submit" class="danger"><?= icon('trash', 18) ?> Delete</button></form>
+                  <?php endif; ?>
+                </div>
               </div>
             </td>
           </tr>
@@ -38,4 +43,32 @@
       </tbody>
     </table>
   </div>
+
+  <?php foreach ($templates as $t):
+    $pos = json_decode((string) ($t['positive_samples'] ?? ''), true) ?: [];
+    $neg = json_decode((string) ($t['negative_samples'] ?? ''), true) ?: [];
+  ?>
+    <div class="modal-backdrop" data-modal id="tpl-modal-<?= (int) $t['id'] ?>" role="dialog" aria-modal="true" aria-label="Template <?= e($t['template_key']) ?> details">
+      <div class="modal modal--lg">
+        <div class="card__head"><h3><?= e($t['template_key']) ?></h3><span class="spacer"></span><span class="status <?= e($t['status']) ?>"><?= ucfirst($t['status']) ?></span></div>
+        <div class="stack" style="gap:8px">
+          <div class="between"><span class="muted small">Label</span><span><?= e($t['label']) ?></span></div>
+          <div class="between"><span class="muted small">Purpose</span><span><?= e($purposes[$t['purpose']] ?? $t['purpose']) ?></span></div>
+          <div class="between"><span class="muted small">Sender ID</span><span class="mono small"><?= e($t['sender_id'] ?: '—') ?></span></div>
+          <div class="between"><span class="muted small">Category</span><span class="tag <?= strtolower($t['category']) ?>"><?= e($t['category']) ?></span></div>
+          <div class="between"><span class="muted small">Case sensitive</span><span><?= ((int) $t['case_sensitive'] === 1) ? 'Yes' : 'No' ?></span></div>
+          <div class="between"><span class="muted small">Match priority</span><span><?= (int) $t['match_priority'] ?></span></div>
+          <div class="between"><span class="muted small">Correlation window</span><span><?= (int) $t['correlation_window_min'] ?> min</span></div>
+          <div><span class="muted small">Pattern</span><div class="mono small" style="word-break:break-all;margin-top:4px"><?= e($t['pattern']) ?></div></div>
+          <div class="between"><span class="muted small">Positive samples</span><span><?= count($pos) ?></span></div>
+          <div class="between"><span class="muted small">Negative samples</span><span><?= count($neg) ?></span></div>
+          <div class="between"><span class="muted small">Last updated</span><span class="small"><?= e(fmt_nairobi($t['updated_at'] ?? null)) ?></span></div>
+        </div>
+        <div class="modal__actions">
+          <a class="btn btn--secondary" href="<?= e(url('/message-templates/' . (int) $t['id'] . '/edit')) ?>">Edit</a>
+          <button class="btn" type="button" data-modal-close>Close</button>
+        </div>
+      </div>
+    </div>
+  <?php endforeach; ?>
 </div>

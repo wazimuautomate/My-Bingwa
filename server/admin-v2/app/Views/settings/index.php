@@ -1,6 +1,6 @@
-<?php $u = $user; $theme = $_COOKIE['mb_theme'] ?? 'system'; ?>
+<?php $u = $user; ?>
 <div class="page-head">
-  <div><h1>Settings</h1><div class="sub">Your name, password and appearance.</div></div>
+  <div><h1>Settings</h1><div class="sub">Your name and password.</div></div>
 </div>
 
 <div class="grid two">
@@ -31,16 +31,6 @@
   </div>
 
   <div class="stack">
-    <div class="card">
-      <div class="card__head"><?= icon('sun', 18) ?><h3>Appearance</h3></div>
-      <p class="small muted">Choose how the admin looks.</p>
-      <div class="row" style="gap:8px;margin-top:8px">
-        <?php foreach (['light' => 'Light', 'dark' => 'Dark', 'system' => 'System'] as $val => $lab): ?>
-          <button type="button" class="btn <?= $theme === $val ? '' : 'btn--secondary' ?>" data-set-theme="<?= $val ?>"><?= $lab ?></button>
-        <?php endforeach; ?>
-      </div>
-    </div>
-
     <?php if (!empty($isSuperAdmin)): ?>
       <div class="card">
         <div class="card__head"><?= icon('user', 18) ?><h3>Partner Admin</h3></div>
@@ -58,14 +48,3 @@
     </div>
   </div>
 </div>
-
-<script>
-document.querySelectorAll('[data-set-theme]').forEach(function (b) {
-  b.addEventListener('click', function () {
-    var t = b.getAttribute('data-set-theme');
-    document.cookie = 'mb_theme=' + t + ';path=/;max-age=31536000;samesite=Lax';
-    document.documentElement.setAttribute('data-theme', t);
-    location.reload();
-  });
-});
-</script>

@@ -3,6 +3,7 @@
 use App\Core\Csrf;
 $theme = $_COOKIE['mb_theme'] ?? 'system';
 if (!in_array($theme, ['light', 'dark', 'system'], true)) { $theme = 'system'; }
+$navCollapsed = ($_COOKIE['mb_nav'] ?? '') === 'collapsed';
 $authUser = $authUser ?? null;
 ?><!doctype html>
 <html lang="en" data-theme="<?= e($theme) ?>">
@@ -11,13 +12,14 @@ $authUser = $authUser ?? null;
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title><?= e($pageTitle ?? 'My Bingwa Admin') ?> · My Bingwa Admin</title>
+<link rel="icon" type="image/png" sizes="32x32" href="<?= e(asset('img/favicon-32x32.png')) ?>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
 </head>
 <body>
-<div class="app">
+<div class="app<?= $navCollapsed ? ' nav-collapsed' : '' ?>">
   <div class="scrim" aria-hidden="true"></div>
   <?= \App\Core\View::partial('partials/sidebar', ['activeNav' => $activeNav ?? '', 'publishStatus' => $publishStatus ?? []]) ?>
   <div class="main">

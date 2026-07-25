@@ -41,13 +41,6 @@ use App\Repositories\PaymentRepository;
       <span class="small muted">Last 30 days</span>
     </div>
   </div>
-  <div class="card">
-    <div class="stat">
-      <span class="stat__label">Last app sync <span class="stat__icon orange"><?= icon('sync', 18) ?></span></span>
-      <span class="stat__value" style="font-size:20px"><?= $lastPublishAt ? e(fmt_nairobi($lastPublishAt, 'd M, H:i')) : 'Not published' ?></span>
-      <a class="small" href="<?= e(url('/publish')) ?>">Publish changes</a>
-    </div>
-  </div>
 </div>
 
 <!-- latest payments -->

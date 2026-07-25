@@ -11,7 +11,7 @@
 <body>
 <div class="auth">
   <div class="auth__card" style="max-width:520px">
-    <div class="auth__brand"><span class="brand__logo">B</span><span class="brand__name">My <b>Bingwa</b></span></div>
+    <div class="auth__brand"><img class="brand__logo" src="<?= e(asset('img/logo.png')) ?>" alt="My Bingwa" width="32" height="32"><span class="brand__name">My <b>Bingwa</b></span></div>
     <h1><?= $installed ? 'Run database upgrade' : 'Install admin' ?></h1>
     <p class="sub"><?= $installed
       ? 'Apply any new database migrations. Safe to re-run.'

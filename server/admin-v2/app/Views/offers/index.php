@@ -42,27 +42,32 @@ $qs = http_build_query(array_filter($filters));
             <td class="muted small"><?= e(OfferRepository::RULES[$o['daily_rule']] ?? $o['daily_rule']) ?></td>
             <td><span class="status <?= e($o['status']) ?>"><?= ucfirst($o['status']) ?></span></td>
             <td>
-              <div class="row-actions">
-                <?php if (can('offers.edit')): ?><a class="btn btn--secondary btn--sm" href="<?= e(url('/offers/' . $o['offer_id'] . '/edit')) ?>"><?= icon('edit', 14) ?></a><?php endif; ?>
-                <?php if (can('offers.create')): ?>
-                  <form method="post" action="<?= e(url('/offers/' . $o['offer_id'] . '/duplicate')) ?>" data-confirm="Create a draft copy of this offer with a new ID?">
-                    <?= App\Core\Csrf::field() ?><button class="btn btn--ghost btn--sm" title="Duplicate"><?= icon('copy', 14) ?></button>
-                  </form>
-                <?php endif; ?>
-                <?php if (can('offers.archive') && $o['status'] !== 'archived'): ?>
-                  <form method="post" action="<?= e(url('/offers/' . $o['offer_id'] . '/archive')) ?>" data-confirm="Archive this offer? It stays in history but leaves the app on next publish.">
-                    <?= App\Core\Csrf::field() ?><button class="btn btn--ghost btn--sm" title="Archive"><?= icon('archive', 14) ?></button>
-                  </form>
-                <?php elseif (can('offers.archive') && $o['status'] === 'archived'): ?>
-                  <form method="post" action="<?= e(url('/offers/' . $o['offer_id'] . '/restore')) ?>">
-                    <?= App\Core\Csrf::field() ?><button class="btn btn--ghost btn--sm" title="Restore"><?= icon('restore', 14) ?></button>
-                  </form>
-                <?php endif; ?>
-                <?php if (can('offers.delete') && $o['status'] === 'draft'): ?>
-                  <form method="post" action="<?= e(url('/offers/' . $o['offer_id'] . '/delete')) ?>" data-confirm="Permanently delete this draft offer? This cannot be undone.">
-                    <?= App\Core\Csrf::field() ?><button class="btn btn--danger btn--sm" title="Delete"><?= icon('trash', 14) ?></button>
-                  </form>
-                <?php endif; ?>
+              <div class="dropdown">
+                <button class="btn btn--ghost btn--sm" data-dropdown="offer-menu-<?= e($o['offer_id']) ?>" aria-haspopup="true" aria-label="Offer actions"><?= icon('more', 16) ?></button>
+                <div class="dropdown-menu dropdown-menu--fixed" id="offer-menu-<?= e($o['offer_id']) ?>">
+                  <button type="button" data-modal-open="#offer-modal-<?= e($o['offer_id']) ?>"><?= icon('eye', 18) ?> View</button>
+                  <?php if (can('offers.edit')): ?><a href="<?= e(url('/offers/' . $o['offer_id'] . '/edit')) ?>"><?= icon('edit', 18) ?> Edit</a><?php endif; ?>
+                  <?php if (can('offers.create')): ?>
+                    <form method="post" action="<?= e(url('/offers/' . $o['offer_id'] . '/duplicate')) ?>" data-confirm="Create a draft copy of this offer with a new ID?">
+                      <?= App\Core\Csrf::field() ?><button type="submit"><?= icon('copy', 18) ?> Duplicate</button>
+                    </form>
+                  <?php endif; ?>
+                  <?php if (can('offers.archive') && $o['status'] !== 'archived'): ?>
+                    <form method="post" action="<?= e(url('/offers/' . $o['offer_id'] . '/archive')) ?>" data-confirm="Archive this offer? It stays in history but leaves the app on next publish.">
+                      <?= App\Core\Csrf::field() ?><button type="submit"><?= icon('archive', 18) ?> Archive</button>
+                    </form>
+                  <?php elseif (can('offers.archive') && $o['status'] === 'archived'): ?>
+                    <form method="post" action="<?= e(url('/offers/' . $o['offer_id'] . '/restore')) ?>">
+                      <?= App\Core\Csrf::field() ?><button type="submit"><?= icon('restore', 18) ?> Restore</button>
+                    </form>
+                  <?php endif; ?>
+                  <?php if (can('offers.delete') && $o['status'] === 'draft'): ?>
+                    <div class="divider"></div>
+                    <form method="post" action="<?= e(url('/offers/' . $o['offer_id'] . '/delete')) ?>" data-confirm="Permanently delete this draft offer? This cannot be undone.">
+                      <?= App\Core\Csrf::field() ?><button type="submit" class="danger"><?= icon('trash', 18) ?> Delete</button>
+                    </form>
+                  <?php endif; ?>
+                </div>
               </div>
             </td>
           </tr>
@@ -73,4 +78,31 @@ $qs = http_build_query(array_filter($filters));
       </tbody>
     </table>
   </div>
+
+  <?php foreach ($offers as $o): ?>
+    <div class="modal-backdrop" data-modal id="offer-modal-<?= e($o['offer_id']) ?>" role="dialog" aria-modal="true" aria-label="Offer <?= e($o['offer_id']) ?> details">
+      <div class="modal modal--lg">
+        <div class="card__head"><h3><?= e($o['name']) ?></h3><span class="spacer"></span><span class="status <?= e($o['status']) ?>"><?= ucfirst($o['status']) ?></span></div>
+        <div class="stack" style="gap:8px">
+          <div class="between"><span class="muted small">Offer ID</span><span class="mono small"><?= e($o['offer_id']) ?></span></div>
+          <div class="between"><span class="muted small">Category</span><span class="tag <?= strtolower($o['category']) ?>"><?= e($o['category']) ?></span></div>
+          <div class="between"><span class="muted small">Price</span><b><?= e(ksh($o['price'])) ?></b></div>
+          <div class="between"><span class="muted small">Validity</span><span><?= e($o['validity']) ?> <span class="muted small">(<?= e($o['band']) ?>)</span></span></div>
+          <div class="between"><span class="muted small">Daily rule</span><span class="small"><?= e(OfferRepository::RULES[$o['daily_rule']] ?? $o['daily_rule']) ?></span></div>
+          <?php if (!empty($o['max_per_day'])): ?><div class="between"><span class="muted small">Max per day</span><span><?= (int) $o['max_per_day'] ?></span></div><?php endif; ?>
+          <div class="between"><span class="muted small">Commercial tag</span><span><?= e($o['commercial_tag'] ?: '—') ?></span></div>
+          <div class="between"><span class="muted small">Offline eligible</span><span><?= ((int) $o['offline_eligible'] === 1) ? 'Yes' : 'No' ?></span></div>
+          <div class="between"><span class="muted small">Restrictions</span><span class="small"><?= e($o['restrictions'] ?: '—') ?></span></div>
+          <div class="between"><span class="muted small">Available from</span><span class="small"><?= e($o['starts_at'] ? fmt_nairobi($o['starts_at']) : '—') ?></span></div>
+          <div class="between"><span class="muted small">Available until</span><span class="small"><?= e($o['ends_at'] ? fmt_nairobi($o['ends_at']) : '—') ?></span></div>
+          <div class="between"><span class="muted small">Sort hint</span><span><?= (int) ($o['sort_hint'] ?? 0) ?></span></div>
+          <div class="between"><span class="muted small">Last updated</span><span class="small"><?= e(fmt_nairobi($o['updated_at'] ?? null)) ?><?= !empty($o['updated_by']) ? ' · ' . e($o['updated_by']) : '' ?></span></div>
+        </div>
+        <div class="modal__actions">
+          <?php if (can('offers.edit')): ?><a class="btn btn--secondary" href="<?= e(url('/offers/' . $o['offer_id'] . '/edit')) ?>">Edit</a><?php endif; ?>
+          <button class="btn" type="button" data-modal-close>Close</button>
+        </div>
+      </div>
+    </div>
+  <?php endforeach; ?>
 </div>

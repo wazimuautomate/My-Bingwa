@@ -70,6 +70,19 @@ final class Validator
                     $this->add($field, 'Must be at most ' . $arg . ' characters.');
                 }
                 break;
+            case 'minlen':
+                // Always a character-length check, even for numeric-looking strings
+                // (Till/Paybill/phone numbers). Empty optional values pass.
+                if ($str !== null && $str !== '' && mb_strlen((string) $str) < (int) $arg) {
+                    $this->add($field, 'Must be at least ' . $arg . ' characters.');
+                }
+                break;
+            case 'maxlen':
+                // Always a character-length check, even for numeric-looking strings.
+                if ($str !== null && $str !== '' && mb_strlen((string) $str) > (int) $arg) {
+                    $this->add($field, 'Must be at most ' . $arg . ' characters.');
+                }
+                break;
             case 'in':
                 $allowed = explode(',', (string) $arg);
                 if ($str !== null && $str !== '' && !in_array((string) $str, $allowed, true)) {

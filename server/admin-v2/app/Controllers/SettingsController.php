@@ -1,6 +1,6 @@
 <?php
 /**
- * Settings for a two-person panel: your own name/email, change password, theme,
+ * Settings for a two-person panel: your own name/email, change password,
  * and (Super Admin only) managing the single partner Admin — which sidebar pages
  * they may see and edit. There are no roles, no permission matrix and no 2FA.
  */

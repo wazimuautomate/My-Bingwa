@@ -11,7 +11,6 @@ use App\Core\Auth;
 use App\Core\Database;
 use App\Core\Request;
 use App\Repositories\PaymentRepository;
-use App\Services\PublishingService;
 use App\Support\Csv;
 
 final class DashboardController extends Controller
@@ -38,8 +37,7 @@ final class DashboardController extends Controller
                 'revenue' => PaymentRepository::revenueBetween($from, $to),
                 'confirmed' => PaymentRepository::confirmedCountBetween($from, $to),
             ],
-            'lastPublishAt'  => PublishingService::currentRelease()['created_at'] ?? null,
-            'latestPayments' => PaymentRepository::latest(8),
+            'latestPayments' => PaymentRepository::latest(6),
         ]);
     }
 

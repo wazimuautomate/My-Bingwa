@@ -1,7 +1,7 @@
 <?php
 /**
- * Remote app configuration — kept deliberately small: maintenance mode + message, the
- * background sync interval (clamped to a safe range) and a general support message.
+ * Remote app configuration — kept deliberately small: maintenance mode + message and the
+ * background sync interval (clamped to a safe range).
  * Changes are drafts until published.
  */
 
@@ -45,13 +45,12 @@ final class AppConfigController extends Controller
 
         Database::run(
             'UPDATE ' . Database::table('app_config') . ' SET
-                maintenance_mode=?, maintenance_message=?, sync_interval_minutes=?, general_support_message=?,
+                maintenance_mode=?, maintenance_message=?, sync_interval_minutes=?,
                 row_version = row_version + 1, updated_at = UTC_TIMESTAMP(), updated_by = ? WHERE id = 1',
             [
                 $request->post('maintenance_mode') ? 1 : 0,
                 trim((string) $request->post('maintenance_message', '')),
                 $sync,
-                trim((string) $request->post('general_support_message', '')),
                 Auth::user()['name'] ?? 'system',
             ]
         );

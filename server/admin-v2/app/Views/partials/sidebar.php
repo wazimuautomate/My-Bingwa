@@ -16,14 +16,14 @@ $nav = [
 ?>
 <aside class="sidebar">
   <a class="brand" href="<?= e(url('/')) ?>">
-    <span class="brand__logo">B</span>
+    <img class="brand__logo" src="<?= e(asset('img/logo.png')) ?>" alt="My Bingwa" width="32" height="32">
     <span class="brand__name">My <b>Bingwa</b></span>
   </a>
 
   <nav class="nav" aria-label="Primary">
     <?php foreach ($nav as [$icon, $label, $path, $perm, $key]): ?>
       <?php if ($perm !== null && !can($perm)) { continue; } ?>
-      <a class="nav__item <?= ($activeNav ?? '') === $key ? 'is-active' : '' ?>" href="<?= e(url($path)) ?>">
+      <a class="nav__item <?= ($activeNav ?? '') === $key ? 'is-active' : '' ?>" href="<?= e(url($path)) ?>" title="<?= e($label) ?>">
         <?= icon($icon, 20) ?>
         <span><?= e($label) ?></span>
       </a>

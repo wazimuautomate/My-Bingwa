@@ -45,7 +45,7 @@ $toLocal = function (?string $utc) {
       <div class="card__head"><h3>Phone preview</h3></div>
       <div class="phone">
         <div style="background:var(--surface);border:1px solid var(--divider);border-radius:14px;padding:12px;display:flex;gap:10px">
-          <span class="brand__logo" style="width:28px;height:28px;border-radius:8px;font-size:14px">B</span>
+          <img class="brand__logo" src="<?= e(asset('img/logo.png')) ?>" alt="My Bingwa" style="width:28px;height:28px;border-radius:8px">
           <div style="min-width:0">
             <b class="small" id="pv-title" data-empty="Notification title"><?= e($c['title'] ?? '') ?: 'Notification title' ?></b>
             <div class="small muted" id="pv-body" data-empty="Body text preview"><?= e($c['body'] ?? '') ?: 'Body text preview' ?></div>

@@ -12,7 +12,7 @@
 <body>
 <div class="auth">
   <div class="auth__card">
-    <div class="auth__brand"><span class="brand__logo">B</span><span class="brand__name">My <b>Bingwa</b></span></div>
+    <div class="auth__brand"><img class="brand__logo" src="<?= e(asset('img/logo.png')) ?>" alt="My Bingwa" width="32" height="32"><span class="brand__name">My <b>Bingwa</b></span></div>
     <h1>Account recovery</h1>
     <p class="sub">Ask the Super Admin to set you a new password from <b>Settings → Manage partner Admin</b>.</p>
     <?php foreach (($flashes ?? []) as $f): ?>

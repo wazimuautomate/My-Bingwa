@@ -43,24 +43,26 @@ final class SupportController extends Controller
             'paybill_number' => trim((string) $request->post('paybill_number', '')),
             'support_number' => trim((string) $request->post('support_number', '')),
             'support_whatsapp' => trim((string) $request->post('support_whatsapp', '')),
-            'offline_self_instructions' => trim((string) $request->post('offline_self_instructions', '')),
-            'offline_other_instructions' => trim((string) $request->post('offline_other_instructions', '')),
             'support_banner' => trim((string) $request->post('support_banner', '')),
             'working_hours' => trim((string) $request->post('working_hours', '')),
         ];
 
         $v = Validator::make($input);
+        // Length caps use maxlen (character length) not max (numeric comparison), so a
+        // real Till/Paybill/phone number greater than 24 is not rejected as "too large".
         $v->validate([
-            'till_number' => 'msisdn|max:24',
-            'paybill_number' => 'msisdn|max:24',
-            'support_number' => 'msisdn|max:24',
-            'support_whatsapp' => 'max:24',
+            'till_number' => 'msisdn|maxlen:24',
+            'paybill_number' => 'msisdn|maxlen:24',
+            'support_number' => 'msisdn|maxlen:24',
+            'support_whatsapp' => 'maxlen:24',
         ]);
         if ($v->fails()) {
             Flash::error('Check the payment/shortcode fields: ' . implode(' ', array_values($v->firstErrors())));
             $this->redirect('/support');
         }
 
+        // Offline instructions are no longer editable here; preserve whatever is stored
+        // so publishing keeps the existing values instead of blanking them.
         Database::run(
             'UPDATE ' . Database::table('support_config') . ' SET
                 till_number=?, paybill_number=?, support_number=?, support_whatsapp=?,
@@ -68,7 +70,7 @@ final class SupportController extends Controller
                 row_version = row_version + 1, updated_at = UTC_TIMESTAMP(), updated_by = ? WHERE id = 1',
             [
                 $input['till_number'], $input['paybill_number'], $input['support_number'], $input['support_whatsapp'],
-                $input['offline_self_instructions'], $input['offline_other_instructions'], $input['support_banner'],
+                $current['offline_self_instructions'] ?? '', $current['offline_other_instructions'] ?? '', $input['support_banner'],
                 $input['working_hours'], Auth::user()['name'] ?? 'system',
             ]
         );

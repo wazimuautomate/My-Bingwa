@@ -45,17 +45,35 @@
     setTimeout(function () { t.remove(); }, 220);
   }
 
-  /* ---- Dropdown menus (topbar profile / notifications) ---- */
+  /* ---- Dropdown menus (topbar profile / notifications / table row kebabs) ----
+     Row kebab menus live inside a horizontally-scrollable table, which would clip an
+     absolutely-positioned panel. Menus flagged .dropdown-menu--fixed are positioned
+     with fixed coordinates from the trigger so they escape the table overflow. */
   bind('[data-dropdown]', 'click', function (e) {
     e.stopPropagation();
     var id = this.getAttribute('data-dropdown');
     var menu = document.getElementById(id);
     document.querySelectorAll('.dropdown-menu.open').forEach(function (m) { if (m !== menu) m.classList.remove('open'); });
-    if (menu) menu.classList.toggle('open');
+    if (!menu) return;
+    var willOpen = !menu.classList.contains('open');
+    menu.classList.toggle('open');
+    if (willOpen && menu.classList.contains('dropdown-menu--fixed')) {
+      var r = this.getBoundingClientRect();
+      var w = menu.offsetWidth || 220;
+      var left = r.right - w;
+      if (left < 8) left = 8;
+      menu.style.position = 'fixed';
+      menu.style.top = (r.bottom + 6) + 'px';
+      menu.style.left = left + 'px';
+      menu.style.right = 'auto';
+    }
   });
-  document.addEventListener('click', function () {
+  function closeDropdowns() {
     document.querySelectorAll('.dropdown-menu.open').forEach(function (m) { m.classList.remove('open'); });
-  });
+  }
+  document.addEventListener('click', closeDropdowns);
+  // A fixed-positioned menu would detach from its row on scroll, so close on any scroll.
+  window.addEventListener('scroll', closeDropdowns, true);
 
   /* ---- Confirm modal for dangerous / state-changing actions ----
      Any <form data-confirm="Are you sure?"> defers submit until confirmed. */
@@ -105,5 +123,33 @@
     var target = document.querySelector(input.getAttribute('data-preview-src'));
     if (!target) return;
     input.addEventListener('input', function () { target.textContent = input.value || target.getAttribute('data-empty') || ''; });
+  });
+
+  /* ---- Generic overlay modals (read-only detail views) ----
+     A trigger with data-modal-open="#id" reveals the matching .modal-backdrop[data-modal].
+     Closes on backdrop click, any [data-modal-close] button, or Escape. */
+  bind('[data-modal-open]', 'click', function (e) {
+    e.preventDefault();
+    var sel = this.getAttribute('data-modal-open');
+    var m = sel ? document.querySelector(sel) : null;
+    if (m) m.classList.add('open');
+  });
+  document.querySelectorAll('.modal-backdrop[data-modal]').forEach(function (bd) {
+    function close() { bd.classList.remove('open'); }
+    bd.addEventListener('click', function (e) { if (e.target === bd) close(); });
+    bd.querySelectorAll('[data-modal-close]').forEach(function (b) { b.addEventListener('click', close); });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' || e.key === 'Esc') {
+      document.querySelectorAll('.modal-backdrop.open').forEach(function (m) { m.classList.remove('open'); });
+      closeDropdowns();
+    }
+  });
+
+  /* ---- Desktop sidebar collapse (persisted in the mb_nav cookie) ---- */
+  bind('[data-toggle-collapse]', 'click', function () {
+    if (!app) return;
+    var collapsed = app.classList.toggle('nav-collapsed');
+    setCookie('mb_nav', collapsed ? 'collapsed' : 'expanded');
   });
 })();

@@ -7,6 +7,7 @@ $theme = $_COOKIE['mb_theme'] ?? 'system';
 ?>
 <header class="topbar">
   <button class="iconbtn topbar__menu" data-toggle-nav aria-label="Open navigation"><?= icon('menu', 20) ?></button>
+  <button class="iconbtn topbar__collapse" data-toggle-collapse title="Collapse or expand navigation" aria-label="Collapse or expand navigation"><?= icon('menu', 20) ?></button>
 
   <form class="search" role="search" method="get" action="<?= e(url('/offers')) ?>">
     <?= icon('search', 18) ?>
