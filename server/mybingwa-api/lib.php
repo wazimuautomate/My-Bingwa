@@ -38,16 +38,61 @@ function callback_ack_ignore(): void
     json_out(['ResultCode' => 0, 'ResultDesc' => 'ignored']);
 }
 
-/** True only if the callback URL carries the expected shared-secret token. */
+/**
+ * True if the callback carries the expected shared-secret token. Daraja STRIPS the
+ * query string from the CallbackURL but preserves the URL PATH, so we accept the
+ * token from PATH_INFO (callback.php/<secret>) as well as ?token=<secret>. In
+ * practice Daraja drops both for a plain CallbackURL, which is why IP auth below is
+ * the reliable path.
+ */
 function callback_token_ok(array $config): bool
 {
     $expected = (string) ($config['callback_secret'] ?? '');
     if ($expected === '') {
-        // No secret configured → we cannot authenticate, so trust nothing.
         return false;
     }
-    $sent = (string) ($_GET['token'] ?? '');
-    return hash_equals($expected, $sent);
+    $pathToken  = ltrim((string) ($_SERVER['PATH_INFO'] ?? ''), '/');
+    $queryToken = (string) ($_GET['token'] ?? '');
+    return ($pathToken !== '' && hash_equals($expected, $pathToken))
+        || ($queryToken !== '' && hash_equals($expected, $queryToken));
+}
+
+/**
+ * Safaricom's Daraja result callbacks originate from a small, well-known block of
+ * IPs (196.201.212.x / 196.201.213.x / 196.201.214.x). Because Daraja cannot send a
+ * custom header AND strips the query string, the SOURCE IP is the dependable
+ * authenticator for the webhook — combined with the amount cross-check in
+ * callback.php, this is the standard, secure Daraja approach.
+ */
+function is_safaricom_callback_ip(string $ip): bool
+{
+    foreach (['196.201.212.', '196.201.213.', '196.201.214.'] as $prefix) {
+        if (strpos($ip, $prefix) === 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Authenticate the result callback. ANY one is sufficient (the amount cross-check in
+ * callback.php is the final guard):
+ *   1) a shared-secret token that survived in the path/query, OR
+ *   2) the request coming from a Safaricom callback IP, OR
+ *   3) an explicit operator IP allowlist (config `callback_ip_allowlist`).
+ * This fixes the real-world case where Daraja drops the ?token= we used to require.
+ */
+function callback_authenticated(array $config): bool
+{
+    if (callback_token_ok($config)) {
+        return true;
+    }
+    $ip = client_ip($config);
+    if (is_safaricom_callback_ip($ip)) {
+        return true;
+    }
+    $allow = $config['callback_ip_allowlist'] ?? [];
+    return is_array($allow) && count($allow) > 0 && in_array($ip, $allow, true);
 }
 
 /**

@@ -1,28 +1,32 @@
 <?php
 /**
- * POST callback.php?token=<callback_secret> — Daraja posts the STK result here.
+ * POST callback.php — Daraja posts the STK result here.
  *
- * Daraja cannot send a custom header, so the CallbackURL you register carries a
- * shared-secret token (config `callback_secret`). Anything without the correct
- * token — or from an IP outside an optional allowlist (config
- * `callback_ip_allowlist`) — is acked with ResultCode 0 (so Safaricom stops
- * retrying) but applies NO database change. This closes the spoofing hole where
- * anyone could POST a fake "ResultCode 0" + receipt and flip a payment to paid.
+ * Daraja cannot send a custom header AND strips the query string from the
+ * CallbackURL, so the webhook is authenticated by SOURCE IP (Safaricom's callback
+ * block, plus an optional explicit allowlist) — with a shared-secret token accepted
+ * too if it ever survives in the path/query. See lib.php `callback_authenticated`.
+ * A request that fails authentication is acked with ResultCode 0 (so Safaricom stops
+ * retrying) but applies NO database change.
  *
  * We also cross-check the callback Amount against the row's server-recomputed
- * amount; a mismatch is flagged for manual review instead of being confirmed.
- * We never trust the callback's amount to overwrite the recomputed price.
+ * amount; a mismatch is flagged for manual review instead of being confirmed. We
+ * never trust the callback's amount to overwrite the recomputed price.
  */
 
 $config = require __DIR__ . '/config.php';
 require __DIR__ . '/lib.php';
 
-// --- Authenticity gate. Fail closed: ack-and-ignore, never touch the DB. ------
-if (!callback_token_ok($config) || !callback_ip_allowed($config)) {
+$rawInput = file_get_contents('php://input');
+
+// --- Authenticity gate. Accept a surviving token OR a Safaricom callback IP. Fail
+// closed otherwise: ack-and-ignore, never touch the DB. The amount cross-check below
+// is the final guard against a bad confirmation.
+if (!callback_authenticated($config)) {
     callback_ack_ignore();
 }
 
-$payload = json_decode(file_get_contents('php://input'), true) ?: [];
+$payload = json_decode($rawInput, true) ?: [];
 $cb = $payload['Body']['stkCallback'] ?? null;
 
 if ($cb && isset($cb['CheckoutRequestID'])) {

@@ -53,28 +53,32 @@ return [
     'paybill_passkey' => 'PUT_PAYBILL_PASSKEY_OPTIONAL',
 
     // ---- Daraja callback (result webhook) authenticity --------------------
-    // Daraja cannot send a custom header, so callback.php is protected by a
-    // shared-secret token in its URL: callback.php?token=<callback_secret>.
-    // A POST without the correct token (or from a disallowed IP) is acked but
-    // IGNORED — this is what stops attackers spoofing a "paid" result.
-    // Use a long random string. It MUST match the ?token=... in callback_url.
+    // IMPORTANT: Daraja STRIPS the query string from your CallbackURL, so a ?token=
+    // cannot be relied on (it silently rejects every real callback). callback.php
+    // therefore authenticates the webhook by SOURCE IP — Safaricom's callback block
+    // (196.201.212/213/214.x, accepted in code) plus the explicit allowlist below —
+    // combined with an amount cross-check. A shared-secret token is still honoured if
+    // it ever survives (path or query), but it is not required.
     'callback_secret' => 'PUT_A_LONG_RANDOM_CALLBACK_TOKEN',
 
-    // Optional Safaricom source-IP allowlist. Empty array = allow all IPs.
-    // To lock down, list Daraja's callback egress IPs, e.g.
-    //   'callback_ip_allowlist' => ['196.201.214.200', '196.201.214.206'],
-    'callback_ip_allowlist' => [],
+    // Safaricom Daraja callback source IPs — these authenticate the webhook. Keep the
+    // current published list here; the code also accepts the whole 196.201.212/213/214
+    // block as a resilience fallback. Empty = rely on the code's block match only.
+    'callback_ip_allowlist' => [
+        '196.201.214.200', '196.201.214.206', '196.201.213.114', '196.201.214.207',
+        '196.201.214.208', '196.201.213.44',  '196.201.212.127', '196.201.212.138',
+        '196.201.212.129', '196.201.212.136', '196.201.212.74',  '196.201.212.69',
+    ],
 
     // Optional: if a proxy/CDN you CONTROL fronts this server, name the PHP
     // $_SERVER key that carries the real client IP (e.g. 'HTTP_X_FORWARDED_FOR').
     // Leave '' when Daraja hits this server directly — otherwise it is spoofable.
     'trusted_proxy_header' => '',
 
-    // Public HTTPS URL where Daraja posts the result. Must be THIS server's
-    // callback.php AND MUST include the secret token, and must be exactly the URL
-    // you register in the Daraja portal, e.g.
-    //   https://mybingwa.blazetechscope.com/callback.php?token=PUT_A_LONG_RANDOM_CALLBACK_TOKEN
-    'callback_url' => 'https://PUT_YOUR_DOMAIN/callback.php?token=PUT_A_LONG_RANDOM_CALLBACK_TOKEN',
+    // Public HTTPS URL where Daraja posts the result — your callback.php. A ?token=
+    // is optional (Daraja usually drops it); IP auth above is what secures it. e.g.
+    //   https://mybingwa.blazetechscope.com/callback.php
+    'callback_url' => 'https://PUT_YOUR_DOMAIN/callback.php',
 
     // ---- Buy-for-another fulfilment SMS -----------------------------------
     // On a CONFIRMED buy-for-another payment (payer != recipient) the server sends a

@@ -30,11 +30,15 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Security
 
-- **Payment callback can no longer be spoofed.** `callback.php` now requires a
-  shared-secret URL token (`?token=…`) and an optional Safaricom IP allowlist before
-  any DB write, and cross-checks the callback amount against the server-recomputed
-  price (a mismatch is flagged, not confirmed). Previously anyone who knew a
-  `CheckoutRequestID` could POST a fake receipt and flip a payment to confirmed.
+- **Payment callback is authenticated by Safaricom source IP + amount cross-check.**
+  `callback.php` authenticates Daraja's result webhook by its source IP (Safaricom's
+  `196.201.212/213/214.x` block plus an explicit allowlist) and cross-checks the
+  callback amount against the server-recomputed price (a mismatch is flagged, not
+  confirmed), so a spoofed "paid" POST from any other IP is ignored. NOTE: an earlier
+  `?token=` URL-secret approach was removed — Daraja **strips the query string** from
+  the CallbackURL, which silently rejected every real callback and broke all payment
+  confirmation; IP auth is the reliable, standard fix (validated live end-to-end for
+  both buy-for-myself and buy-for-another).
 - **`X-App-Key` validation is now fail-closed** on `stk.php`/`status.php` (empty/
   missing key → 401), and **STK idempotency is atomic** (insert-first on the unique
   `client_request_id`) so concurrent duplicate requests no longer fire two real STK
