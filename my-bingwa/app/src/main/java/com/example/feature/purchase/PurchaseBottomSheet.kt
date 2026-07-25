@@ -635,7 +635,7 @@ private fun PaymentResultStep(
                 icon = Icons.Outlined.ErrorOutline,
                 tint = MaterialTheme.colorScheme.error,
                 heading = "Payment failed",
-                body = "No money was deducted. Check your M-Pesa balance or signal and try again.",
+                body = "No money was deducted. Check your network and try again.",
                 primaryText = "Try again",
                 onPrimary = onTryAgain
             )
@@ -870,7 +870,7 @@ private fun OfflinePaymentInstructionsStep(
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "Tap below to copy the ${if (isTill) "Till" else "Paybill"} and open M-Pesa. Use the exact amount and do not change it.",
+                text = "Tap below to copy the ${if (isTill) "Till" else "Paybill"} and open M-Pesa. Use the exact amount of the offer.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -922,7 +922,7 @@ private fun OfflinePaymentInstructionsStep(
                 InstructionLine("3", "Choose Buy Goods and Services")
                 InstructionLine("4", "Enter Till number $till")
                 InstructionLine("5", "Enter the exact amount KSh ${offer.priceKsh}")
-                InstructionLine("6", "Complete payment using the same number that should receive the bundle")
+                InstructionLine("6", "Enter your M-pesa pin to complete payment.")
             } else {
                 InstructionLine("1", "Go to M-Pesa")
                 InstructionLine("2", "Choose Lipa na M-Pesa")
