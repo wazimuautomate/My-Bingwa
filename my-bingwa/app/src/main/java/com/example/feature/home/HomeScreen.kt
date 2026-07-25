@@ -1,5 +1,11 @@
 package com.example.feature.home
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -34,11 +40,13 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -138,7 +146,7 @@ fun HomeScreen(
                 }
 
                 item(key = "categories") {
-                    CategoryShortcutRow(onCategoryClick = onCategoryClick)
+                    CategoryShortcutRow(onCategoryClick = onCategoryClick, reducedMotion = reducedMotion)
                 }
 
                 if (state.isOffline) {
@@ -250,7 +258,10 @@ private fun FavouritesEmpty() {
 }
 
 @Composable
-private fun CategoryShortcutRow(onCategoryClick: (OfferCategory) -> Unit) {
+private fun CategoryShortcutRow(
+    onCategoryClick: (OfferCategory) -> Unit,
+    reducedMotion: Boolean = false
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
@@ -258,7 +269,13 @@ private fun CategoryShortcutRow(onCategoryClick: (OfferCategory) -> Unit) {
         CategoryShortcutTile("Data", Icons.Outlined.SignalCellularAlt, OfferCategory.DATA) { onCategoryClick(OfferCategory.DATA) }
         CategoryShortcutTile("Minutes", Icons.Outlined.Call, OfferCategory.MINUTES) { onCategoryClick(OfferCategory.MINUTES) }
         CategoryShortcutTile("SMS", Icons.Outlined.ChatBubbleOutline, OfferCategory.SMS) { onCategoryClick(OfferCategory.SMS) }
-        CategoryShortcutTile("Special", Icons.Outlined.AutoAwesome, OfferCategory.SPECIAL) { onCategoryClick(OfferCategory.SPECIAL) }
+        // Special glitters to draw the eye to the seller's high-value offers.
+        CategoryShortcutTile(
+            "Special",
+            Icons.Outlined.AutoAwesome,
+            OfferCategory.SPECIAL,
+            twinkle = !reducedMotion
+        ) { onCategoryClick(OfferCategory.SPECIAL) }
     }
 }
 
@@ -267,8 +284,43 @@ private fun CategoryShortcutTile(
     label: String,
     icon: ImageVector,
     category: OfferCategory,
+    twinkle: Boolean = false,
     onClick: () -> Unit
 ) {
+    // A gentle sparkle (soft scale + brightness pulse) on the Special star only —
+    // enough to attract the eye without a neon glow or a jarring bounce
+    // (design.md §9 motion; respects reduced motion via the [twinkle] flag).
+    val iconModifier = if (twinkle) {
+        val transition = rememberInfiniteTransition(label = "special_twinkle")
+        val scale by transition.animateFloat(
+            initialValue = 0.9f,
+            targetValue = 1.14f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1100, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "special_scale"
+        )
+        val glow by transition.animateFloat(
+            initialValue = 0.7f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1100, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "special_glow"
+        )
+        Modifier
+            .size(26.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                alpha = glow
+            }
+    } else {
+        Modifier.size(26.dp)
+    }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -289,7 +341,7 @@ private fun CategoryShortcutTile(
                 imageVector = icon,
                 contentDescription = label,
                 tint = colors.accent,
-                modifier = Modifier.size(26.dp)
+                modifier = iconModifier
             )
         }
         Spacer(Modifier.height(6.dp))
