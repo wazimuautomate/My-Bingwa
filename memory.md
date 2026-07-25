@@ -941,3 +941,29 @@ destinations.
 - **Git:** committing app + lib.php + callback.php + config.sample.php + docs on
   `feature/real-payments-persistence`; `config.php` never committed. Not merged to main (per
   owner, another AI handles main).
+
+## 2026-07-25 EAT — CRITICAL callback fix: Daraja strips ?token= → auth by Safaricom IP
+
+- **Symptom:** buy-for-another payment succeeded on Daraja (ResultCode 0) but our row stayed
+  `PAYMENT_REQUESTED` (no confirm, no fulfilment SMS). Instrumented `callback.php` with a
+  debug log; it showed Daraja DID hit the callback from IP `196.201.212.74` but with
+  `token_present=no` → rejected at the token gate.
+- **Root cause (big one):** Daraja **strips the query string** from the CallbackURL, so the
+  `?token=<callback_secret>` gate rejected EVERY real callback. This broke ALL payment
+  confirmation (buy-for-myself too — it had only worked earlier because the token gate was not
+  yet deployed then). "Users pay, no bundle."
+- **Fix:** authenticate the webhook by SOURCE IP instead. `lib.php` `callback_authenticated()`
+  = token (if it survives, path or query) OR Safaricom IP (hardcoded `196.201.212/213/214.x`
+  prefix) OR explicit `callback_ip_allowlist`; `callback.php` uses it; still cross-checks the
+  amount. Owner supplied the exact 12 Safaricom callback IPs → added to `config.php`
+  `callback_ip_allowlist` (belt-and-suspenders; prefix already covers them).
+- **VALIDATED LIVE:** fresh KSh 5 buy-for-another → `status.php` `PAYMENT_CONFIRMED` + real
+  receipt `UGPQC0JUDH`; SMS integration separately proven (SKYSCOPE_ mock delivered to
+  fulfilment `0111327201`, "received from 254111699734"). Whole buy-for-another loop works.
+- **Server deploy done by owner:** `lib.php`, `callback.php`, `config.php`. Debug logging then
+  removed from `callback.php` (clean version committed); owner should re-upload the clean
+  `callback.php` and delete `callback_debug.log`. `.htaccess` also blocks `.log`.
+- **Config now:** `4050595` Paybill (self+another via CustomerPayBillOnline; another sets
+  AccountReference=recipient), `transaction_type=CustomerPayBillOnline`, fulfilment_phone
+  `0111327201`, sms_sender_id `SKYSCOPE_`, sms_api_key set. `callback_url` no longer needs the
+  token (IP auth). Two earlier paid test rows remain unconfirmed (Daraja won't resend); ignore.
