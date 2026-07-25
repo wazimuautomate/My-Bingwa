@@ -70,6 +70,15 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Fixed
 
+- **A fresh install no longer shows prefilled data and opens on onboarding.** The
+  default profile was seeded with a real name/number and `isOnboardingCompleted=true`,
+  so a new install skipped onboarding and showed the owner's details. The default
+  profile is now empty with onboarding not completed (app opens on onboarding on first
+  launch), and all seeded demo data (purchases, notifications, recent recipients,
+  favourites — which also carried a real phone number) is removed. Tests seed their own
+  fixtures via new test-only constructor params. Phone normalisation already supports
+  `07…`/`01…` (e.g. `0112385760` → `254112385760`); the earlier mangling was a stale APK.
+
 - **Online STK push now actually works (was failing / not delivering).** Two live
   defects found by firing a real KSh 1 STK against production Daraja:
   - `offers.php` (the server's authoritative price map) used stale ids `off_1..off_16`

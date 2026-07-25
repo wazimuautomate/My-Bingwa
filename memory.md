@@ -967,3 +967,21 @@ destinations.
   AccountReference=recipient), `transaction_type=CustomerPayBillOnline`, fulfilment_phone
   `0111327201`, sms_sender_id `SKYSCOPE_`, sms_api_key set. `callback_url` no longer needs the
   token (IP auth). Two earlier paid test rows remain unconfirmed (Daraja won't resend); ignore.
+
+## 2026-07-25 EAT — Fresh-install cleanup: no prefilled data, start on onboarding
+
+- **CRITICAL owner report:** the app installed with the owner's real details prefilled and
+  skipped onboarding. Root cause: `FakeBingwaRepositoryImpl.defaultProfile` seeded name
+  "Bonke"/number "0727 921 038" with `isOnboardingCompleted=true`; and demo purchases/
+  notifications/recentRecipients/favourites carried real numbers.
+- **Fix:** defaultProfile → empty + `isOnboardingCompleted=false` (MainActivity's
+  `startOnboarding=!isOnboardingCompleted` now true on first launch). Removed ALL seeded demo
+  data (purchases, notifications, recents, favourites). Added test-only constructor params
+  `seedPurchases`/`seedNotifications`/`seedRecentRecipients` (default empty); updated
+  SmsReconciliationTest + NotificationRepositoryTest + CatalogueViewModelTest to seed their own.
+- **Phone normalisation:** owner reported `0112385760` → `254711238…` (invalid). But current
+  code is CORRECT — `KenyanPhone.toE164/toMsisdn` and onboarding `normalizeKenyanPhone` both
+  handle `07…`/`01…` (`0112385760` → `254112385760`); `OnboardingPhoneTest` covers `01…`. The
+  mangling was a stale APK; the fresh APK is correct. No code change needed there.
+- **Git:** `fix/onboarding-and-phone-normalisation` off `main`; CI green (run 30159213720);
+  merged to `main` (fast-forward). Fresh APK from main CI.
