@@ -46,6 +46,24 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
   the dev simulation that returned a fabricated M-Pesa receipt. Real STK requires both
   a base URL (defaults to the production API host) and the `PAYMENTS_APP_KEY` secret.
 
+### Added
+
+- **Buy-for-another number is now implemented (was a mock).** Per
+  `docs/Buy For Another Number - Implementation Spec.md`, adapted to our Paybill setup:
+  - The app routes a buy-for-another purchase through the real backend (`forSelf=false`);
+    the server charges the payer via the Paybill with the **recipient's number** as the
+    AccountReference.
+  - On a **confirmed** buy-for-another payment, `callback.php` sends a **mocked M-Pesa
+    SMS** to the fulfilment phone whose "received from" number is the **recipient** (not
+    the payer), so the operator loads the bundle for the right line. The message is a
+    byte-for-byte reproduction of the Safaricom format (`lib.php`
+    `build_mocked_mpesa_message`), sent via the BlazeTechScope bulk-SMS API
+    (`send_mocked_mpesa_sms`). Self-purchases never trigger it.
+  - Duplicate-safe: the SMS fires only on the atomic REQUESTED→CONFIRMED transition, so
+    Daraja's repeated callbacks never double-send. New config keys (`fulfilment_phone`,
+    `business_name`, `sms_api_url`, `sms_api_key`, `sms_sender_id`) documented in
+    `config.sample.php`.
+
 ### Fixed
 
 - **Online STK push now actually works (was failing / not delivering).** Two live

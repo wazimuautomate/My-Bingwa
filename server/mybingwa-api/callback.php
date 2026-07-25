@@ -75,17 +75,35 @@ if ($cb && isset($cb['CheckoutRequestID'])) {
             ]);
         } else {
             // Normal path. We never write `amount`, so the recomputed price stands.
-            $pdo->prepare(
+            // The `status <> CONFIRMED` guard makes this atomic + idempotent: only the
+            // callback that actually flips REQUESTED→CONFIRMED gets rowCount 1, so
+            // Daraja's duplicate callbacks never trigger a second fulfilment SMS.
+            $upd = $pdo->prepare(
                 'UPDATE payments
                     SET status = ?, mpesa_receipt = ?, result_code = ?, result_desc = ?, updated_at = NOW()
-                  WHERE checkout_request_id = ?'
-            )->execute([
+                  WHERE checkout_request_id = ? AND status <> ?'
+            );
+            $upd->execute([
                 $status,
                 $receipt,
                 (string) $resultCode,
                 $resultDesc,
                 $checkoutId,
+                'PAYMENT_CONFIRMED',
             ]);
+            $weConfirmed = $upd->rowCount() === 1;
+
+            // Buy-for-another fulfilment signal: on the FIRST confirmation only, and
+            // only when payer != recipient, send the mocked M-Pesa SMS naming the
+            // recipient to the fulfilment phone. Best-effort; never blocks the 200 ack.
+            $recipient = (string) ($row['recipient'] ?? '');
+            $payer     = (string) ($row['payer'] ?? '');
+            if ($weConfirmed
+                && $status === 'PAYMENT_CONFIRMED'
+                && $receipt !== null && $receipt !== ''
+                && $recipient !== '' && $recipient !== $payer) {
+                send_mocked_mpesa_sms($config, $receipt, (int) $row['amount'], $recipient);
+            }
         }
     }
     // Unknown checkoutId → no row to update; we still ack below.
