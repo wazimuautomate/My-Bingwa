@@ -241,3 +241,92 @@ function map_result_code($resultCode): string
         default:     return 'PAYMENT_FAILED';
     }
 }
+
+// ---------------------------------------------------------------------------
+// Buy-for-another fulfilment signal (docs/"Buy For Another Number - Implementation
+// Spec.md"). When someone pays for a DIFFERENT number, the real M-Pesa SMS the owner
+// receives names the PAYER — the wrong line to serve. So on a confirmed
+// buy-for-another payment we build a mocked M-Pesa-style SMS whose "received from"
+// number is the RECIPIENT and send it to the fulfilment phone, so the operator loads
+// the bundle for the right line. This is never sent for self-purchases.
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the mocked M-Pesa confirmation text. Byte-for-byte reproduction of the
+ * Safaricom format quirks (see the spec): "Confirmed.on" has no space, no space
+ * between AM/PM and "Ksh", day/month unpadded, 2-digit year, hour unpadded / minute
+ * padded, amount always 2 dp, recipient as 254XXXXXXXXX, business name uppercased.
+ */
+function build_mocked_mpesa_message(string $receipt, $amount, string $recipient, string $business): string
+{
+    $t = time() + 3 * 3600;               // Kenya = UTC+3, no DST
+    $day    = (int) gmdate('j', $t);      // not zero-padded
+    $month  = (int) gmdate('n', $t);      // not zero-padded
+    $year   = gmdate('y', $t);            // 2 digits
+    $hour24 = (int) gmdate('G', $t);
+    $ampm   = $hour24 >= 12 ? 'PM' : 'AM';
+    $hour   = $hour24 % 12;
+    if ($hour === 0) {
+        $hour = 12;                       // midnight/noon → 12, not padded
+    }
+    $min = gmdate('i', $t);               // zero-padded
+
+    $date = $day . '/' . $month . '/' . $year;
+    $time = $hour . ':' . $min . ' ' . $ampm;
+    $amt  = number_format((float) $amount, 2, '.', '');   // 2 dp, no thousands sep
+
+    // recipient → bare national digits, then prefix 254.
+    $num = preg_replace('/\D/', '', $recipient);
+    $num = preg_replace('/^254/', '', $num);
+    $num = preg_replace('/^0/', '', $num);
+
+    $biz = strtoupper($business);
+
+    return $receipt . ' Confirmed.on ' . $date . ' at ' . $time . 'Ksh' . $amt
+        . ' received from 254' . $num . ' ' . $biz
+        . '. New Account balance is Ksh0.00. Transaction cost, Ksh0.00.';
+}
+
+/**
+ * Send the mocked M-Pesa SMS to the fulfilment phone via the SMS provider. Best-effort:
+ * returns true/false and NEVER throws, so a callback still returns 200 to Daraja even
+ * if the SMS provider is down. Skips quietly when SMS is not configured.
+ */
+function send_mocked_mpesa_sms(array $config, string $receipt, int $amount, string $recipient): bool
+{
+    $phone    = (string) ($config['fulfilment_phone'] ?? '');
+    $apiKey   = (string) ($config['sms_api_key'] ?? '');
+    $apiUrl   = (string) ($config['sms_api_url'] ?? 'https://sms.blazetechscope.com/v1/bulksms');
+    $senderId = (string) ($config['sms_sender_id'] ?? 'MYBINGWA');
+    $business = (string) ($config['business_name'] ?? 'MyBingwa');
+    if ($phone === '' || $apiKey === '') {
+        return false;   // not configured yet → skip quietly (no fatal)
+    }
+
+    $message = build_mocked_mpesa_message($receipt, $amount, $recipient, $business);
+
+    [$code, $json] = http_json(
+        'POST',
+        $apiUrl,
+        ['Content-Type: application/json', 'Accept: application/json'],
+        json_encode([
+            'message'   => $message,
+            'phones'    => [$phone],
+            'sender_id' => $senderId,
+            'api_key'   => $apiKey,
+        ])
+    );
+
+    // Treat common success shapes as success; otherwise false (caller ignores it).
+    if ($code >= 200 && $code < 300) {
+        if (!is_array($json)) {
+            return true;   // 2xx with a non-JSON body is still a send
+        }
+        return ($json['status'] ?? null) === 'success'
+            || ($json['success'] ?? null) === true
+            || (int) ($json['response-code'] ?? 0) === 200
+            || (int) ($json['data']['statusCode'] ?? 0) === 200
+            || true;       // 2xx is good enough; providers vary
+    }
+    return false;
+}

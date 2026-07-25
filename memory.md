@@ -908,3 +908,36 @@ destinations.
   the row (the query-fallback never writes a receipt). Whole online payment chain confirmed
   working in production. The temporary `test_1` KSh 1 offer was removed from `offers.php`
   after the test (owner may re-upload `offers.php` to drop it from the live server too).
+  NOTE: the DEPLOYED offers.php STILL has `test_1` (owner uploaded that version), so a KSh 1
+  test still works live until they re-upload the cleaned file.
+
+## 2026-07-25 EAT — Buy-for-another implemented (mocked-M-Pesa-SMS fulfilment signal)
+
+- **Objective:** Implement buy-for-another per `docs/Buy For Another Number - Implementation
+  Spec.md` (owner got it from another site), adapted to our Paybill setup. "Another AI will
+  push to main."
+- **Spec essence:** payer pays for a different recipient; money to a (separate) till; on
+  success send a MOCKED M-Pesa SMS whose "received from" is the RECIPIENT (not payer) to the
+  fulfilment phone, so the operator serves the right line. Sender id must be registered
+  (SKYSCOPE in their example); provider `https://sms.blazetechscope.com/v1/bulksms`.
+- **Adaptation to our site:** our validated STK is Paybill `4050595` + CustomerPayBillOnline,
+  so buy-for-another uses the SAME Paybill (existing `another` route: forSelf=false →
+  AccountReference = recipient number). The NEW part is the mocked SMS.
+- **Changed:**
+  - App `FakeBingwaRepositoryImpl`: un-mocked `anotherNumberGateway` → `gateway ?: fallback`
+    (real backend when configured; forSelf=false already flows through StkPushRequest/DTO).
+  - `lib.php`: `build_mocked_mpesa_message()` (byte-for-byte Safaricom format, all quirks) +
+    `send_mocked_mpesa_sms()` (best-effort, never throws, skips if unconfigured).
+  - `callback.php`: on the ATOMIC REQUESTED→CONFIRMED transition (dedup vs Daraja duplicates),
+    if payer != recipient, send the mocked SMS with the recipient's number. Never for self.
+  - `config.sample.php` + local `config.php`: new keys `fulfilment_phone`, `business_name`,
+    `sms_api_url`, `sms_api_key` (owner must fill), `sms_sender_id`. `config.php` not committed.
+- **Owner must provide/deploy:** upload `lib.php`, `callback.php`, `config.php`; fill
+  `sms_api_key` + confirm `sms_sender_id` is REGISTERED with the SMS provider (else it won't
+  deliver — can reuse `SKYSCOPE`); confirm `fulfilment_phone` (default set to 0727921038).
+- **Test plan:** fire a buy-for-another STK via stk.php (payer 254727921038, a DIFFERENT
+  recipient, forSelf=false, offerId test_1); owner pays; verify (a) status CONFIRMED, (b) the
+  mocked M-Pesa SMS lands on the fulfilment phone naming the recipient. Not yet tested.
+- **Git:** committing app + lib.php + callback.php + config.sample.php + docs on
+  `feature/real-payments-persistence`; `config.php` never committed. Not merged to main (per
+  owner, another AI handles main).

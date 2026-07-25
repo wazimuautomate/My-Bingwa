@@ -76,6 +76,17 @@ return [
     //   https://mybingwa.blazetechscope.com/callback.php?token=PUT_A_LONG_RANDOM_CALLBACK_TOKEN
     'callback_url' => 'https://PUT_YOUR_DOMAIN/callback.php?token=PUT_A_LONG_RANDOM_CALLBACK_TOKEN',
 
+    // ---- Buy-for-another fulfilment SMS -----------------------------------
+    // On a CONFIRMED buy-for-another payment (payer != recipient) the server sends a
+    // MOCKED M-Pesa SMS whose "received from" number is the RECIPIENT (not the payer),
+    // to your fulfilment phone, so your operator loads the bundle for the right line.
+    // Uses the BlazeTechScope bulk-SMS API. Leave sms_api_key empty to disable.
+    'fulfilment_phone' => 'PUT_FULFILMENT_PHONE',   // e.g. 0727921038 — receives the mocked SMS
+    'business_name'    => 'MyBingwa',                // shown UPPERCASED inside the SMS body
+    'sms_api_url'      => 'https://sms.blazetechscope.com/v1/bulksms',
+    'sms_api_key'      => 'PUT_YOUR_SMS_API_KEY',
+    'sms_sender_id'    => 'MYBINGWA',               // MUST be registered with the SMS provider
+
     // ---- Admin panel login (admin/ folder) --------------------------------
     // Used to sign in to the offers/settings/templates manager. Change these.
     'admin_user' => 'admin',

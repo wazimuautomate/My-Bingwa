@@ -77,13 +77,13 @@ class FakeBingwaRepositoryImpl(
     // Buy-for-myself uses the real backend gateway when one is configured.
     private val selfGateway: PaymentGateway = gateway ?: fallback
 
-    // Buy-for-another uses a DIFFERENT integration that is not implemented yet, so it
-    // stays mocked: always a labelled simulation, never the real self/Till backend —
-    // even when a backend is configured. (Product decision; do not route this to the
-    // self gateway.)
-    private val anotherNumberGateway: PaymentGateway = SimulatedPaymentGateway(
-        terminalOutcome = { devOutcomeToState(_devStkOutcome.value) }
-    )
+    // Buy-for-another now also goes through the real backend when configured: the
+    // request carries forSelf=false, so the backend charges the payer (Paybill, with
+    // the recipient's number as the account reference) and, on success, sends the
+    // fulfilment operator a mocked M-Pesa SMS naming the RECIPIENT (server callback.php,
+    // per docs/"Buy For Another Number - Implementation Spec.md"). Falls back to the
+    // simulation only when no backend is configured.
+    private val anotherNumberGateway: PaymentGateway = gateway ?: fallback
 
     private val defaultProfile = UserProfile(
         name = "Bonke",
