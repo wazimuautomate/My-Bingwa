@@ -1049,3 +1049,37 @@ destinations.
 - **Next:** Owner: set secrets → run bootstrap-keystore → back up key + set KEYSTORE_BASE64 →
   merge branch to main → push tag v1.0.0 (or dispatch release.yml) → download APK/AAB → Play
   Console per docs/RELEASE_PLAYSTORE.md.
+
+## 2026-07-25 EAT — v1.0.0 RELEASED: merged to main, signed APK + AAB built & published
+
+- **Objective:** Owner: merge everything to main + green CI, then produce the signed v1.0.0
+  direct APK, Play AAB, and the signing keystore, delivered locally.
+- **Result:** DONE (build/artefacts). Play Console submission remains owner work.
+- **Merged to main:** `feature/release-pipeline` merged into `main` (merge commit `dfb45bc`,
+  resolved memory.md conflict keeping both entries). Main CI green (run 30159578023).
+- **Signing key:** owner generated the PERMANENT key locally via
+  `Desktop/My-Bingwa-Signing/gen-signing-key.sh` (OpenSSL 3.5.5, PKCS12, RSA-2048, alias
+  `upload`, ~30yr). First attempt failed (Git-Bash OpenSSL couldn't find system openssl.cnf);
+  fixed by shipping a self-contained `mini.cnf` via `-config`. Secrets set on GitHub:
+  KEYSTORE_BASE64, STORE_PASSWORD, KEY_PASSWORD, KEY_ALIAS (+ existing PAYMENTS_*). Key file
+  `my-upload-key.jks` + `KEYSTORE-CREDENTIALS.txt` on owner's Desktop; owner backing up. The
+  keystore/password are NOT in the repo or this file.
+- **Release build:** tag `v1.0.0` pushed → `release.yml` run 30160034993 SUCCESS. Produced
+  signed `My-Bingwa-v1.0.0-direct.apk` (~14MB), `My-Bingwa-v1.0.0-play.aab` (~13MB), and
+  `.apk.sha256`. Published as GitHub Release v1.0.0. Downloaded to
+  `Desktop/My-Bingwa-Signing/release-v1.0.0/`. SHA-256 verified OK
+  (`3540c808…0f2ce9c2`). update.json apkSha256 filled with this value.
+- **Decisions:** namespace stays com.example; applicationId com.bingwasokoni; both channels
+  same version (1.0.0/code 1) + same signing key so Play↔GitHub updates are compatible. PKCS12
+  from OpenSSL 3 read fine by CI JDK 17 (signing succeeded → no -legacy needed).
+- **Verification:** CI release run success (signed variants + AAB); local sha256sum -c OK.
+  Signature not independently apksigner-verified locally (no Android build-tools); Play verifies
+  on upload. Physical-phone install of the signed APK not yet done by owner.
+- **Risks/blockers:** (1) Play Console submission (create app com.bingwasokoni, UPLOAD OWN
+  signing key so it matches the direct APK, Data safety, content rating, listing, screenshots,
+  privacy-policy URL, internal test → production) is manual owner work — docs/RELEASE_PLAYSTORE.md.
+  (2) PRIVACY.md has [SUPPORT EMAIL/PHONE] placeholders the owner must fill + host before Play.
+  (3) Owner must finish backing up my-upload-key.jks offline.
+- **Next:** Owner backs up the key; fills+hosts PRIVACY.md; Play Console per docs/RELEASE_PLAYSTORE.md.
+  For future releases: bump versionCode+versionName in app/build.gradle.kts, update update.json,
+  tag vX.Y.Z (rebuilds+publishes), upload new AAB to Play.
