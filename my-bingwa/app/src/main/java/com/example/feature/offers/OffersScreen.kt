@@ -260,7 +260,7 @@ fun OffersScreen(
                     icon = Icons.Outlined.SearchOff,
                     title = "No offers yet",
                     description = if (state.isOffline)
-                        "You're offline. Saved offers will appear here once available."
+                        "You're offline. You can still view and buy offers offline."
                     else
                         "Offers will appear here as soon as they're available."
                 )
@@ -322,7 +322,7 @@ private fun OfflineNoticeRow() {
         Icon(Icons.Outlined.WifiOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(6.dp))
         Text(
-            text = "You're offline. Showing saved offers.",
+            text = "You're offline. You can still buy offline.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
