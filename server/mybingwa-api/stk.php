@@ -85,8 +85,12 @@ if ($token === null) {
     json_out(['status' => 'PAYMENT_FAILED', 'errorCode' => 'TOKEN_FAILED'], 502);
 }
 
-// Self → Till/Buy-Goods; another → Paybill with the recipient as AccountReference.
-$account = $recipient !== '' ? $recipient : $payer;
+// AccountReference shown on the M-Pesa/Paybill statement.
+//  - Buy-for-myself → a fixed brand tag "MyBingwa" so every self-purchase to the
+//    Paybill lands under one clear account.
+//  - Buy-for-another → the recipient's number (CLAUDE.md §7), so the owner can see
+//    which line the bundle is for. (Another-number is mocked in the app for now.)
+$account = $forSelf ? 'MyBingwa' : ($recipient !== '' ? $recipient : $payer);
 $resp = daraja_stk_push($config, $token, $amount, $payer, $account, $route);
 
 if (is_array($resp) && (string) ($resp['ResponseCode'] ?? '') === '0') {
