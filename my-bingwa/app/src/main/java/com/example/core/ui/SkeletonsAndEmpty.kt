@@ -69,7 +69,7 @@ fun OfflineStatusStrip(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Saved offers are available. Pay using M-Pesa instructions.",
+                text = "You can still buy bundles using the offline methods.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
             )
