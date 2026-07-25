@@ -745,3 +745,42 @@ destinations.
 - **Git:** Branch `feature/activity-support-settings`. To commit + push this branch; CI produces the debug APK. `main` NOT pushed (diverged; coordinator owns it — owner's earlier standing decision).
 - **Risks/blockers:** (1) CI unverified — blind integration may surface a compile error to fix on-branch. (2) Physical-phone acceptance pending (permission prompts, real Safaricom SMS parsing, connectivity, deep-links, dark/200%/small-width). (3) Background SMS reconciliation only runs while the app is foreground (collectors in the composable) — a lifecycle/service collector is future work. (4) Payment-modal change awaits an owner-specified target.
 - **Next:** Commit, push `feature/activity-support-settings`, watch GitHub Actions, fix any compile error on-branch, report the debug APK artifact; get the owner's specific payment-modal target.
+
+### 2026-07-25 EAT — Phase 6 offline-first + Phase 7 (admin + server sync); main is unrelated history
+
+- **Objective:** Owner: build Phase 6 (offline-first — the app's distinctiveness) then continue autonomously; server = owner's cPanel at https://mybingwa.blazetechscope.com (now the app's server for sync + admin). Push to main / get APK.
+- **Result:** **P6 + P7 done and CI-green on the branch.** Main NOT merged (unrelated history — see blockers). Full Room persistence / total mock removal NOT done (deliberately — see risks).
+- **Server secured:** live endpoints verified (status.php 401, stk.php 405, callback.php ack, config.php 403). `config.php` was tracked with REAL Daraja creds → untracked + gitignored; committed `config.sample.php` template (commit 9709daa).
+- **P6 (a8d9c81, green):**
+  - Real connectivity now drives `isOffline`: `setConnectionState(NONE)` ⇒ offline (ConnectivityObserver already wired).
+  - Offline buy = manual M-Pesa: offline skips the online review; the offline step has a prominent **Copy Till/Paybill & open M-Pesa** action (copies value + opens SIM Toolkit; self=Till, another=Paybill). Honest "I've paid" receipt tracking kept.
+  - Server config sync: Till/Paybill/support/WhatsApp fetched from `get_config.php` when online, cached in SharedPreferences, baked-in defaults for a fresh offline install. New `data/config/{AppConfig,RemoteConfigSource,AndroidRemoteConfigSource}`; repo `appConfig`+`syncRemoteConfig`; `offlineConfig()` + Help read it (fixes Help Paybill mismatch). Server: `get_config.php` + `settings.sql`.
+- **P7 (afc8d9c, green in integrated run ac50462):**
+  - **Admin panel** `server/mybingwa-api/admin/` — brand-styled, password-protected (config.php admin_user/admin_pass), manages offers, payment/support settings, notification templates; creates its own tables on first load.
+  - Server `get_offers.php` + `offers.sql`/`templates.sql` seeds; `config.sample.php` gained admin creds + fallback fields.
+  - App: `data/catalogue/{RemoteCatalogueSource,AndroidRemoteCatalogueSource}`; repo `syncCatalogue()` replaces offers with the server list when online (preserving favourite/bought-today), keeps the bundled catalogue offline. MainActivity syncs config+catalogue whenever online.
+  - Tests: connectivity→offline, config seed/sync, catalogue sync/fallback/favourite-preserve. All green.
+- **Verification:** CI run 30133932330 @ ac50462 = success (assemble + unit tests + lint). No local build (no JDK).
+- **Git:** All on `feature/activity-support-settings` (owner is editing it concurrently — e.g. PaymentTxnState heading → "Purchase Successful" + matching test, uncommitted). I committed only my own files. APK artifact: `my-bingwa-debug-ac50462`.
+- **Risks/blockers:**
+  1. **main has UNRELATED history** to this branch (24 vs 19 commits, no common ancestor; `git merge` refuses). Cannot be auto-merged — needs an owner decision on reconciling the two lineages. NOT done. APK does not require main.
+  2. Owner must UPLOAD the new server files (get_config.php, get_offers.php, admin/, updated config.sample→config with admin creds) + optionally import offers.sql/settings.sql, and add GitHub secrets PAYMENTS_BASE_URL/PAYMENTS_APP_KEY, before server sync/admin work on the phone.
+  3. **NOT implemented (honest):** full Room/DataStore persistence and total removal of the in-memory `FakeBingwaRepositoryImpl` ("no mock data"), and phases 8+. Judged unsafe to rush into a branch the owner is editing concurrently; server is sync-only and the app is fully usable offline as-is.
+  4. Offline once-per-day / ambiguity eligibility gate was intentionally dropped for the offline manual flow per owner ("buy just opens M-Pesa").
+- **Next:** Owner decides how to reconcile branch vs unrelated main. Deploy the new server files + secrets. Then physical-phone test: offline detection, offline copy+SIM-toolkit, online sync of offers/config, admin panel. Full persistence (Room) is the next big build.
+
+---
+
+## 2026-07-25 EAT — Persistent logo fix (launcher + header) + Special glitter
+
+- **Request:** App launcher icon + Home header still showed a MOCK logo (not in assets); owner tried removing it but it persisted. Find/remove it and all dependencies, replace with the real asset. Also make the Home "Special" star icon glitter. Owner moved the asset kit from root `assets/` to `my-bingwa/assets/`.
+- **Root cause:** the mock was the drawn vector `drawable/ic_mybingwa_symbol.xml`. It fed BOTH the header (`MyBingwaTopAppBar`, `OnboardingScreen` via `R.drawable.ic_mybingwa_symbol`) AND the adaptive launcher foreground (`drawable/ic_launcher_foreground.xml` is a safe-zone layer-list wrapping `@drawable/ic_mybingwa_symbol`). On Android 8+, the adaptive icon (`mipmap-anydpi-v26/ic_launcher.xml`) overrides the PNG mipmaps, so replacing mipmaps alone never fixed it. The legacy mipmap PNGs were ALREADY the real logo (overwriting them was a no-op).
+- **Fix:** replaced the two mock symbol drawables with real asset PNGs, keeping the existing layer-list/background wiring so the launcher stays safe-zone-correct:
+  - `drawable/ic_mybingwa_symbol.xml` → DELETED; added `drawable-nodpi/ic_mybingwa_symbol.png` (from `my-bingwa/assets/my-bingwa-logo-kit/brand/my-bingwa-symbol-transparent-512.png`). Fixes header + onboarding + adaptive foreground (both use `tint=Unspecified`, full colour).
+  - `drawable/ic_mybingwa_symbol_mono.xml` → DELETED; added `drawable-nodpi/ic_mybingwa_symbol_mono.png` (from asset `adaptive/ic_launcher_monochrome.png`). Fixes the themed monochrome layer.
+  - Kept `ic_launcher_foreground.xml` (72dp centred layer-list → safe zone), `ic_launcher_background.xml` (#F6F9FC), `ic_launcher_monochrome.xml`, and the `anydpi-v26` adaptive XMLs — they reference the now-real drawables.
+- **Special glitter:** `feature/home/HomeScreen.kt` — `CategoryShortcutTile` gains `twinkle` (SPECIAL only, `!reducedMotion`): a gentle infinite `rememberInfiniteTransition` scale 0.9→1.14 + alpha 0.7→1 (`tween 1100ms FastOutSlowInEasing`, Reverse) via `graphicsLayer`. `CategoryShortcutRow` now takes `reducedMotion`. Added animation-core + graphicsLayer + getValue imports.
+- **Files changed (committed):** `HomeScreen.kt`, `res/drawable-nodpi/ic_mybingwa_symbol.png` (+`_mono.png`), deleted `res/drawable/ic_mybingwa_symbol.xml` (+`_mono.xml`), `CHANGELOG.md`, `memory.md`. NOT committed (owner's pending changes): the root `assets/`→`my-bingwa/assets/` move and `past.md`.
+- **Verification:** No local build (no JDK). Static review: no leftover `*symbol*.xml`; foreground/monochrome refs resolve to the new PNGs; onboarding/header use `Color.Unspecified`; HomeScreen anim imports present. CI is the authority.
+- **Git:** Branch `feature/activity-support-settings`; commit + push; watch CI. `main` still owned by coordinator.
+- **Next:** Confirm CI green; owner installs the APK to verify the real icon on the launcher + header and the Special twinkle. Note: docs still reference the old root `assets/` path (owner moved it) — update if it becomes authoritative.

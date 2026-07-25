@@ -12,6 +12,27 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Added
 
+- **Offline-first (Phase 6) + server sync & admin (Phase 7).** The app now knows when
+  it is offline and stays fully usable; the server (owner's cPanel) is sync-only.
+  - Real connectivity drives the offline state (`setConnectionState(NONE)` ⇒ offline).
+  - **Offline manual payment:** when offline, tapping buy skips the online review and
+    shows a **Copy Till/Paybill & open M-Pesa** action that copies the number and
+    opens the SIM Toolkit (own number ⇒ Till, another ⇒ Paybill). Honest "I've paid"
+    receipt tracking is kept (Waiting to verify / Payment not confirmed).
+  - **Server config sync:** Till, Paybill, support number and WhatsApp are fetched
+    from `get_config.php` when online and CACHED (SharedPreferences) so they always
+    work offline; baked-in defaults cover a fresh install. Help + the offline steps
+    read these (also fixes the old Help Paybill `4050595` → `40450595` mismatch).
+  - **Server offers sync:** the catalogue is fetched from `get_offers.php` when online
+    (preserving local favourites/bought-today); the bundled catalogue is the
+    guaranteed offline base. `data/catalogue/*`, repo `syncCatalogue()`.
+  - **Admin panel** (`server/mybingwa-api/admin/`): brand-styled, password-protected
+    dashboard to manage offers, payment/support details and notification templates —
+    creates its own tables on first load. New server endpoints `get_config.php`,
+    `get_offers.php` (+ `settings.sql`, `offers.sql`, `templates.sql` seeds).
+  - Unit tests: connectivity→offline flag, config seed/sync, catalogue sync + local
+    fallback + favourite preservation.
+
 - **Activity-aware notification system (owner request).** A new
   `core/notifications` subsystem plus the integration to drive it:
   - **Brand-styled, non-noisy system notifications** via `AppNotifier` using the
@@ -43,6 +64,17 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
     and delivery/low-balance reconciliation.
 
 ### Fixed
+
+- **App launcher icon and Home header now use the real brand logo, not the mock.**
+  The mock `ic_mybingwa_symbol` vector was still driving the Home header **and**
+  the adaptive launcher foreground (`ic_launcher_foreground.xml` wrapped it), so
+  modern phones showed the mock even after the PNG mipmaps were replaced.
+  `ic_mybingwa_symbol`(+`_mono`) are now the approved asset PNGs
+  (`my-bingwa-symbol-transparent` / `ic_launcher_monochrome`), fixing the header,
+  the adaptive foreground (kept inside the safe-zone layer-list) and the themed
+  monochrome icon in one place; the mock vectors were deleted.
+- **"Special" category icon now gently glitters** (soft scale + brightness pulse
+  on the star) to draw attention to high-value offers; respects reduced motion.
 
 - **Launch splash now uses the approved brand mark.** The Android 12+ splash was
   showing a crude hand-drawn vector (`ic_splash_logo.xml`) instead of the real
