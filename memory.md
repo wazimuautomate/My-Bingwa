@@ -967,3 +967,67 @@ destinations.
   AccountReference=recipient), `transaction_type=CustomerPayBillOnline`, fulfilment_phone
   `0111327201`, sms_sender_id `SKYSCOPE_`, sms_api_key set. `callback_url` no longer needs the
   token (IP auth). Two earlier paid test rows remain unconfirmed (Daraja won't resend); ignore.
+
+## 2026-07-25 EAT — Phase 9/10: release identity, signing, Play/GitHub pipeline
+
+- **Objective:** Take My Bingwa to Play Store. Register applicationId `com.bingwasokoni`;
+  produce v1.0.0 signed direct APK + Play AAB; create the permanent signing keystore;
+  make the app updatable on BOTH Play and GitHub. Phases 9 (release-pipeline) + 10.
+- **Result:** Partial — all release ENGINEERING done, pushed to `feature/release-pipeline`;
+  the three binary deliverables (direct APK, Play AAB, keystore) are produced by CI runs the
+  OWNER must trigger after setting secrets (no local JDK/SDK/keytool — see below). Not merged
+  to main (another AI owns main).
+- **Hard machine constraint (permanent):** this PC has NO JDK, Android SDK, or keytool. So the
+  keystore, APK and AAB CANNOT be built locally; they come out of GitHub Actions (the
+  authoritative build env, CLAUDE.md §5.1). This shaped the whole design.
+- **Decisions/assumptions:**
+  - applicationId (release) = `com.bingwasokoni` (permanent). `namespace` KEPT as `com.example`
+    on purpose — it only names generated R/BuildConfig + ~200 source files, is invisible to
+    users/Play, and renaming = large risk-only refactor. applicationId is what Play registers.
+  - Debug applicationId = `com.bingwasokoni.debug` (`.debug` suffix), label "My Bingwa Dev",
+    versionNameSuffix `-debug` → installable alongside release ("My Bingwa"). AGP debug keystore.
+  - versionName `1.0.0`, versionCode `1` for BOTH channels (same version). Interpreted the
+    owner's "direct v1 / aab v2" as ONE app, two channels — SAME version keeps them
+    update-compatible. Bumping Play to 2.0 later is a one-line change if the owner insists.
+  - Product flavors on dimension `distribution`: `direct` (keeps RECEIVE_SMS + SmsDeliveryReceiver
+    for GitHub build) and `play` (src/play/AndroidManifest.xml removes RECEIVE_SMS + the receiver
+    so Play needs no restricted-permission declaration). Variants: directDebug/Release,
+    playDebug/Release. Both share applicationId + signing identity.
+  - ONE permanent signing key used for BOTH direct APK and Play AAB (CLAUDE.md §12.4). Owner must
+    UPLOAD THIS SAME KEY as the Play app-signing key (not let Google generate one) so the Play
+    app and the sideloaded APK share a signature and can update each other.
+  - GitHub in-app update contract: repo-root `update.json` (raw.githubusercontent .../main/update.json)
+    holds latestVersionCode/Name + apkUrl; `core/update/UpdateChecker.kt` (OkHttp + org.json)
+    compares to BuildConfig.VERSION_CODE; Settings "Check for updates" now really checks and offers
+    a "Download update" button. Play updates natively.
+- **Changed (files):**
+  - `my-bingwa/app/build.gradle.kts`: applicationId, version 1.0.0/1, UPDATE_MANIFEST_URL
+    buildConfig field, `distribution` flavors (direct/play), debug `.debug` suffix + "My Bingwa Dev"
+    label, appLabel manifestPlaceholder.
+  - `my-bingwa/app/src/main/AndroidManifest.xml`: `android:label` → `${appLabel}` (app + activity).
+  - `my-bingwa/app/src/play/AndroidManifest.xml` (new): removes RECEIVE_SMS + SmsDeliveryReceiver.
+  - `my-bingwa/app/src/main/java/com/example/core/update/UpdateChecker.kt` (new).
+  - `SettingsScreen.kt`: real "Check for updates" (was a stub) + real version (was hardcoded
+    "2.4.0") via BuildConfig.VERSION_NAME + "Download update" action.
+  - `.github/workflows/feature-debug-build.yml`: assembleDirectDebug + direct debug APK path.
+  - `.github/workflows/release.yml` (new): tag `v*`/dispatch → signed assembleDirectRelease +
+    bundlePlayRelease, SHA-256, GitHub Release with APK+sha256+AAB; keystore decoded to RUNNER_TEMP
+    and removed always(); no push-branch trigger (secrets never reach feature branches).
+  - `.github/workflows/bootstrap-keystore.yml` (new): one-time keytool keystore gen; uploads ONLY
+    the GPG-AES256-encrypted keystore; prints only public fingerprints; plaintext removed always().
+  - `update.json` (new), `PRIVACY.md`, `docs/RELEASE_PLAYSTORE.md`, `RELEASE_NOTES_v1.0.0.md`,
+    `CHANGELOG.md` (docs).
+- **Verification:** No local build possible (no JDK). Validating via the CI debug build on the
+  pushed branch (compiles flavors + manifest merge + BuildConfig fields + UpdateChecker/Settings).
+  Result recorded on push. Signed release build NOT verifiable until the keystore secret exists.
+- **Secrets the owner must set (GitHub → Actions secrets):** STORE_PASSWORD, KEY_PASSWORD,
+  KEY_ALIAS (=upload), then KEYSTORE_BASE64 (after bootstrap), plus PAYMENTS_BASE_URL,
+  PAYMENTS_APP_KEY. None are in the repo. See docs/RELEASE_PLAYSTORE.md.
+- **Risks/blockers:** (1) Signed APK/AAB + keystore require owner to set secrets + run
+  bootstrap-keystore then release workflow. (2) Play Console submission (create app, choose to
+  upload own signing key, data safety, content rating, listing, screenshots, privacy-policy URL,
+  internal test) is manual owner work. (3) Physical-phone acceptance loop not done. (4) Not merged
+  to main (another AI owns main); update.json raw URL resolves only once on main.
+- **Next:** Owner: set secrets → run bootstrap-keystore → back up key + set KEYSTORE_BASE64 →
+  merge branch to main → push tag v1.0.0 (or dispatch release.yml) → download APK/AAB → Play
+  Console per docs/RELEASE_PLAYSTORE.md.

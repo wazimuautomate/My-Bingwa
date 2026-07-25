@@ -64,14 +64,20 @@ jobs:
 
       # Assemble first so the debug APK is produced and uploaded for phone
       # testing even if the quality gate below later fails the build.
-      - name: Assemble debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
+      #
+      # `direct` is the full-featured distribution flavor (keeps the local
+      # Safaricom SMS delivery-detection that Google Play restricts), so its
+      # debug variant is the right one to install on the physical test phone.
+      # Debug still uses AGP's auto-generated debug keystore — NO release
+      # signing secrets are referenced anywhere in this workflow.
+      - name: Assemble direct debug APK
+        run: ./gradlew assembleDirectDebug --stacktrace --no-daemon
 
       - name: Stage debug APK with commit-specific name
         if: success()
         run: |
           mkdir -p artifact
-          cp app/build/outputs/apk/debug/app-debug.apk \
+          cp app/build/outputs/apk/direct/debug/app-direct-debug.apk \
              "artifact/My-Bingwa-Debug-${SHORT_SHA}.apk"
 
       - name: Upload debug APK

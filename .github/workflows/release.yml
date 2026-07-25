@@ -1,0 +1,166 @@
+name: Release (signed)
+
+# Protected, signed release build for My Bingwa.
+#
+# Produces the two shipping artifacts from one codebase and ONE permanent
+# signing identity:
+#   - direct  -> a signed APK for GitHub/sideload distribution.
+#   - play    -> an AAB to upload to the Google Play Console.
+#
+# SECURITY / GUARD: this workflow runs ONLY on version tags (`v*`) and on a
+# manual `workflow_dispatch`. It deliberately has NO `push: branches` trigger,
+# so ordinary feature/PR builds can never reach the signing secrets. The
+# keystore is decoded into $RUNNER_TEMP only inside this job and is deleted in
+# an always()-run cleanup step. See CLAUDE.md §12.5.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 1.0.0 (used only for manual dispatch; tag pushes derive it from the tag)."
+        required: false
+        type: string
+
+# A newer release run for the same ref cancels an obsolete in-progress one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# `contents: write` is required for softprops/action-gh-release to create the
+# GitHub Release and upload the direct APK + checksum + AAB assets.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish signed release
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: my-bingwa
+    # Non-secret payment config baked into the signed build. NO Daraja
+    # credentials here — those stay on the payment backend (CLAUDE.md §10).
+    env:
+      PAYMENTS_BASE_URL: ${{ secrets.PAYMENTS_BASE_URL }}
+      PAYMENTS_APP_KEY: ${{ secrets.PAYMENTS_APP_KEY }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Resolve the version once, up front, so every later step and file name is
+      # consistent. Tag pushes win (strip a leading `v`); manual dispatch uses
+      # the `version` input. Fail loudly if neither yields a value so we never
+      # publish a mis-named or empty-version release.
+      - name: Resolve release version
+        id: version
+        # `INPUT_VERSION` is passed via env (not interpolated into the script
+        # body) so an arbitrary dispatch input cannot inject shell.
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${INPUT_VERSION}"
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::No version resolved. Push a tag like v1.0.0, or provide the 'version' input on manual dispatch."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing version: $VERSION"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      # Decode the permanent upload keystore from the protected secret into the
+      # runner's temp dir (outside the workspace so it is never uploaded with any
+      # artifact). It is removed again in the always() cleanup step below.
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 secret is not set. Run the bootstrap-keystore workflow, then store the base64 keystore as the KEYSTORE_BASE64 repo secret."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/my-upload-key.jks"
+
+      # Build both shipping variants. build.gradle.kts reads the signing config
+      # from these env vars (KEYSTORE_PATH defaults to my-bingwa/my-upload-key.jks
+      # locally, but we point it at the decoded temp file here).
+      - name: Build signed direct APK and Play AAB
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/my-upload-key.jks
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew :app:assembleDirectRelease :app:bundlePlayRelease --no-daemon --stacktrace
+
+      # Stage renamed, version-stamped copies and a checksum for the direct APK.
+      - name: Stage release artifacts
+        run: |
+          mkdir -p artifact
+          cp app/build/outputs/apk/direct/release/app-direct-release.apk \
+             "artifact/My-Bingwa-v${VERSION}-direct.apk"
+          cp app/build/outputs/bundle/playRelease/app-play-release.aab \
+             "artifact/My-Bingwa-v${VERSION}-play.aab"
+          cd artifact
+          sha256sum "My-Bingwa-v${VERSION}-direct.apk" > "My-Bingwa-v${VERSION}-direct.apk.sha256"
+          echo "Staged release artifacts:"
+          ls -l
+
+      # Delete the decoded keystore no matter how the job ends (success, build
+      # failure, or cancellation). Runs before the Release step's outcome but the
+      # gh-release step only needs the staged files, not the keystore.
+      - name: Remove decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/my-upload-key.jks"
+
+      # Publish the GitHub Release. On a tag push this attaches to that tag; on a
+      # manual dispatch it creates/updates a release named v${VERSION}.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.version) }}
+          name: My Bingwa v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            my-bingwa/artifact/My-Bingwa-v${{ steps.version.outputs.version }}-direct.apk
+            my-bingwa/artifact/My-Bingwa-v${{ steps.version.outputs.version }}-direct.apk.sha256
+            my-bingwa/artifact/My-Bingwa-v${{ steps.version.outputs.version }}-play.aab
+          body: |
+            My Bingwa v${{ steps.version.outputs.version }}
+
+            Assets:
+            - `My-Bingwa-v${{ steps.version.outputs.version }}-direct.apk` — the signed
+              direct/sideload build. This is the file end users download and install
+              from GitHub. Verify it against the accompanying `.sha256` checksum.
+            - `My-Bingwa-v${{ steps.version.outputs.version }}-direct.apk.sha256` —
+              SHA-256 checksum for the direct APK.
+            - `My-Bingwa-v${{ steps.version.outputs.version }}-play.aab` — the Google
+              Play bundle. Upload this to the Google Play Console ONLY. Do NOT
+              distribute the AAB to end users; it is not directly installable.
+
+            Both the direct APK and the Play AAB are signed with the same permanent
+            upload identity, so a user can move between the GitHub and Play channels
+            and updates supersede correctly.
