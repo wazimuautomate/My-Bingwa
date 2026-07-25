@@ -25,7 +25,7 @@ final class Request
             $uri = substr($uri, strlen($base));
         }
         $uri = '/' . ltrim($uri, '/');
-        return $uri === '' ? '/' : rtrim($uri, '/') ?: '/';
+        return $uri === '' ? '/' : (rtrim($uri, '/') ?: '/');
     }
 
     /** Directory the front controller lives in, e.g. "/admin". Used to build links. */
