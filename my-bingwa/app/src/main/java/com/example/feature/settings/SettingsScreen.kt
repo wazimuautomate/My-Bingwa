@@ -1,6 +1,7 @@
 package com.example.feature.settings
 
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -49,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,14 +61,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
 import com.example.core.model.AppThemeSetting
 import com.example.core.model.UserProfile
+import com.example.core.update.UpdateChecker
+import com.example.core.update.UpdateResult
 import com.example.core.ui.LabelledPhoneField
 import com.example.core.ui.LabelledTextField
 import com.example.core.ui.PrimaryButton
 import com.example.ui.theme.BottomSheetTopShape
 import com.example.ui.theme.FieldButtonShape
 import com.example.ui.theme.TypographyPageHeading
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,10 +92,14 @@ fun SettingsScreen(
     onEnableSmsDetection: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showEditProfileSheet by remember { mutableStateOf(false) }
     var showClearDataDialog by remember { mutableStateOf(false) }
     var checkingUpdates by remember { mutableStateOf(false) }
     var updateMessage by remember { mutableStateOf<String?>(null) }
+    // Set when a newer direct-channel build is published, so a "Download update"
+    // action can open the published APK URL. Play users update via the store.
+    var updateApkUrl by remember { mutableStateOf<String?>(null) }
 
     // Notification / SMS preference state (declared here so the rationale dialogs
     // near the bottom of this composable can also read and update them).
@@ -334,7 +344,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("App Version", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("2.4.0 (Latest)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -349,15 +359,31 @@ fun SettingsScreen(
 
                 Button(
                     onClick = {
+                        if (checkingUpdates) return@Button
                         checkingUpdates = true
-                        updateMessage = "You are on the latest version of My Bingwa."
+                        updateMessage = null
+                        updateApkUrl = null
+                        scope.launch {
+                            updateMessage = when (val result = UpdateChecker.check()) {
+                                is UpdateResult.Available -> {
+                                    updateApkUrl = result.apkUrl.takeIf { it.isNotBlank() }
+                                    val name = result.versionName.takeIf { it.isNotBlank() }
+                                    if (name != null) "Version $name is available." else "A new version is available."
+                                }
+                                UpdateResult.UpToDate ->
+                                    "You are on the latest version of My Bingwa."
+                                is UpdateResult.Error -> result.message
+                            }
+                            checkingUpdates = false
+                        }
                     },
+                    enabled = !checkingUpdates,
                     shape = FieldButtonShape,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Check for updates", fontWeight = FontWeight.Bold)
+                    Text(if (checkingUpdates) "Checking…" else "Check for updates", fontWeight = FontWeight.Bold)
                 }
 
                 if (updateMessage != null) {
@@ -368,6 +394,23 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold
                     )
+                }
+
+                // Shown only for the direct (GitHub) channel when a newer build is
+                // published; opens the signed APK so the user installs it themselves.
+                updateApkUrl?.let { apkUrl ->
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)))
+                            }
+                        },
+                        shape = FieldButtonShape,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Download update", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

@@ -1,0 +1,9 @@
+{
+  "latestVersionCode": 1,
+  "latestVersionName": "1.0.0",
+  "minSupportedVersionCode": 1,
+  "apkUrl": "https://github.com/wazimuautomate/My-Bingwa/releases/download/v1.0.0/My-Bingwa-v1.0.0-direct.apk",
+  "apkSha256": "",
+  "releaseNotes": "First public release of My Bingwa.",
+  "mandatory": false
+}

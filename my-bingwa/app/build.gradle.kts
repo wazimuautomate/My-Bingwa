@@ -9,13 +9,38 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.mybingwa.k3p9zq"
+    // Permanent production application ID (Play + direct). This is the app's
+    // permanent identity on Google Play and for sideloaded updates — never change
+    // it after the first public release. The internal `namespace` above stays
+    // `com.example` on purpose: it only names the generated R/BuildConfig classes
+    // and the ~200 existing source files, is invisible to users and Play, and
+    // renaming it would be a large, risk-only refactor with no product benefit.
+    applicationId = "com.bingwasokoni"
     minSdk = 24
     targetSdk = 36
+    // Semantic versionName + monotonically increasing versionCode. Both the direct
+    // APK and the Play AAB ship the SAME version so a user can move between the
+    // GitHub and Play channels and updates supersede correctly (same signing
+    // identity — see signingConfigs + docs/RELEASE_PLAYSTORE.md). Bump BOTH for
+    // every release; versionCode must only ever increase.
     versionCode = 1
-    versionName = "1.0"
+    versionName = "1.0.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    // Launcher label. Overridden to "My Bingwa Dev" for debug builds so a debug
+    // install is visually distinct from and installable alongside the release app.
+    manifestPlaceholders["appLabel"] = "My Bingwa"
+
+    // Where the direct-APK (GitHub) channel advertises its latest version. Play
+    // distribution updates itself natively; this drives ONLY the sideload/GitHub
+    // in-app update check. Non-secret. See update.json at the repo root and
+    // core/update/UpdateChecker.kt. Overridable via the `updateManifestUrl` Gradle
+    // property or the UPDATE_MANIFEST_URL env var.
+    val updateManifestUrl = (project.findProperty("updateManifestUrl") as String?)?.takeIf { it.isNotBlank() }
+      ?: System.getenv("UPDATE_MANIFEST_URL")?.takeIf { it.isNotBlank() }
+      ?: "https://raw.githubusercontent.com/wazimuautomate/My-Bingwa/main/update.json"
+    buildConfigField("String", "UPDATE_MANIFEST_URL", "\"$updateManifestUrl\"")
 
     // Base URL of the My Bingwa payment backend proxy (owns Daraja + the STK
     // callback). This is a NON-SECRET configuration value, never a credential —
@@ -39,6 +64,23 @@ android {
     buildConfigField("String", "PAYMENTS_APP_KEY", "\"$paymentsAppKey\"")
   }
 
+  // Two distribution channels from one codebase and one signing identity.
+  flavorDimensions += "distribution"
+  productFlavors {
+    // GitHub / direct-download build. Keeps the local Safaricom SMS
+    // delivery-detection feature (RECEIVE_SMS), which Google Play restricts.
+    create("direct") {
+      dimension = "distribution"
+    }
+    // Google Play build. src/play/AndroidManifest.xml removes RECEIVE_SMS and
+    // SmsDeliveryReceiver so the Play submission needs no restricted-permission
+    // declaration and cannot be rejected for it. Identical applicationId and
+    // signing identity as `direct`, so the two channels are update-compatible.
+    create("play") {
+      dimension = "distribution"
+    }
+  }
+
   signingConfigs {
     create("release") {
       // Release signing is supplied only in the protected CI release job via env vars.
@@ -58,8 +100,14 @@ android {
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
-    // Debug uses AGP's auto-generated debug keystore; never commit a keystore.
-    debug {}
+    // Debug is installable alongside release: a distinct application-id suffix and
+    // the "My Bingwa Dev" launcher label. Uses AGP's auto-generated debug
+    // keystore — never a committed one, and never the permanent release identity.
+    debug {
+      applicationIdSuffix = ".debug"
+      versionNameSuffix = "-debug"
+      manifestPlaceholders["appLabel"] = "My Bingwa Dev"
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11

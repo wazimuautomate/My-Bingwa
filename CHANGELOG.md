@@ -12,6 +12,59 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Added
 
+- **Permanent release identity for version 1.** The app now carries its permanent
+  production `applicationId` **`com.bingwasokoni`** with **`versionName 1.0.0`** and
+  **`versionCode 1`** — the identity used on both Google Play and the direct/GitHub
+  channel forever, so updates on either channel supersede correctly. (The internal
+  `namespace` stays `com.example`; it names generated classes only and is invisible
+  to users and Play.)
+- **Dual distribution from one codebase and one signing identity.** Two product
+  flavors — **`direct`** (signed APK for GitHub/sideload) and **`play`** (AAB for the
+  Google Play Console) — share the same `applicationId` and the same app-signing key,
+  so a user can move between the two channels and updates apply cleanly.
+- **Debug/release separation.** Debug builds install alongside the release app using
+  the `.debug` application-id suffix, a `-debug` version-name suffix and the **"My
+  Bingwa Dev"** launcher label (release stays **"My Bingwa"**), and use AGP's
+  auto-generated debug keystore — never the permanent release key.
+- **Signed release pipeline (`.github/workflows/release.yml`).** Runs only on `v*`
+  tags or a manual dispatch (never on feature branches, so signing secrets are never
+  exposed). It builds `:app:assembleDirectRelease` and `:app:bundlePlayRelease`,
+  produces `My-Bingwa-v<version>-direct.apk`, its `.sha256` checksum and
+  `My-Bingwa-v<version>-play.aab`, and publishes them as assets on a GitHub Release.
+- **One-time keystore bootstrap workflow (`.github/workflows/bootstrap-keystore.yml`).**
+  Generates the permanent upload key and delivers it as a GPG-encrypted artifact for
+  the owner to decrypt, back up offline and store as the `KEYSTORE_BASE64` secret.
+- **In-app update contract for the direct/GitHub channel (`update.json`).** The
+  sideload build checks a published `update.json` (via the `UPDATE_MANIFEST_URL`
+  BuildConfig field) so directly-installed users get an "update available" prompt;
+  Play users are updated natively by Google.
+- **Release documentation.** A public privacy policy (`PRIVACY.md`, required for a
+  Google Play listing), a first-time Play publishing runbook
+  (`docs/RELEASE_PLAYSTORE.md`) covering secrets, keystore bootstrap, the release
+  build, Play App Signing with the owner's own key, the Data safety/store-listing
+  steps and cross-channel updates, and public release notes
+  (`RELEASE_NOTES_v1.0.0.md`).
+
+### Changed
+
+- **Release output is now flavor-qualified.** With the `direct`/`play` flavors, the
+  shipping variants are `directRelease` (APK) and `playRelease` (AAB) instead of a
+  single release variant.
+
+### Security
+
+- **The Google Play build ships no restricted permission.** The `play` flavor's
+  manifest overlay removes `RECEIVE_SMS` and the `SmsDeliveryReceiver`, so the Play
+  (AAB) submission needs no SMS permissions declaration and cannot be rejected for
+  one. The **`direct`** (GitHub) build keeps `RECEIVE_SMS` for the opt-in, local
+  Safaricom delivery / low-balance detection only — SMS content is read on-device and
+  never leaves the phone.
+- **Release signing material stays out of the repository.** No keystore is committed;
+  the permanent key is supplied to CI only through protected GitHub Actions secrets
+  (`KEYSTORE_BASE64`, `STORE_PASSWORD`, `KEY_PASSWORD`, `KEY_ALIAS`), decoded into the
+  runner's temp dir inside the protected release job and deleted in an always()-run
+  cleanup step. Daraja/payment secrets remain only on the payment backend.
+
 - **Real on-device persistence (replaces the in-memory "Fake" store).** A new
   `data/persistence/LocalStore` (Preferences DataStore + Moshi JSON, no KSP) loads
   state on start and re-saves the whole snapshot on every change, so the customer's

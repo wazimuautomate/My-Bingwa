@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Google Play flavor manifest overlay.
+
+  Google Play restricts the SMS permission group: an app requesting RECEIVE_SMS
+  must file a Permissions Declaration and pass a use-case review, and a data
+  bundle store is not an approved use case. The `play` flavor therefore REMOVES
+  RECEIVE_SMS and the SmsDeliveryReceiver from the merged manifest so the Play
+  build ships no restricted permission at all. The local SMS delivery-detection
+  feature stays only in the `direct` (GitHub) build.
+
+  Everything else — applicationId, signing identity, versionCode/Name — is shared
+  with the `direct` flavor, so the two channels remain update-compatible.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission
+        android:name="android.permission.RECEIVE_SMS"
+        tools:node="remove" />
+
+    <application>
+        <receiver
+            android:name=".notifications.SmsDeliveryReceiver"
+            tools:node="remove" />
+    </application>
+
+</manifest>
