@@ -1,5 +1,6 @@
 package com.example.feature.onboarding
 
+import android.provider.Settings
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -14,10 +15,14 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,25 +31,31 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.Call
-import androidx.compose.material.icons.outlined.CardGiftcard
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Payment
-import androidx.compose.material.icons.outlined.SignalCellularAlt
-import androidx.compose.material.icons.outlined.WifiOff
+import androidx.compose.material.icons.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.CardGiftcard
+import androidx.compose.material.icons.rounded.Payments
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Phone
+import androidx.compose.material.icons.rounded.Sms
+import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material.icons.rounded.WifiOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -57,826 +68,865 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.R
-import com.example.core.ui.LabelledPhoneField
-import com.example.core.ui.LabelledTextField
-import com.example.core.ui.PrimaryButton
-import com.example.ui.theme.FieldButtonShape
-import com.example.ui.theme.TypographyDisplay
-import com.example.ui.theme.TypographyPageHeading
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlin.random.Random
+
+// ---------------------------------------------------------------------------
+// Onboarding (Phase 2) — premium, animated, glassmorphic first-run experience.
+//
+// NOTE ON DESIGN DIRECTION: design.md's "Calm Momentum" system forbids
+// glassmorphism, ambient gradients, glow and confetti. The product owner has
+// explicitly and repeatedly overridden that FOR THE ONBOARDING SCREENS ONLY —
+// they want a rich, animated, glass welcome. The rest of the app stays calm.
+// This decision is recorded in memory.md.
+//
+// This file is intentionally self-contained: it depends only on Compose +
+// MaterialTheme + the bundled brand logo, so it does not couple to the shared
+// design-system module that the Phase 1 session is still shaping.
+// ---------------------------------------------------------------------------
+
+private val BrandDeepGreen = Color(0xFF006B27)
+private val BrandBrightGreen = Color(0xFF18C964)
+private val AccentData = Color(0xFF3BA9FF)
+private val AccentSms = Color(0xFF7C6CF2)
+private val AccentMinutes = Color(0xFF18C964)
+private val AccentSpecial = Color(0xFFFF8A00)
+
+private const val TOTAL_STEPS = 3
 
 @Composable
 fun OnboardingScreen(
     onCompleteOnboarding: (String, String) -> Unit
 ) {
+    val reducedMotion = rememberReducedMotion()
+    val scope = rememberCoroutineScope()
+
     var step by remember { mutableIntStateOf(1) }
-    var nameInput by remember { mutableStateOf("Bonke") }
-    var phoneInput by remember { mutableStateOf("0727 921 038") }
+    var nameInput by remember { mutableStateOf("") }
+    var phoneInput by remember { mutableStateOf("") }
     var nameError by remember { mutableStateOf<String?>(null) }
     var phoneError by remember { mutableStateOf<String?>(null) }
+    var launching by remember { mutableStateOf(false) }
 
-    // Progress bar animated width ratio
-    val animatedProgress by animateFloatAsState(
-        targetValue = when (step) {
-            1 -> 0.33f
-            2 -> 0.66f
-            else -> 1f
-        },
-        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
-        label = "progress_bar_anim"
-    )
+    fun finish() {
+        val trimmedName = nameInput.trim()
+        val normalized = normalizeKenyanPhone(phoneInput)
+        nameError = if (trimmedName.length < 2) "Enter your name" else null
+        phoneError = if (normalized == null) "Enter a valid Safaricom number" else null
+        if (nameError != null || phoneError != null) return
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
-    ) { innerPadding ->
-        Box(
+        if (reducedMotion) {
+            onCompleteOnboarding(trimmedName, normalized!!)
+        } else {
+            launching = true
+            scope.launch {
+                delay(1150)
+                onCompleteOnboarding(trimmedName, normalized!!)
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        AmbientBackdrop(reducedMotion = reducedMotion)
+
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .systemBarsPadding()
+                .imePadding()
+                .padding(horizontal = 24.dp, vertical = 12.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 24.dp, vertical = 16.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
+            // Top: filling progress track + skip to setup.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Top Navigation Bar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Smoothly filling progress track indicator
-                    Box(
-                        modifier = Modifier
-                            .width(120.dp)
-                            .height(6.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(animatedProgress)
-                                .height(6.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
+                StepProgress(step = step)
+                if (step < TOTAL_STEPS) {
+                    TextButton(onClick = { step = TOTAL_STEPS }) {
+                        Text(
+                            text = "Skip",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-
-                    if (step < 3) {
-                        TextButton(
-                            onClick = { step = 3 },
-                            modifier = Modifier.testTag("skip_onboarding_button")
-                        ) {
-                            Text(
-                                text = "Skip",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.width(1.dp))
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Step Content Animated Transition
-                AnimatedContent(
-                    targetState = step,
-                    transitionSpec = {
-                        fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(200))
-                    },
-                    label = "onboarding_step_content"
-                ) { currentStep ->
-                    when (currentStep) {
-                        1 -> StepOneWelcome(onNext = { step = 2 })
-                        2 -> StepTwoFeatures(onNext = { step = 3 })
-                        3 -> StepThreePersonalise(
-                            name = nameInput,
-                            onNameChange = {
-                                nameInput = it
-                                nameError = null
-                            },
-                            nameError = nameError,
-                            phone = phoneInput,
-                            onPhoneChange = {
-                                phoneInput = it
-                                phoneError = null
-                            },
-                            phoneError = phoneError,
-                            onSubmit = { cleanName, cleanPhone ->
-                                onCompleteOnboarding(cleanName, cleanPhone)
-                            }
-                        )
-                    }
+                } else {
+                    Spacer(Modifier.height(40.dp))
                 }
             }
-        }
-    }
-}
 
-// -----------------------------------------------------------------------------
-// SCREEN 1 — MAIN PROMISE
-// -----------------------------------------------------------------------------
-@Composable
-private fun StepOneWelcome(onNext: () -> Unit) {
-    val logoScale = remember { Animatable(0.5f) }
-    val logoOffsetY = remember { Animatable(60f) }
-    val logoAlpha = remember { Animatable(0f) }
-
-    val titleOffsetY = remember { Animatable(40f) }
-    val titleAlpha = remember { Animatable(0f) }
-
-    val subOffsetY = remember { Animatable(40f) }
-    val subAlpha = remember { Animatable(0f) }
-
-    val btnOffsetY = remember { Animatable(60f) }
-    val btnAlpha = remember { Animatable(0f) }
-
-    LaunchedEffect(Unit) {
-        // Logo animation: scales in and slides up gently
-        launch {
-            logoAlpha.animateTo(1f, tween(500))
-        }
-        launch {
-            logoScale.animateTo(1.0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
-        }
-        launch {
-            logoOffsetY.animateTo(0f, spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow))
-        }
-
-        delay(120)
-        // Title animation
-        launch { titleAlpha.animateTo(1f, tween(400)) }
-        launch { titleOffsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
-
-        delay(150)
-        // Subtitle animation
-        launch { subAlpha.animateTo(1f, tween(400)) }
-        launch { subOffsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
-
-        delay(180)
-        // Button animation
-        launch { btnAlpha.animateTo(1f, tween(400)) }
-        launch { btnOffsetY.animateTo(0f, spring(stiffness = Spring.StiffnessLow)) }
-    }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Large Central Logo
-        Box(
-            modifier = Modifier
-                .graphicsLayer {
-                    scaleX = logoScale.value
-                    scaleY = logoScale.value
-                    translationY = logoOffsetY.value
-                    alpha = logoAlpha.value
+            AnimatedContent(
+                targetState = step,
+                transitionSpec = {
+                    (slideInHorizontally(tween(420)) { w -> w / 2 } + fadeIn(tween(420))) togetherWith
+                        (slideOutHorizontally(tween(420)) { w -> -w / 2 } + fadeOut(tween(220)))
                 },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_mybingwa_symbol),
-                contentDescription = "My Bingwa Logo",
-                modifier = Modifier.size(140.dp),
-                tint = Color.Unspecified
+                label = "onboarding_step",
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) { current ->
+                when (current) {
+                    1 -> StepPromise(reducedMotion = reducedMotion)
+                    2 -> StepGains(reducedMotion = reducedMotion)
+                    else -> StepSetup(
+                        name = nameInput,
+                        phone = phoneInput,
+                        nameError = nameError,
+                        phoneError = phoneError,
+                        reducedMotion = reducedMotion,
+                        onNameChange = { nameInput = it; nameError = null },
+                        onPhoneChange = { phoneInput = it; phoneError = null }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            PrimaryCtaButton(
+                text = when (step) {
+                    1 -> "Get started"
+                    2 -> "I love it! Continue."
+                    else -> "Start using My Bingwa"
+                },
+                enabled = !launching,
+                onClick = {
+                    when (step) {
+                        1, 2 -> step += 1
+                        else -> finish()
+                    }
+                }
             )
+
+            Spacer(Modifier.height(8.dp))
         }
 
-        Spacer(modifier = Modifier.height(36.dp))
-
-        // Title
-        Text(
-            text = "Welcome to My Bingwa",
-            style = TypographyDisplay.copy(fontSize = 30.sp),
-            color = MaterialTheme.colorScheme.onBackground,
-            textAlign = TextAlign.Center,
-            fontWeight = FontWeight.ExtraBold,
-            modifier = Modifier.graphicsLayer {
-                translationY = titleOffsetY.value
-                alpha = titleAlpha.value
-            }
-        )
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Supporting Text
-        Text(
-            text = "Buy data, SMS and minutes even with unpaid Okoa Jahazi.",
-            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 24.sp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .padding(horizontal = 12.dp)
-                .graphicsLayer {
-                    translationY = subOffsetY.value
-                    alpha = subAlpha.value
-                }
-        )
-
-        Spacer(modifier = Modifier.height(56.dp))
-
-        // Button
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .graphicsLayer {
-                    translationY = btnOffsetY.value
-                    alpha = btnAlpha.value
-                }
-        ) {
-            PrimaryButton(
-                text = "Get started",
-                onClick = onNext,
-                testTag = "onboarding_get_started_button"
-            )
+        if (launching) {
+            ConfettiOverlay()
         }
     }
 }
 
-// -----------------------------------------------------------------------------
-// SCREEN 2 — WHAT THE USER GAINS
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Ambient animated backdrop — soft, slowly drifting blurred colour orbs that
+// give the glass surfaces something to frost over.
+// ---------------------------------------------------------------------------
+
 @Composable
-private fun StepTwoFeatures(onNext: () -> Unit) {
-    val titleOffsetY = remember { Animatable(-30f) }
-    val titleAlpha = remember { Animatable(0f) }
+private fun AmbientBackdrop(reducedMotion: Boolean) {
+    val transition = rememberInfiniteTransition(label = "ambient")
+    val drift by if (reducedMotion) {
+        remember { mutableStateOf(0f) }
+    } else {
+        transition.animateFloatAlt(
+            initial = 0f,
+            target = 1f,
+            durationMillis = 9000,
+            label = "drift"
+        )
+    }
 
-    // Category icon bounces (4 items)
-    val cat1Anim = remember { Animatable(-70f) }
-    val cat2Anim = remember { Animatable(-70f) }
-    val cat3Anim = remember { Animatable(-70f) }
-    val cat4Anim = remember { Animatable(-70f) }
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .size(320.dp)
+                .graphicsLayer {
+                    translationX = -120f + drift * 90f
+                    translationY = -60f + drift * 70f
+                }
+                .blur(90.dp, BlurredEdgeTreatment.Unbounded)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(BrandBrightGreen.copy(alpha = 0.40f), Color.Transparent)
+                    ),
+                    shape = CircleShape
+                )
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .size(340.dp)
+                .graphicsLayer {
+                    translationX = 120f - drift * 80f
+                    translationY = 80f - drift * 90f
+                }
+                .blur(100.dp, BlurredEdgeTreatment.Unbounded)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(AccentData.copy(alpha = 0.34f), Color.Transparent)
+                    ),
+                    shape = CircleShape
+                )
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .size(240.dp)
+                .graphicsLayer {
+                    translationX = 80f - drift * 60f
+                    translationY = -40f + drift * 60f
+                }
+                .blur(90.dp, BlurredEdgeTreatment.Unbounded)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(AccentSpecial.copy(alpha = 0.22f), Color.Transparent)
+                    ),
+                    shape = CircleShape
+                )
+        )
+    }
+}
 
-    val cat1Alpha = remember { Animatable(0f) }
-    val cat2Alpha = remember { Animatable(0f) }
-    val cat3Alpha = remember { Animatable(0f) }
-    val cat4Alpha = remember { Animatable(0f) }
+// ---------------------------------------------------------------------------
+// Screen 1 — Main Promise: animated hero logo, staggered title/subtitle.
+// ---------------------------------------------------------------------------
 
-    // Staggered benefit cards
-    val card1OffsetY = remember { Animatable(50f) }
-    val card1Alpha = remember { Animatable(0f) }
-
-    val card2OffsetY = remember { Animatable(50f) }
-    val card2Alpha = remember { Animatable(0f) }
-
-    val card3OffsetY = remember { Animatable(50f) }
-    val card3Alpha = remember { Animatable(0f) }
-
-    val btnOffsetY = remember { Animatable(50f) }
-    val btnAlpha = remember { Animatable(0f) }
-
-    // Infinite rotation transition for the glowing circle around category icons
-    val infiniteTransition = rememberInfiniteTransition(label = "category_glow_rotation")
-    val glowAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(3000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "glow_angle"
-    )
-
+@Composable
+private fun StepPromise(reducedMotion: Boolean) {
+    val intro = remember { Animatable(if (reducedMotion) 1f else 0f) }
     LaunchedEffect(Unit) {
-        // Title animation
-        launch { titleAlpha.animateTo(1f, tween(300)) }
-        launch { titleOffsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
-
-        // Category icons drop & bounce one after another
-        delay(100)
-        launch { cat1Alpha.animateTo(1f, tween(200)) }
-        launch { cat1Anim.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)) }
-
-        delay(100)
-        launch { cat2Alpha.animateTo(1f, tween(200)) }
-        launch { cat2Anim.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)) }
-
-        delay(100)
-        launch { cat3Alpha.animateTo(1f, tween(200)) }
-        launch { cat3Anim.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)) }
-
-        delay(100)
-        launch { cat4Alpha.animateTo(1f, tween(200)) }
-        launch { cat4Anim.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)) }
-
-        // Benefit cards rise individually with stagger
-        delay(150)
-        launch { card1Alpha.animateTo(1f, tween(300)) }
-        launch { card1OffsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
-
-        delay(120)
-        launch { card2Alpha.animateTo(1f, tween(300)) }
-        launch { card2OffsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
-
-        delay(120)
-        launch { card3Alpha.animateTo(1f, tween(300)) }
-        launch { card3OffsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
-
-        delay(150)
-        launch { btnAlpha.animateTo(1f, tween(300)) }
-        launch { btnOffsetY.animateTo(0f, spring(stiffness = Spring.StiffnessLow)) }
+        if (!reducedMotion) intro.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
     }
-
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        // Title
-        Text(
-            text = "Buy what you need, anytime, anywhere.",
-            style = TypographyPageHeading.copy(fontSize = 24.sp, lineHeight = 30.sp),
-            color = MaterialTheme.colorScheme.onBackground,
-            textAlign = TextAlign.Center,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.graphicsLayer {
-                translationY = titleOffsetY.value
-                alpha = titleAlpha.value
-            }
-        )
+        Spacer(Modifier.height(24.dp))
+        LogoHero(reducedMotion = reducedMotion)
+        Spacer(Modifier.height(40.dp))
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Horizontal Row of Circular Category Labels & Icons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AnimatedCategoryIcon(
-                label = "Data",
-                icon = Icons.Outlined.SignalCellularAlt,
-                color = MaterialTheme.colorScheme.secondary,
-                offsetY = cat1Anim.value,
-                alpha = cat1Alpha.value,
-                glowAngle = glowAngle
-            )
-            AnimatedCategoryIcon(
-                label = "SMS",
-                icon = Icons.Outlined.ChatBubbleOutline,
-                color = MaterialTheme.colorScheme.tertiary,
-                offsetY = cat2Anim.value,
-                alpha = cat2Alpha.value,
-                glowAngle = glowAngle
-            )
-            AnimatedCategoryIcon(
-                label = "Minutes",
-                icon = Icons.Outlined.Call,
-                color = MaterialTheme.colorScheme.primary,
-                offsetY = cat3Anim.value,
-                alpha = cat3Alpha.value,
-                glowAngle = glowAngle
-            )
-            AnimatedCategoryIcon(
-                label = "Special",
-                icon = Icons.Outlined.AutoAwesome,
-                color = MaterialTheme.colorScheme.error,
-                offsetY = cat4Anim.value,
-                alpha = cat4Alpha.value,
-                glowAngle = glowAngle
+        StaggeredItem(intro.value, 0.15f) {
+            Text(
+                text = "Welcome to My Bingwa",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center
             )
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Three Short Glass-Style Benefit Cards
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            GlassBenefitCard(
-                icon = Icons.Outlined.Payment,
-                title = "Pay easily with M-Pesa",
-                description = "Approve the payment directly from your phone.",
-                offsetY = card1OffsetY.value,
-                alpha = card1Alpha.value
-            )
-
-            GlassBenefitCard(
-                icon = Icons.Outlined.CardGiftcard,
-                title = "Gift others",
-                description = "You can buy for another number with ease.",
-                offsetY = card2OffsetY.value,
-                alpha = card2Alpha.value
-            )
-
-            GlassBenefitCard(
-                icon = Icons.Outlined.WifiOff,
-                title = "Buy even when offline",
-                description = "Use Till number and Paybill to buy anytime when offline.",
-                offsetY = card3OffsetY.value,
-                alpha = card3Alpha.value
+        Spacer(Modifier.height(14.dp))
+        StaggeredItem(intro.value, 0.32f) {
+            Text(
+                text = "Buy data, SMS and minutes — even with unpaid Okoa Jahazi.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp)
             )
         }
-
-        Spacer(modifier = Modifier.height(28.dp))
-
-        // Button
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .graphicsLayer {
-                    translationY = btnOffsetY.value
-                    alpha = btnAlpha.value
-                }
-        ) {
-            PrimaryButton(
-                text = "I love it! Continue.",
-                onClick = onNext,
-                testTag = "onboarding_continue_button"
-            )
-        }
+        Spacer(Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun AnimatedCategoryIcon(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    color: Color,
-    offsetY: Float,
-    alpha: Float,
-    glowAngle: Float
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.graphicsLayer {
-            translationY = offsetY
-            this.alpha = alpha
+private fun LogoHero(reducedMotion: Boolean) {
+    // Entrance: overshoot scale-in + upward settle.
+    val enter = remember { Animatable(if (reducedMotion) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        if (!reducedMotion) {
+            enter.animateTo(
+                1f,
+                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
+            )
         }
-    ) {
+    }
+    // Ambient: gentle float + a slowly rotating conic glow ring behind the mark.
+    val transition = rememberInfiniteTransition(label = "logo")
+    val float by if (reducedMotion) remember { mutableStateOf(0f) } else
+        transition.animateFloatAlt(0f, 1f, 3200, "float")
+    val spin by if (reducedMotion) remember { mutableStateOf(0f) } else
+        transition.animateFloatLinear(0f, 360f, 14000, "spin")
+
+    Box(contentAlignment = Alignment.Center) {
+        // Rotating glow ring.
         Box(
             modifier = Modifier
-                .size(58.dp)
-                .clip(CircleShape)
-                .background(color.copy(alpha = 0.12f))
-                .border(
-                    width = 2.dp,
-                    brush = Brush.sweepGradient(
+                .size(250.dp)
+                .graphicsLayer {
+                    rotationZ = spin
+                    alpha = 0.9f * enter.value
+                }
+                .blur(18.dp, BlurredEdgeTreatment.Unbounded)
+                .background(
+                    Brush.sweepGradient(
                         colors = listOf(
-                            color,
-                            color.copy(alpha = 0.2f),
-                            color,
-                            color.copy(alpha = 0.2f)
+                            BrandBrightGreen.copy(alpha = 0.0f),
+                            BrandBrightGreen.copy(alpha = 0.55f),
+                            AccentData.copy(alpha = 0.45f),
+                            AccentSpecial.copy(alpha = 0.40f),
+                            BrandBrightGreen.copy(alpha = 0.0f)
                         )
                     ),
                     shape = CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = color,
-                modifier = Modifier.size(26.dp)
+                )
+        )
+        // Soft halo.
+        Box(
+            modifier = Modifier
+                .size(200.dp)
+                .graphicsLayer { alpha = enter.value }
+                .blur(30.dp, BlurredEdgeTreatment.Unbounded)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(BrandBrightGreen.copy(alpha = 0.30f), Color.Transparent)
+                    ),
+                    shape = CircleShape
+                )
+        )
+        // The real brand mark.
+        Image(
+            painter = painterResource(id = R.drawable.img_onboarding_logo),
+            contentDescription = "My Bingwa",
+            modifier = Modifier
+                .size(184.dp)
+                .graphicsLayer {
+                    val s = 0.6f + 0.4f * enter.value
+                    scaleX = s
+                    scaleY = s
+                    alpha = enter.value
+                    translationY = (1f - enter.value) * 40f + (float - 0.5f) * 16f
+                }
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Screen 2 — What You Gain: category glyphs with glow rings + glass benefits.
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun StepGains(reducedMotion: Boolean) {
+    val intro = remember { Animatable(if (reducedMotion) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        if (!reducedMotion) intro.animateTo(1f, tween(1000, easing = FastOutSlowInEasing))
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(8.dp))
+        StaggeredItem(intro.value, 0.05f) {
+            Text(
+                text = "Buy what you need, anytime, anywhere.",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center
             )
         }
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(Modifier.height(28.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            CategoryGlyph(Icons.Rounded.Wifi, "Data", AccentData, intro.value, 0.10f, reducedMotion)
+            CategoryGlyph(Icons.Rounded.Sms, "SMS", AccentSms, intro.value, 0.18f, reducedMotion)
+            CategoryGlyph(Icons.Rounded.Call, "Minutes", AccentMinutes, intro.value, 0.26f, reducedMotion)
+            CategoryGlyph(Icons.Rounded.AutoAwesome, "Special", AccentSpecial, intro.value, 0.34f, reducedMotion)
+        }
+
+        Spacer(Modifier.height(30.dp))
+
+        BenefitGlassCard(
+            icon = Icons.Rounded.Payments,
+            accent = BrandDeepGreen,
+            title = "Pay easily with M-Pesa",
+            body = "Approve the payment directly from your phone.",
+            progress = intro.value,
+            delay = 0.42f
+        )
+        Spacer(Modifier.height(14.dp))
+        BenefitGlassCard(
+            icon = Icons.Rounded.CardGiftcard,
+            accent = AccentSpecial,
+            title = "Gift others",
+            body = "You can buy for another number with ease.",
+            progress = intro.value,
+            delay = 0.54f
+        )
+        Spacer(Modifier.height(14.dp))
+        BenefitGlassCard(
+            icon = Icons.Rounded.WifiOff,
+            accent = AccentData,
+            title = "Buy even when offline",
+            body = "Use Till number and Paybill to buy anytime when offline.",
+            progress = intro.value,
+            delay = 0.66f
+        )
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun CategoryGlyph(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    accent: Color,
+    progress: Float,
+    delay: Float,
+    reducedMotion: Boolean
+) {
+    // Drop-in with a soft settle.
+    val appear = slice(progress, delay, delay + 0.4f)
+    val transition = rememberInfiniteTransition(label = "glyph_$label")
+    val spin by if (reducedMotion) remember { mutableStateOf(0f) } else
+        transition.animateFloatLinear(0f, 360f, 9000, "spin_$label")
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(contentAlignment = Alignment.Center) {
+            // Rotating glow ring.
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .graphicsLayer { rotationZ = spin; alpha = appear }
+                    .blur(10.dp, BlurredEdgeTreatment.Unbounded)
+                    .background(
+                        Brush.sweepGradient(
+                            listOf(
+                                accent.copy(alpha = 0f),
+                                accent.copy(alpha = 0.6f),
+                                accent.copy(alpha = 0f)
+                            )
+                        ),
+                        shape = CircleShape
+                    )
+            )
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .graphicsLayer {
+                        alpha = appear
+                        val s = 0.6f + 0.4f * appear
+                        scaleX = s
+                        scaleY = s
+                        translationY = (1f - appear) * -28f
+                    }
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.16f))
+                    .border(1.dp, accent.copy(alpha = 0.35f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = label, tint = accent, modifier = Modifier.size(26.dp))
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.graphicsLayer { alpha = appear }
         )
     }
 }
 
 @Composable
-private fun GlassBenefitCard(
+private fun BenefitGlassCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    accent: Color,
     title: String,
-    description: String,
-    offsetY: Float,
-    alpha: Float
+    body: String,
+    progress: Float,
+    delay: Float
 ) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+    val appear = slice(progress, delay, delay + 0.4f)
+    GlassSurface(
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer {
-                translationY = offsetY
-                this.alpha = alpha
+                alpha = appear
+                translationX = (1f - appear) * 60f
             }
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
-                shape = RoundedCornerShape(16.dp)
-            )
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
                     .size(44.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(accent.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = title,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(22.dp)
-                )
+                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp))
             }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
+            Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(Modifier.height(2.dp))
                 Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 16.sp
+                    text = body,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
     }
 }
 
-// -----------------------------------------------------------------------------
-// SCREEN 3 — PERSONAL SETUP
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Screen 3 — Personal Setup: name slides from left, phone from right.
+// ---------------------------------------------------------------------------
+
 @Composable
-private fun StepThreePersonalise(
+private fun StepSetup(
     name: String,
-    onNameChange: (String) -> Unit,
-    nameError: String?,
     phone: String,
-    onPhoneChange: (String) -> Unit,
+    nameError: String?,
     phoneError: String?,
-    onSubmit: (String, String) -> Unit
+    reducedMotion: Boolean,
+    onNameChange: (String) -> Unit,
+    onPhoneChange: (String) -> Unit
 ) {
-    var nameVal by remember(name) { mutableStateOf(name) }
-    var phoneVal by remember(phone) { mutableStateOf(phone) }
-    var localNameError by remember(nameError) { mutableStateOf(nameError) }
-    var localPhoneError by remember(phoneError) { mutableStateOf(phoneError) }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "Make My Bingwa yours.",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "Just your name and phone number. No account needed.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+        Spacer(Modifier.height(28.dp))
 
-    val coroutineScope = rememberCoroutineScope()
-    var isSubmitting by remember { mutableStateOf(false) }
-    var showConfetti by remember { mutableStateOf(false) }
-
-    // Entrance Animations
-    val headerAlpha = remember { Animatable(0f) }
-
-    // Name field slides in from Left (-120f)
-    val nameOffsetX = remember { Animatable(-120f) }
-    val nameAlpha = remember { Animatable(0f) }
-
-    // Phone field slides in from Right (+120f)
-    val phoneOffsetX = remember { Animatable(120f) }
-    val phoneAlpha = remember { Animatable(0f) }
-
-    val btnOffsetY = remember { Animatable(60f) }
-    val btnAlpha = remember { Animatable(0f) }
-
-    LaunchedEffect(Unit) {
-        // Header fades in first
-        launch { headerAlpha.animateTo(1f, tween(300)) }
-
-        delay(120)
-        // Name field slides in from Left
-        launch { nameAlpha.animateTo(1f, tween(350)) }
-        launch { nameOffsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow)) }
-
-        delay(150)
-        // Phone field slides in from Right
-        launch { phoneAlpha.animateTo(1f, tween(350)) }
-        launch { phoneOffsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow)) }
-
-        delay(180)
-        // Button rises into position
-        launch { btnAlpha.animateTo(1f, tween(350)) }
-        launch { btnOffsetY.animateTo(0f, spring(stiffness = Spring.StiffnessLow)) }
-    }
-
-    Box(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Header: Title & Supporting Text
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.graphicsLayer { alpha = headerAlpha.value }
-            ) {
-                Text(
-                    text = "Make My Bingwa yours.",
-                    style = TypographyPageHeading.copy(fontSize = 26.sp),
-                    color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Just your name and phone number. No account needed.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-            }
-
-            Spacer(modifier = Modifier.height(28.dp))
-
-            // Name Field (Slides in from Left)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        translationX = nameOffsetX.value
-                        alpha = nameAlpha.value
-                    }
-            ) {
-                LabelledTextField(
-                    label = "Your name",
-                    value = nameVal,
-                    onValueChange = {
-                        nameVal = it
-                        onNameChange(it)
-                        localNameError = null
-                    },
-                    placeholder = "Enter your name",
-                    errorMessage = localNameError,
-                    testTag = "onboarding_name_input"
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Safaricom Number Field (Slides in from Right)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        translationX = phoneOffsetX.value
-                        alpha = phoneAlpha.value
-                    }
-            ) {
-                LabelledPhoneField(
-                    label = "Safaricom number",
-                    value = phoneVal,
-                    onValueChange = {
-                        phoneVal = it
-                        onPhoneChange(it)
-                        localPhoneError = null
-                    },
-                    placeholder = "07XX XXX XXX",
-                    errorMessage = localPhoneError,
-                    testTag = "onboarding_phone_input"
-                )
-            }
-
-            Spacer(modifier = Modifier.height(36.dp))
-
-            // Button (Rises into position)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        translationY = btnOffsetY.value
-                        alpha = btnAlpha.value
-                    }
-            ) {
-                PrimaryButton(
-                    text = "Start using My Bingwa",
-                    onClick = {
-                        if (isSubmitting) return@PrimaryButton
-                        val cleanName = nameVal.trim()
-                        val cleanPhone = phoneVal.trim()
-                        var valid = true
-
-                        if (cleanName.isBlank()) {
-                            localNameError = "Please enter your name"
-                            valid = false
-                        }
-                        if (cleanPhone.isBlank() || cleanPhone.length < 9) {
-                            localPhoneError = "Enter a valid Safaricom number"
-                            valid = false
-                        }
-
-                        if (valid) {
-                            isSubmitting = true
-                            showConfetti = true
-                            coroutineScope.launch {
-                                delay(1100) // Brief success confetti animation
-                                onSubmit(cleanName, cleanPhone)
-                            }
-                        }
-                    },
-                    testTag = "start_using_bingwa_button"
+        SlideIn(fromLeft = true, reducedMotion = reducedMotion) {
+            GlassSurface(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = onNameChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(4.dp),
+                    label = { Text("Your name") },
+                    leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
+                    singleLine = true,
+                    isError = nameError != null,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, errorBorderColor = Color.Transparent, disabledBorderColor = Color.Transparent)
                 )
             }
         }
+        if (nameError != null) FieldError(nameError)
 
-        // Celebratory Confetti Burst Effect on Successful Submit
-        if (showConfetti) {
-            ConfettiBurstOverlay(modifier = Modifier.matchParentSize())
+        Spacer(Modifier.height(16.dp))
+
+        SlideIn(fromLeft = false, reducedMotion = reducedMotion) {
+            GlassSurface(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = onPhoneChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(4.dp),
+                    label = { Text("Safaricom number") },
+                    placeholder = { Text("07XX XXX XXX") },
+                    leadingIcon = { Icon(Icons.Rounded.Phone, contentDescription = null) },
+                    singleLine = true,
+                    isError = phoneError != null,
+                    keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, errorBorderColor = Color.Transparent, disabledBorderColor = Color.Transparent)
+                )
+            }
         }
+        if (phoneError != null) FieldError(phoneError)
+
+        Spacer(Modifier.height(20.dp))
     }
 }
 
-// -----------------------------------------------------------------------------
-// CONFETTI BURST ANIMATION
-// -----------------------------------------------------------------------------
-private data class ConfettiParticle(
-    val x: Float,
-    val y: Float,
-    val vx: Float,
-    val vy: Float,
-    val size: Float,
-    val color: Color,
-    val rotation: Float
-)
+@Composable
+private fun FieldError(message: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp, top = 6.dp)
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared pieces
+// ---------------------------------------------------------------------------
 
 @Composable
-private fun ConfettiBurstOverlay(modifier: Modifier = Modifier) {
-    val progress = remember { Animatable(0f) }
+private fun GlassSurface(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val dark = MaterialTheme.colorScheme.background.luminanceIsDark()
+    val fill = if (dark) Color.White.copy(alpha = 0.07f) else Color.White.copy(alpha = 0.55f)
+    val stroke = if (dark) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.70f)
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(22.dp))
+            .background(fill)
+            .border(1.dp, stroke, RoundedCornerShape(22.dp))
+    ) {
+        content()
+    }
+}
 
-    val particles = remember {
-        val colors = listOf(
-            Color(0xFF00C853), // Safaricom Green
-            Color(0xFFFFD600), // Bright Gold
-            Color(0xFF2979FF), // Vivid Blue
-            Color(0xFFFF1744), // Crimson Red
-            Color(0xFFAA00FF)  // Purple
+@Composable
+private fun StaggeredItem(progress: Float, delay: Float, content: @Composable () -> Unit) {
+    val appear = slice(progress, delay, delay + 0.5f)
+    Box(
+        modifier = Modifier.graphicsLayer {
+            alpha = appear
+            translationY = (1f - appear) * 28f
+        }
+    ) { content() }
+}
+
+@Composable
+private fun SlideIn(fromLeft: Boolean, reducedMotion: Boolean, content: @Composable () -> Unit) {
+    val slidePx = with(LocalDensity.current) { 140.dp.toPx() }
+    val anim = remember { Animatable(if (reducedMotion) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        if (!reducedMotion) {
+            anim.animateTo(1f, spring(dampingRatio = 0.72f, stiffness = 260f))
+        }
+    }
+    Box(
+        modifier = Modifier.graphicsLayer {
+            alpha = anim.value
+            translationX = (1f - anim.value) * if (fromLeft) -slidePx else slidePx
+        }
+    ) { content() }
+}
+
+@Composable
+private fun StepProgress(step: Int) {
+    val target = step.toFloat() / TOTAL_STEPS
+    val fill by animateFloatAsState(target, tween(500, easing = FastOutSlowInEasing), label = "progress")
+    Box(
+        modifier = Modifier
+            .width(120.dp)
+            .height(6.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(fill)
+                .height(6.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.horizontalGradient(listOf(BrandDeepGreen, BrandBrightGreen))
+                )
         )
-        List(60) {
-            val angle = Random.nextFloat() * 2f * Math.PI.toFloat()
-            val speed = Random.nextFloat() * 350f + 150f
-            ConfettiParticle(
-                x = 0.5f,
-                y = 0.6f,
-                vx = cos(angle) * speed,
-                vy = sin(angle) * speed - 200f, // initial upward burst
-                size = Random.nextFloat() * 10f + 8f,
-                color = colors.random(),
-                rotation = Random.nextFloat() * 360f
+    }
+}
+
+@Composable
+private fun PrimaryCtaButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .graphicsLayer { alpha = if (enabled) 1f else 0.6f }
+            .clip(RoundedCornerShape(18.dp))
+            .background(Brush.horizontalGradient(listOf(BrandDeepGreen, Color(0xFF00913A))))
+            .clickable(enabled = enabled) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = text,
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                Icons.Rounded.ArrowForward,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
             )
         }
     }
+}
 
-    LaunchedEffect(Unit) {
-        progress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = 1100, easing = LinearEasing)
-        )
+// ---------------------------------------------------------------------------
+// Confetti burst (Screen 3 finish)
+// ---------------------------------------------------------------------------
+
+private data class Confetti(
+    val xFrac: Float,
+    val delay: Float,
+    val colorIndex: Int,
+    val spin: Float,
+    val drift: Float,
+    val size: Float,
+    val launch: Float,
+    val fall: Float
+)
+
+@Composable
+private fun ConfettiOverlay() {
+    val pieces = remember {
+        List(110) {
+            Confetti(
+                xFrac = 0.5f + (Random.nextFloat() - 0.5f) * 0.5f,
+                delay = Random.nextFloat() * 0.18f,
+                colorIndex = Random.nextInt(4),
+                spin = (Random.nextFloat() - 0.5f) * 10f,
+                drift = (Random.nextFloat() - 0.5f) * 0.7f,
+                size = 10f + Random.nextFloat() * 12f,
+                launch = 0.55f + Random.nextFloat() * 0.5f,
+                fall = 0.9f + Random.nextFloat() * 0.6f
+            )
+        }
     }
+    val colors = listOf(BrandDeepGreen, BrandBrightGreen, AccentData, AccentSpecial)
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { progress.animateTo(1f, tween(1300, easing = LinearEasing)) }
 
-    Canvas(modifier = modifier) {
-        val width = size.width
-        val height = size.height
-        val t = progress.value
-
-        particles.forEach { p ->
-            val px = p.x * width + p.vx * t
-            val py = p.y * height + p.vy * t + 400f * t * t // Gravity curve
-            val currentAlpha = (1f - t * 0.9f).coerceIn(0f, 1f)
-
-            if (px in 0f..width && py in 0f..height) {
-                rotate(p.rotation + t * 360f, pivot = Offset(px, py)) {
-                    drawRect(
-                        color = p.color.copy(alpha = currentAlpha),
-                        topLeft = Offset(px - p.size / 2, py - p.size / 2),
-                        size = androidx.compose.ui.geometry.Size(p.size, p.size * 0.6f)
-                    )
-                }
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val p = progress.value
+        val originY = size.height * 0.82f
+        pieces.forEach { c ->
+            val local = ((p - c.delay) / (1f - c.delay)).coerceIn(0f, 1f)
+            if (local <= 0f) return@forEach
+            val x = c.xFrac * size.width + c.drift * local * size.width
+            // Up then down: parabolic burst from the button area.
+            val y = originY - c.launch * local * size.height + c.fall * local * local * size.height
+            val alpha = (1f - local * local).coerceIn(0f, 1f)
+            val deg = local * 360f * c.spin
+            val col = colors[c.colorIndex].copy(alpha = alpha)
+            rotate(degrees = deg, pivot = Offset(x, y)) {
+                drawRect(
+                    color = col,
+                    topLeft = Offset(x - c.size / 2f, y - c.size / 2f),
+                    size = Size(c.size, c.size * 0.55f)
+                )
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Maps a global 0..1 progress onto a windowed 0..1 slice for staggering. */
+private fun slice(progress: Float, start: Float, end: Float): Float =
+    ((progress - start) / (end - start)).coerceIn(0f, 1f)
+
+/** Reads the system "remove animations" accessibility setting. */
+@Composable
+private fun rememberReducedMotion(): Boolean {
+    val context = LocalContext.current
+    return remember {
+        runCatching {
+            Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) == 0f
+        }.getOrDefault(false)
+    }
+}
+
+/**
+ * Normalises a Kenyan Safaricom number to canonical 07XXXXXXXX / 01XXXXXXXX.
+ * Accepts 07.., 01.., 7.., 1.., +2547.., 2547.., with spaces. Returns null if
+ * it is not a plausible 10-digit Safaricom mobile number.
+ */
+internal fun normalizeKenyanPhone(raw: String): String? {
+    val digits = raw.filter { it.isDigit() }
+    val national = when {
+        digits.length == 12 && digits.startsWith("254") -> "0" + digits.substring(3)
+        digits.length == 10 && digits.startsWith("0") -> digits
+        digits.length == 9 && (digits.startsWith("7") || digits.startsWith("1")) -> "0$digits"
+        else -> null
+    } ?: return null
+    val ok = national.length == 10 && (national.startsWith("07") || national.startsWith("01"))
+    return if (ok) national else null
+}
+
+// --- small infinite-transition conveniences (kept local to avoid coupling) ---
+
+@Composable
+private fun androidx.compose.animation.core.InfiniteTransition.animateFloatAlt(
+    initial: Float,
+    target: Float,
+    durationMillis: Int,
+    label: String
+) = animateFloat(
+    initialValue = initial,
+    targetValue = target,
+    animationSpec = infiniteRepeatable(tween(durationMillis, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+    label = label
+)
+
+@Composable
+private fun androidx.compose.animation.core.InfiniteTransition.animateFloatLinear(
+    initial: Float,
+    target: Float,
+    durationMillis: Int,
+    label: String
+) = animateFloat(
+    initialValue = initial,
+    targetValue = target,
+    animationSpec = infiniteRepeatable(tween(durationMillis, easing = LinearEasing), RepeatMode.Restart),
+    label = label
+)
+
+/** Rough luminance check so glass fills adapt to light/dark backgrounds. */
+private fun Color.luminanceIsDark(): Boolean {
+    val l = 0.299f * red + 0.587f * green + 0.114f * blue
+    return l < 0.5f
 }
