@@ -3,27 +3,48 @@
  * Authoritative offer prices. The SERVER decides the price from the offerId — the
  * app never sends a trusted amount (CLAUDE.md §7, Plan.md §API).
  *
- * These mirror the app catalogue for now. Later, when you manage offers from
- * cPanel, replace this with a SELECT from an `offers` table — nothing else changes.
+ * IMPORTANT: these ids MUST match the ids the app sends (the app catalogue /
+ * `offers.sql`). A mismatch makes stk.php return UNKNOWN_OFFER, which the app shows
+ * as an instant "could not start payment" failure.
+ *
+ * Later, when you manage offers from cPanel, replace this with a SELECT from the
+ * `offers` table (offers.sql) — nothing else changes.
  *
  * Returns: offerId => price in KSh.
  */
 
 return [
-    'off_1'  => 19,
-    'off_2'  => 20,
-    'off_3'  => 50,
-    'off_4'  => 55,
-    'off_5'  => 110,
-    'off_6'  => 5,
-    'off_7'  => 10,
-    'off_8'  => 30,
-    'off_9'  => 22,
-    'off_10' => 23,
-    'off_11' => 51,
-    'off_12' => 99,
-    'off_13' => 45,
-    'off_14' => 250,
-    'off_15' => 1000,
-    'off_16' => 1500,
+    // Data
+    'data_1'  => 19,
+    'data_2'  => 20,
+    'data_3'  => 50,
+    'data_4'  => 55,
+    'data_5'  => 95,
+    'data_6'  => 110,
+    'data_7'  => 49,
+    'data_8'  => 300,
+    'data_9'  => 700,
+    'data_10' => 250,
+    'data_11' => 500,
+    'data_12' => 1000,
+    'data_13' => 1005,
+    // SMS
+    'sms_1'   => 5,
+    'sms_2'   => 10,
+    'sms_3'   => 30,
+    'sms_4'   => 101,
+    'sms_5'   => 201,
+    // Minutes
+    'min_1'   => 22,
+    'min_2'   => 23,
+    'min_3'   => 24,
+    'min_4'   => 48,
+    'min_5'   => 205,
+    'min_6'   => 105,
+    'min_7'   => 499,
+    'min_8'   => 950,
+    // Special
+    'spec_1'  => 21,
+    'spec_2'  => 51,
+    'spec_3'  => 110,
 ];

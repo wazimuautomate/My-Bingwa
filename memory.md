@@ -852,3 +852,59 @@ destinations.
   reconciliation is an open owner decision.
 - **Next:** Push branch; watch CI; fix any compile error on-branch without weakening tests.
   Then owner: decide main reconciliation, deploy server changes + secrets, phone-test.
+
+---
+
+## 2026-07-25 EAT — Live STK diagnosis: fixed instant-fail + no-prompt (real KSh 1 test)
+
+- **Objective:** Owner reported "initiating STK fails instantly" and asked me to test a
+  real KSh 1 STK to 0727921038; also revert buy-for-another to a mock (different, unbuilt
+  integration).
+- **Result:** Diagnosed + fixed, validated with a REAL Daraja STK (owner confirmed the
+  Paybill prompt arrived on the phone).
+- **How tested:** No phone/JDK here, but `curl`+`openssl` + the local (git-ignored)
+  `config.php` let me replicate `lib.php`'s OAuth + STK against production Daraja
+  (`api.safaricom.co.ke`). Script in scratchpad (not committed; never printed secrets).
+  OAuth 200 (creds valid). First push with `CustomerBuyGoodsOnline` → ResponseCode 0 but
+  **no prompt delivered**. Owner confirmed `4050595` is a **Paybill** (Till is `4953696`,
+  a later/separate integration). Re-fired with `CustomerPayBillOnline` → **prompt
+  delivered** (owner: "it worked").
+- **Two root causes + fixes:**
+  1. **Instant app failure:** `server/mybingwa-api/offers.php` price map used stale ids
+     `off_1..off_16`; the app sends `data_*/sms_*/min_*/spec_*`, so `stk.php` returned
+     `UNKNOWN_OFFER`. **Fixed** `offers.php` to the real catalogue ids/prices (matching
+     `offers.sql`). Committed.
+  2. **Accepted-but-not-delivered:** shortcode `4050595` is a Paybill but config used
+     `CustomerBuyGoodsOnline`. **Fixed** local `config.php` `transaction_type` →
+     `CustomerPayBillOnline`. NOT committed (git-ignored secrets) — owner must UPLOAD
+     `config.php` to the server.
+  - **Buy-for-another reverted to a mock** in `FakeBingwaRepositoryImpl` (always a
+     `SimulatedPaymentGateway`, never the real gateway) per owner. Committed.
+- **Deploy required (owner):** upload `server/mybingwa-api/offers.php` AND the edited
+  `config.php` to the live host. The app already reaches the real backend (the instant
+  UNKNOWN_OFFER proves the app-key matches + it's configured), so once deployed, real
+  Paybill STK works from the app.
+- **Note:** `4050595`/`4953696` are temporary (owner: "these values will be changed
+  later"). When the Till STK integration is ready, switch self back to
+  `CustomerBuyGoodsOnline` with the Till's store number + its own passkey. `callback.php`
+  is now fail-closed on the `?token=` secret — owner must set `callback_secret` and
+  register the tokenised CallbackURL, else confirmations rely on the status-query fallback.
+- **Git:** `feature/real-payments-persistence`; committing offers.php + buy-for-another
+  revert + docs. `config.php` never committed.
+- **Callback secret (DONE):** generated a 64-hex `callback_secret` and set BOTH
+  `config.php` `callback_secret` and the `callback_url` `?token=` to it (they match).
+  `callback.php` (deployed) then authenticates Daraja's callback; no Daraja-portal step
+  (the CallbackURL is sent per STK request by `lib.php`). Value lives only in the
+  git-ignored `config.php` (not in memory). `stk.php` AccountReference for self = "MyBingwa".
+- **Full deploy set (upload to web root where callback.php is served):** `config.php`,
+  `offers.php`, `stk.php`, `lib.php`, `callback.php`, `status.php`. Import `schema.sql`
+  (payments table) once; `offers.sql` optional (catalogue sync). After that the online
+  buy-for-myself loop is fully real: Paybill STK → callback confirms (token-authed) →
+  status.php reflects it → app shows Payment received. Only buy-for-another stays mocked.
+- **END-TO-END VALIDATED LIVE (2026-07-25):** owner deployed the files, imported the
+  schema, and paid a real KSh 1 via the deployed `stk.php` (offerId `test_1`). Poll of
+  `status.php` returned `PAYMENT_CONFIRMED` **with a real mpesaReceipt (UGPQC0JHRW)** —
+  the non-null receipt proves the callback authenticated with `callback_secret` and wrote
+  the row (the query-fallback never writes a receipt). Whole online payment chain confirmed
+  working in production. The temporary `test_1` KSh 1 offer was removed from `offers.php`
+  after the test (owner may re-upload `offers.php` to drop it from the live server too).

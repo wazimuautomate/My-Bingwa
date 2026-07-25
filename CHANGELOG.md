@@ -48,6 +48,21 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Fixed
 
+- **Online STK push now actually works (was failing / not delivering).** Two live
+  defects found by firing a real KSh 1 STK against production Daraja:
+  - `offers.php` (the server's authoritative price map) used stale ids `off_1..off_16`
+    while the app sends `data_6`/`sms_2`/etc., so `stk.php` returned `UNKNOWN_OFFER` and
+    the app showed an instant "could not start payment". Rewrote `offers.php` to the
+    real catalogue ids/prices (matching `offers.sql`).
+  - The seller shortcode `4050595` is a **Paybill**, but the config used
+    `CustomerBuyGoodsOnline` (Till), so Daraja accepted the request (ResponseCode 0)
+    yet never delivered the prompt. The online buy-for-myself route now uses
+    `CustomerPayBillOnline` (deployment change in the server's git-ignored `config.php`).
+    A real KSh 1 Paybill STK was confirmed delivered to the test phone.
+- **Buy-for-another is a mock again (owner decision).** It uses a different M-Pesa
+  integration that is not built yet, so it no longer routes through the real
+  self/Paybill gateway — always a labelled simulation, even when a backend is
+  configured.
 - **Settings notification/SMS toggles now reflect the real OS permission** and are
   persisted, instead of showing "on" optimistically regardless of the actual grant.
   MainActivity writes the true `POST_NOTIFICATIONS` / `RECEIVE_SMS` state into the

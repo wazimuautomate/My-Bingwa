@@ -74,11 +74,16 @@ class FakeBingwaRepositoryImpl(
         terminalOutcome = { devOutcomeToState(_devStkOutcome.value) }
     )
 
-    // Both routes use the real backend gateway when one is configured. Buy-for-another
-    // is no longer permanently mocked: it goes through the same gateway, and the
-    // request's forSelf=false tells the backend to use the Paybill + recipient route.
+    // Buy-for-myself uses the real backend gateway when one is configured.
     private val selfGateway: PaymentGateway = gateway ?: fallback
-    private val anotherNumberGateway: PaymentGateway = gateway ?: fallback
+
+    // Buy-for-another uses a DIFFERENT integration that is not implemented yet, so it
+    // stays mocked: always a labelled simulation, never the real self/Till backend —
+    // even when a backend is configured. (Product decision; do not route this to the
+    // self gateway.)
+    private val anotherNumberGateway: PaymentGateway = SimulatedPaymentGateway(
+        terminalOutcome = { devOutcomeToState(_devStkOutcome.value) }
+    )
 
     private val defaultProfile = UserProfile(
         name = "Bonke",
