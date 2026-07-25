@@ -76,7 +76,7 @@ class CachedOfflineConfigProvider(
          */
         val DEFAULT = OfflinePaymentConfig(
             tillNumber = "4953696",
-            paybillNumber = "40450595",
+            paybillNumber = "4050595",
             issuedAtMillis = 0L,
             expiresAtMillis = Long.MAX_VALUE,
             signatureValid = true

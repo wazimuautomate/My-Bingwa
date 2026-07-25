@@ -19,7 +19,7 @@ data class AppConfig(
          */
         val DEFAULT = AppConfig(
             tillNumber = "4953696",
-            paybillNumber = "40450595",
+            paybillNumber = "4050595",
             supportNumber = "0727921038",
             supportWhatsapp = "254727921038"
         )
