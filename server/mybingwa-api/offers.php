@@ -47,4 +47,7 @@ return [
     'spec_1'  => 21,
     'spec_2'  => 51,
     'spec_3'  => 110,
+    // Diagnostic-only KSh 1 offer for end-to-end payment tests. Not shown in the app.
+    // Safe to remove after testing.
+    'test_1'  => 1,
 ];
