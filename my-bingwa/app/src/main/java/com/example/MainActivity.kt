@@ -47,13 +47,7 @@ import com.example.core.notifications.ConnectivityObserver
 import com.example.core.notifications.NotificationChannels
 import com.example.core.notifications.SmsSignal
 import com.example.core.ui.MyBingwaBottomNav
-import com.example.data.catalogue.AndroidRemoteCatalogueSource
-import com.example.data.config.AndroidRemoteConfigSource
 import com.example.data.fake.BingwaRepository
-import com.example.data.fake.FakeBingwaRepositoryImpl
-import com.example.data.payment.PaymentGatewayProvider
-import com.example.data.payment.UnavailablePaymentGateway
-import com.example.data.persistence.LocalStore
 import com.example.feature.activity.ActivityScreen
 import com.example.feature.help.HelpScreen
 import com.example.feature.home.CatalogueViewModel
@@ -72,64 +66,12 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
-    // Buy-for-myself uses the real backend proxy when a base URL is configured
-    // (BuildConfig.PAYMENTS_BASE_URL, a non-secret value); otherwise a clearly
-    // labelled local simulation. Daraja credentials never live in this app.
-    // `by lazy` so applicationContext is attached before the RemoteConfigSource
-    // (SharedPreferences) is built — property init runs before the base context.
+    // The single process-wide repository, owned by MyBingwaApplication so the UI and
+    // the background CatalogueSyncWorker share one instance (same StateFlows, same
+    // on-device LocalStore). `by lazy` because `application` is attached before
+    // onCreate runs, where this is first read.
     private val repository: BingwaRepository by lazy {
-        val baseUrl = BuildConfig.PAYMENTS_BASE_URL
-        val appKey = BuildConfig.PAYMENTS_APP_KEY
-        // Real STK needs BOTH a usable https base URL AND the app-key (the backend
-        // rejects calls without it). Config/catalogue sync only needs a base URL.
-        val paymentConfigured = PaymentGatewayProvider.isBackendConfigured(baseUrl, appKey)
-        val hasBaseUrl = baseUrl.isNotBlank() && baseUrl.startsWith("https://")
-
-        FakeBingwaRepositoryImpl(
-            gateway = if (paymentConfigured) {
-                PaymentGatewayProvider.create(
-                    baseUrl = baseUrl,
-                    appKey = appKey,
-                    debugLogging = BuildConfig.DEBUG
-                )
-            } else {
-                null
-            },
-            // No real backend: a debug build uses a labelled on-device simulation so
-            // screens stay testable; a release build must NEVER fake a success, so it
-            // uses UnavailablePaymentGateway (payments fail honestly until configured).
-            fallbackGateway = if (!paymentConfigured && !BuildConfig.DEBUG) {
-                UnavailablePaymentGateway()
-            } else {
-                null
-            },
-            // Seller Till/Paybill/support are synced from the server but always
-            // cached for offline use. No base URL → baked-in defaults only.
-            configSource = if (hasBaseUrl) {
-                AndroidRemoteConfigSource(
-                    context = applicationContext,
-                    baseUrl = baseUrl,
-                    appKey = appKey,
-                    enableLogging = BuildConfig.DEBUG
-                )
-            } else {
-                null
-            },
-            // Offers are synced from the server when online; the bundled catalogue
-            // is the guaranteed offline base (server is only for syncing).
-            catalogueSource = if (hasBaseUrl) {
-                AndroidRemoteCatalogueSource(
-                    baseUrl = baseUrl,
-                    appKey = appKey,
-                    enableLogging = BuildConfig.DEBUG
-                )
-            } else {
-                null
-            },
-            // Real on-device persistence: name, profile, favourites, Activity,
-            // notifications and any in-flight order survive process death.
-            localStore = LocalStore(applicationContext)
-        )
+        (application as MyBingwaApplication).repository
     }
 
     // Pending notification-tap deep-link route (AppNotifier.EXTRA_DEEP_LINK_ROUTE).

@@ -1,6 +1,9 @@
 package com.example.data.persistence
 
+import com.example.core.model.DailyRule
 import com.example.core.model.NotificationItem
+import com.example.core.model.OfferCategory
+import com.example.core.model.OfferItem
 import com.example.core.model.PaymentMethod
 import com.example.core.model.PaymentStatus
 import com.example.core.model.PurchaseRecord
@@ -66,6 +69,20 @@ class PersistedStateSerializationTest {
                 )
             ),
             recentRecipients = listOf("0722000111", "0700000000"),
+            offers = listOf(
+                OfferItem(
+                    id = "data_6",
+                    name = "2GB",
+                    allowance = "2GB",
+                    priceKsh = 110,
+                    validity = "24 Hrs",
+                    validityBand = "Daily",
+                    category = OfferCategory.DATA,
+                    dailyRule = DailyRule.BUY_AGAIN_TODAY,
+                    description = "2GB of data valid 24 Hrs."
+                )
+            ),
+            catalogueVersion = 7L,
             activeOrder = ActiveOrder(
                 clientRequestId = "crid-2",
                 offerId = "data_1",

@@ -144,13 +144,20 @@ interface BingwaRepository {
     /** Clear the restored active order (checkout dismissed or reached a terminal state). */
     fun clearActiveOrder()
 
-    /** Fetch fresh seller config from the server and update [appConfig]; safe to call when online. */
+    /**
+     * Fetch fresh seller config from the server and update [appConfig]; safe to call
+     * when online. Only a valid, complete response replaces the cache; a failure or an
+     * all-blank (incomplete) response keeps the last good config.
+     */
     suspend fun syncRemoteConfig()
 
     /**
-     * Fetch the catalogue from the server and replace the offers when a non-empty
-     * list is returned (preserving local favourite/bought-today state). On failure
-     * the local catalogue is kept, so the app always has offers offline (Phase 7).
+     * Fetch the catalogue from the server and replace the offers ONLY on a complete,
+     * validated, non-empty response (each offer must have id, name, price, category and
+     * validity), then bump the stored catalogue version. A failed, null, empty or
+     * incomplete response keeps the existing locally-stored offers — never clearing or
+     * partially overwriting them — so the app always has offers offline (Phase 7).
+     * Local favourite/bought-today state is preserved across the replace.
      */
     suspend fun syncCatalogue()
 

@@ -31,8 +31,10 @@ import com.example.data.payment.PaymentTransportException
 import com.example.data.payment.SimulatedPaymentGateway
 import com.example.data.payment.StkPushRequest
 import com.example.data.payment.StkStatusQuery
-import com.example.data.persistence.LocalStore
 import com.example.data.persistence.PersistedState
+import com.example.data.persistence.SnapshotStore
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -63,7 +65,10 @@ class FakeBingwaRepositoryImpl(
     private val configProvider: OfflinePaymentConfigProvider = CachedOfflineConfigProvider(),
     private val configSource: RemoteConfigSource? = null,
     private val catalogueSource: RemoteCatalogueSource? = null,
-    private val localStore: LocalStore? = null,
+    private val localStore: SnapshotStore? = null,
+    // The dispatcher persistence/restore run on. The app uses IO; tests can inject a
+    // deterministic dispatcher so a restore is observable synchronously.
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     // Seed data for TESTS only. The real app always uses the empty defaults so a
     // fresh install has no prefilled Activity / notifications / recipients.
     seedPurchases: List<PurchaseRecord> = emptyList(),
@@ -166,6 +171,17 @@ class FakeBingwaRepositoryImpl(
 
     private val _offers = MutableStateFlow(initialOffers)
     override val offers: StateFlow<List<OfferItem>> = _offers.asStateFlow()
+
+    // Local revision of the persisted catalogue. Starts at 0 (only the seeded
+    // catalogue) and increases by one every time a COMPLETE, validated, non-empty
+    // server catalogue is committed — so a failed/empty sync (which keeps the old
+    // offers) is distinguishable from a real update. Persisted alongside [offers].
+    // Not part of the public [BingwaRepository] contract; exposed on the concrete
+    // class for sync bookkeeping and tests. When the app later adopts the versioned
+    // /api/v1/app/sync endpoint (docs/APP_SYNC_CONTRACT.md), the server configVersion
+    // becomes the source of this value.
+    private val _catalogueVersion = MutableStateFlow(0L)
+    val catalogueVersion: StateFlow<Long> = _catalogueVersion.asStateFlow()
 
     // The catalogue is cached, so the first load resolves immediately. The flag
     // still exists so Home/Offers can show skeletons on a cold, empty cache and
@@ -279,25 +295,34 @@ class FakeBingwaRepositoryImpl(
     override val appConfig: StateFlow<AppConfig> = _appConfig.asStateFlow()
 
     // --- Real on-device persistence (installation-local; no cloud/account) ---------
-    // When a LocalStore is injected, state is loaded from disk on start and every
+    // When a SnapshotStore is injected, state is loaded from disk on start and every
     // mutation re-saves the whole (small) snapshot, so name, profile, favourites,
-    // Activity, notifications and any in-flight order survive process death. Unit
-    // tests inject no store and behave exactly as the old in-memory repository.
-    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // synced offers, Activity, notifications and any in-flight order survive process
+    // death. Unit tests inject no store (or a tiny in-memory one).
+    private val ioScope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val saveTick = MutableStateFlow(0L)
+
+    // Completes once the on-disk restore has finished (or immediately when there is
+    // no store, e.g. unit tests). A background sync awaits this before committing, so
+    // it can never persist a blank snapshot over the customer's real local data
+    // during the brief cold-start restore window.
+    private val restoreComplete = CompletableDeferred<Unit>()
 
     init {
         val store = localStore
         if (store != null) {
             ioScope.launch {
                 restoreFromDisk(store)
+                restoreComplete.complete(Unit)
                 // Persist on every subsequent mutation (StateFlow conflates bursts).
                 saveTick.collect { store.save(currentSnapshot()) }
             }
+        } else {
+            restoreComplete.complete(Unit)
         }
     }
 
-    private suspend fun restoreFromDisk(store: LocalStore) {
+    private suspend fun restoreFromDisk(store: SnapshotStore) {
         val s = store.load() ?: return
         // A never-saved device keeps the seeded demo content; only override once the
         // customer has real saved state (also lets Clear local data persist as empty).
@@ -309,10 +334,16 @@ class FakeBingwaRepositoryImpl(
         _purchases.value = s.purchases
         _notifications.value = s.notifications
         _recentRecipients.value = s.recentRecipients
+        _catalogueVersion.value = s.catalogueVersion
         val favs = s.favouriteIds.toSet()
         val bought = s.boughtTodayIds.toSet()
-        _offers.update { list ->
-            list.map { it.copy(isFavourite = favs.contains(it.id), isBoughtToday = bought.contains(it.id)) }
+        // Previously synced offers are the offline source of truth; fall back to the
+        // seeded catalogue only when nothing has been synced yet. Local favourite /
+        // bought-today state is re-applied on top so it always wins (same merge the
+        // in-memory refresh/sync uses).
+        val base = s.offers.ifEmpty { initialOffers }
+        _offers.value = base.map {
+            it.copy(isFavourite = favs.contains(it.id), isBoughtToday = bought.contains(it.id))
         }
         // Safe process-death payment restore: an order still in-flight when the app
         // died is settled to an honest "Waiting to verify" — never silently lost and
@@ -351,6 +382,12 @@ class FakeBingwaRepositoryImpl(
         notifications = _notifications.value,
         recentRecipients = _recentRecipients.value,
         activeOrder = _activeOrder.value,
+        // Persist the synced catalogue (without per-device favourite/bought flags, which
+        // are stored separately above and re-applied on restore) and its local version,
+        // so the UI keeps reading offers from on-device storage — offline and across
+        // process death.
+        offers = _offers.value.map { it.copy(isFavourite = false, isBoughtToday = false) },
+        catalogueVersion = _catalogueVersion.value,
         initialized = true
     )
 
@@ -664,12 +701,38 @@ class FakeBingwaRepositoryImpl(
     }
 
     override suspend fun syncRemoteConfig() {
-        configSource?.fetch()?.let { fresh -> _appConfig.value = fresh }
+        val source = configSource ?: return
+        val fresh = try {
+            source.fetch()
+        } catch (t: Throwable) {
+            null
+        } ?: return // Failure/no response → keep the last good cached config.
+        // An all-blank config is treated as an incomplete response: keep the last good
+        // config rather than blanking Till/Paybill/support that are already known.
+        if (fresh.isBlankConfig() && !_appConfig.value.isBlankConfig()) return
+        _appConfig.value = fresh
     }
 
     override suspend fun syncCatalogue() {
-        val fresh = catalogueSource?.fetch() ?: return
-        // Preserve the customer's local favourite/bought-today state across a sync.
+        val source = catalogueSource ?: return
+        // Never sync into un-restored state: wait for the on-disk restore so a
+        // background sync merges into (and persists over) the real local data, never a
+        // blank cold-start snapshot.
+        restoreComplete.await()
+
+        val fresh = try {
+            source.fetch()
+        } catch (t: Throwable) {
+            null
+        } ?: return // Failure/null → keep the existing locally-stored offers.
+
+        // Validate the payload BEFORE committing anything. A single incomplete offer
+        // (missing id/name/price/category/validity) makes the whole payload suspect, so
+        // we reject it and keep the last good catalogue rather than commit partial data.
+        if (fresh.isEmpty() || fresh.any { !isValidOffer(it) }) return
+
+        // Complete + validated: replace offers, preserving the customer's local
+        // favourite/bought-today state, and bump the stored catalogue version.
         _offers.value = fresh.map { server ->
             val current = _offers.value.find { it.id == server.id }
             if (current != null) {
@@ -678,8 +741,27 @@ class FakeBingwaRepositoryImpl(
                 server
             }
         }
+        _catalogueVersion.value = _catalogueVersion.value + 1
         persist()
     }
+
+    /**
+     * An offer is complete only with the required fields present: a non-blank id,
+     * name and validity, a positive price, and a real product category (not the
+     * ALL/FAVOURITES filter pseudo-categories). Incomplete offers are rejected so a
+     * malformed sync never overwrites good local data.
+     */
+    private fun isValidOffer(offer: OfferItem): Boolean =
+        offer.id.isNotBlank() &&
+            offer.name.isNotBlank() &&
+            offer.priceKsh > 0 &&
+            offer.validity.isNotBlank() &&
+            offer.category != OfferCategory.ALL &&
+            offer.category != OfferCategory.FAVOURITES
+
+    private fun AppConfig.isBlankConfig(): Boolean =
+        tillNumber.isBlank() && paybillNumber.isBlank() &&
+            supportNumber.isBlank() && supportWhatsapp.isBlank()
 
     override fun onBundleDeliveryDetected(category: OfferCategory) {
         // Reconcile against the newest RECEIVED purchase of this category that is

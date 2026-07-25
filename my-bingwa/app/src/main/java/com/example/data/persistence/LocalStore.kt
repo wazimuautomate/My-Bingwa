@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.core.model.NotificationItem
+import com.example.core.model.OfferItem
 import com.example.core.model.PurchaseRecord
 import com.example.core.model.UserProfile
 import com.example.data.payment.ActiveOrder
@@ -34,6 +35,14 @@ private val Context.localDataStore: DataStore<Preferences> by preferencesDataSto
  * A plain, serialisable snapshot of the persisted installation state. [initialized]
  * distinguishes "never saved on this device" (fresh install → keep seeded demo data)
  * from "saved, and legitimately empty" (e.g. after Clear local data).
+ *
+ * [offers] is the last catalogue the app synced from the server (validated,
+ * non-empty). It is the on-device source the UI reads, so previously synced offers
+ * remain available OFFLINE and across process death; an empty list means "nothing
+ * synced yet → fall back to the seeded catalogue". [catalogueVersion] is the local
+ * revision that only increases when a complete, validated catalogue was committed,
+ * so a failed/empty sync can be told apart from a real update. Both are new fields
+ * with defaults, so snapshots saved before this change still deserialise cleanly.
  */
 data class PersistedState(
     val profile: UserProfile? = null,
@@ -44,23 +53,38 @@ data class PersistedState(
     val notifications: List<NotificationItem> = emptyList(),
     val recentRecipients: List<String> = emptyList(),
     val activeOrder: ActiveOrder? = null,
+    val offers: List<OfferItem> = emptyList(),
+    val catalogueVersion: Long = 0L,
     val initialized: Boolean = false
 )
 
-class LocalStore(private val context: Context) {
+/**
+ * Read/write seam for the installation snapshot. The app injects [LocalStore]
+ * (DataStore-backed); unit tests inject a tiny in-memory implementation so the
+ * offline-restore and no-data-loss behaviour can be verified without Android.
+ */
+interface SnapshotStore {
+    /** Reads the saved snapshot, or null when nothing has ever been saved / it is unreadable. */
+    suspend fun load(): PersistedState?
+
+    /** Overwrites the saved snapshot. */
+    suspend fun save(state: PersistedState)
+}
+
+class LocalStore(private val context: Context) : SnapshotStore {
 
     private val moshi: Moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private val adapter = moshi.adapter(PersistedState::class.java)
 
     /** Reads the saved snapshot, or null when nothing has ever been saved / it is unreadable. */
-    suspend fun load(): PersistedState? {
+    override suspend fun load(): PersistedState? {
         val prefs = context.localDataStore.data.first()
         val json = prefs[STATE_KEY] ?: return null
         return runCatching { adapter.fromJson(json) }.getOrNull()
     }
 
     /** Overwrites the saved snapshot. [PersistedState.initialized] is forced true. */
-    suspend fun save(state: PersistedState) {
+    override suspend fun save(state: PersistedState) {
         val json = adapter.toJson(state.copy(initialized = true))
         context.localDataStore.edit { it[STATE_KEY] = json }
     }

@@ -151,6 +151,10 @@ dependencies {
   // source; no entities/DAOs exist yet, so the KSP compiler is not applied.
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
+  // WorkManager runs the periodic background catalogue/config sync
+  // (CatalogueSyncWorker) under a CONNECTED constraint with exponential backoff.
+  // Scheduled once from MyBingwaApplication; never blocks startup.
+  implementation(libs.androidx.work.runtime.ktx)
   // Retrofit/OkHttp/Moshi are declared ahead of the Phase 7 network layer.
   implementation(libs.converter.moshi)
   implementation(libs.kotlinx.coroutines.android)
