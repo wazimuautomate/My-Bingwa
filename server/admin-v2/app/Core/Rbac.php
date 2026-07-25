@@ -1,10 +1,15 @@
 <?php
 /**
- * Role-based access control, enforced ON THE SERVER for every request. Hiding a
- * sidebar item is never authorisation — controllers call Rbac::require('perm').
+ * Simple two-role access control, enforced ON THE SERVER for every request.
+ * Hiding a sidebar item is never authorisation — controllers call Rbac::require('perm').
  *
- * A Super Admin implicitly holds every permission. Other admins hold the union of the
- * permissions granted to their assigned roles.
+ * There are only two kinds of admin:
+ *   - Super Admin (is_super_admin = 1): full control of every page.
+ *   - Admin: can only reach the sidebar pages listed in admin_users.allowed_pages.
+ *
+ * Controllers still call guard('offers.view') etc.; the old dotted permission codes
+ * are mapped down to a single page key (offers.* -> 'offers') so no controller needs
+ * to change. There is no granular permission matrix any more.
  */
 
 namespace App\Core;
@@ -13,7 +18,7 @@ final class Rbac
 {
     private static ?array $cache = null;
 
-    /** All permission keys the current user holds. */
+    /** Sidebar page keys the current user may access ('*' means every page). */
     public static function permissions(): array
     {
         if (self::$cache !== null) {
@@ -26,21 +31,39 @@ final class Rbac
         if ((int) $user['is_super_admin'] === 1) {
             return self::$cache = ['*'];
         }
-        $rows = Database::fetchAll(
-            'SELECT DISTINCT p.perm_key
-               FROM ' . Database::table('admin_user_roles') . ' ur
-               JOIN ' . Database::table('role_permissions') . ' rp ON rp.role_id = ur.role_id
-               JOIN ' . Database::table('permissions') . ' p ON p.id = rp.permission_id
-              WHERE ur.admin_user_id = ?',
-            [(int) $user['id']]
-        );
-        return self::$cache = array_column($rows, 'perm_key');
+        $pages = json_decode((string) ($user['allowed_pages'] ?? '[]'), true);
+        return self::$cache = is_array($pages) ? array_values(array_map('strval', $pages)) : [];
+    }
+
+    /** Map an old permission code (or a bare page key) to the page it belongs to. */
+    private static function pageForCode(string $code): string
+    {
+        $prefix = explode('.', $code, 2)[0];
+        static $map = [
+            'dashboard'     => 'dashboard',
+            'offers'        => 'offers',
+            'billboards'    => 'billboards',
+            'notifications' => 'notifications',
+            'templates'     => 'templates',
+            'payments'      => 'payments',
+            'support'       => 'support',
+            'config'        => 'config',
+            'releases'      => 'versions',
+            'publish'       => 'versions',
+            'rollback'      => 'versions',
+            'audit'         => 'audit',
+            'admins'        => 'settings',
+        ];
+        return $map[$prefix] ?? $prefix;
     }
 
     public static function can(string $permission): bool
     {
         $perms = self::permissions();
-        return in_array('*', $perms, true) || in_array($permission, $perms, true);
+        if (in_array('*', $perms, true)) {
+            return true;
+        }
+        return in_array(self::pageForCode($permission), $perms, true);
     }
 
     public static function canAny(array $permissions): bool
@@ -53,7 +76,7 @@ final class Rbac
         return false;
     }
 
-    /** Abort with 403 unless the current user holds the permission. */
+    /** Abort with 403 unless the current user may reach the page. */
     public static function require(string $permission): void
     {
         if (!self::can($permission)) {

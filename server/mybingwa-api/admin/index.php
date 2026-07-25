@@ -181,21 +181,21 @@ $bands = ['Hourly', 'Daily', 'Weekly', 'Monthly'];
             <div class="row">
                 <div>
                     <label>Till number</label>
-                    <input name="till_number" value="<?= e($settings['till_number'] ?? '4953696') ?>">
+                    <input name="till_number" value="<?= e($settings['till_number'] ?? '') ?>" placeholder="Enter number">
                 </div>
                 <div>
                     <label>Paybill number</label>
-                    <input name="paybill_number" value="<?= e($settings['paybill_number'] ?? '40450595') ?>">
+                    <input name="paybill_number" value="<?= e($settings['paybill_number'] ?? '') ?>" placeholder="Enter number">
                 </div>
             </div>
             <div class="row">
                 <div>
                     <label>Support number</label>
-                    <input name="support_number" value="<?= e($settings['support_number'] ?? '0727921038') ?>">
+                    <input name="support_number" value="<?= e($settings['support_number'] ?? '') ?>" placeholder="Enter number">
                 </div>
                 <div>
                     <label>Support WhatsApp (2547…)</label>
-                    <input name="support_whatsapp" value="<?= e($settings['support_whatsapp'] ?? '254727921038') ?>">
+                    <input name="support_whatsapp" value="<?= e($settings['support_whatsapp'] ?? '') ?>" placeholder="Enter number">
                 </div>
             </div>
             <div style="height:14px"></div>

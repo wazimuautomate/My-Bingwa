@@ -83,21 +83,4 @@ final class TemplateMatcher
             'error'         => null,
         ];
     }
-
-    /**
-     * Given the active templates and a sample, return which templates match, ordered by
-     * match_priority (lower wins). Reveals overlaps for the diagnostics panel.
-     */
-    public static function diagnose(array $templates, string $sender, string $body): array
-    {
-        $hits = [];
-        foreach ($templates as $t) {
-            $r = self::test($t, $sender, $body);
-            if ($r['matched']) {
-                $hits[] = ['template' => $t, 'captures' => $r['captures']];
-            }
-        }
-        usort($hits, fn($a, $b) => ((int) $a['template']['match_priority']) <=> ((int) $b['template']['match_priority']));
-        return $hits;
-    }
 }

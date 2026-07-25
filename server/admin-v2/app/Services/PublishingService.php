@@ -220,21 +220,10 @@ final class PublishingService
         $sync = (int) ($r['sync_interval_minutes'] ?? 360);
         $sync = max(60, min(1440, $sync));
         return [
-            'maintenanceMode'    => (int) ($r['maintenance_mode'] ?? 0) === 1,
-            'maintenanceTitle'   => $r['maintenance_title'] ?? '',
-            'maintenanceMessage' => $r['maintenance_message'] ?? '',
-            'maintenanceAllowHelp' => (int) ($r['maintenance_allow_help'] ?? 1) === 1,
-            'syncIntervalMinutes'=> $sync,
-            'snapshotCacheHours' => (int) ($r['snapshot_cache_hours'] ?? 168),
-            'offlineConfigValidHours' => (int) ($r['offline_config_valid_hours'] ?? 168),
-            'quietHours'         => [
-                'start' => $r['quiet_hours_start'] ?? '21:00',
-                'end'   => $r['quiet_hours_end'] ?? '07:00',
-            ],
-            'campaignDailyCap'   => (int) ($r['campaign_daily_cap'] ?? 2),
-            'featureFlags'       => json_decode($r['feature_flags_json'] ?? '{}', true) ?: new \stdClass(),
-            'personalisation'    => json_decode($r['personalisation_json'] ?? '{}', true) ?: new \stdClass(),
-            'emergencyDisable'   => json_decode($r['emergency_disable_json'] ?? '{}', true) ?: new \stdClass(),
+            'maintenanceMode'       => (int) ($r['maintenance_mode'] ?? 0) === 1,
+            'maintenanceMessage'    => $r['maintenance_message'] ?? '',
+            'syncIntervalMinutes'   => $sync,
+            'generalSupportMessage' => $r['general_support_message'] ?? '',
         ];
     }
 
@@ -332,7 +321,7 @@ final class PublishingService
             return ['ok' => false, 'version' => null, 'errors' => $check['errors'], 'warnings' => $check['warnings']];
         }
 
-        $user = Auth::user();
+        $user = Auth::user() ?? []; // may be empty during the install-time baseline publish
         try {
             $version = Database::transaction(function () use ($snapshot, $reason, $rolledBackFrom, $user) {
                 $version = self::nextVersion();
@@ -357,7 +346,7 @@ final class PublishingService
                     [
                         $version, self::SCHEMA_VERSION, $storeJson, $checksum, $signature, $algo,
                         (int) Config::get('sync.min_client_version_code', 1),
-                        $user['name'] ?? 'system', $user['id'] ?? null,
+                        ($user['name'] ?? null) ?: 'system', $user['id'] ?? null,
                         substr($reason, 0, 500), $rolledBackFrom,
                     ]
                 );

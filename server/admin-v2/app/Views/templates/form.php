@@ -17,8 +17,7 @@ $neg = $tpl ? implode("\n", json_decode((string) ($tpl['negative_samples'] ?? '[
         <div class="field"><label>Template key</label><input type="text" name="template_key" value="<?= e($t['template_key'] ?? '') ?>" <?= $isNew ? '' : 'readonly' ?> placeholder="data_bingwa_sokoni" required></div>
         <div class="field"><label>Label</label><input type="text" name="label" value="<?= e($t['label'] ?? '') ?>" required></div>
         <div class="field"><label>Sender ID</label>
-          <input type="text" name="sender_id" list="senderlist" value="<?= e($t['sender_id'] ?? '') ?>" placeholder="Safaricom">
-          <datalist id="senderlist"><?php foreach ($senders as $s): ?><option value="<?= e($s['sender_id']) ?>"><?php endforeach; ?></datalist>
+          <input type="text" name="sender_id" value="<?= e($t['sender_id'] ?? '') ?>" placeholder="Safaricom">
         </div>
         <div class="field"><label>Purpose</label><select name="purpose"><?php foreach ($purposes as $k => $lab): ?><option value="<?= $k ?>" <?= ($t['purpose'] ?? '') === $k ? 'selected' : '' ?>><?= e($lab) ?></option><?php endforeach; ?></select></div>
         <div class="field"><label>Category</label><select name="category"><?php foreach ($categories as $c): ?><option value="<?= $c ?>" <?= ($t['category'] ?? 'DATA') === $c ? 'selected' : '' ?>><?= $c ?></option><?php endforeach; ?></select></div>
@@ -38,3 +37,16 @@ $neg = $tpl ? implode("\n", json_decode((string) ($tpl['negative_samples'] ?? '[
   </div>
   <div class="mt"><button class="btn" type="submit"><?= icon('check', 18) ?> Save template</button></div>
 </form>
+
+<?php if (!$isNew): ?>
+  <div class="card mt" style="max-width:640px">
+    <div class="card__head"><?= icon('templates', 18) ?><h3>Test a sample message</h3></div>
+    <p class="small muted">Paste one message to check whether it matches this saved template.</p>
+    <form method="post" action="<?= e(url('/message-templates/test')) ?>">
+      <?= App\Core\Csrf::field() ?>
+      <input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
+      <div class="field mb"><textarea name="sample" placeholder="e.g. You have received 2GB valid for 24 hours"></textarea></div>
+      <button class="btn btn--secondary" type="submit">Test sample</button>
+    </form>
+  </div>
+<?php endif; ?>

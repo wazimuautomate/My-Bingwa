@@ -2,8 +2,8 @@
 /**
  * Billboard adverts: simple (generated from a linked offer with validated tokens) and
  * advanced (literal copy + a securely processed image). A simple billboard whose linked
- * offer becomes unavailable is not published. Includes the explainable personalisation
- * simulator ("Why this billboard").
+ * offer becomes unavailable is not published. Personalisation runs automatically in the
+ * app — there are no scoring controls here.
  */
 
 namespace App\Controllers;
@@ -204,58 +204,6 @@ final class BillboardsController extends Controller
         Audit::log(['action' => 'billboard.delete', 'entity_type' => 'billboard', 'entity_id' => (int) $id, 'before' => $row]);
         Flash::success('Draft billboard deleted.');
         $this->redirect('/billboards');
-    }
-
-    /* -------------------------------------------------- personalisation simulator */
-
-    public function simulator(Request $request): void
-    {
-        $this->guard('billboards.manage');
-        $this->view('billboards/simulator', $this->simulatorData([], null));
-    }
-
-    public function runSimulator(Request $request): void
-    {
-        Csrf::check($request);
-        $this->guard('billboards.manage');
-        $behaviour = [
-            'categoryCounts' => [
-                'DATA' => max(0, (int) $request->post('c_data', 0)),
-                'SMS' => max(0, (int) $request->post('c_sms', 0)),
-                'MINUTES' => max(0, (int) $request->post('c_minutes', 0)),
-                'SPECIAL' => max(0, (int) $request->post('c_special', 0)),
-            ],
-            'avgSpend' => max(0, (float) $request->post('avg_spend', 0)),
-            'boughtTodayIds' => array_filter(array_map('trim', explode(',', (string) $request->post('bought_today', '')))),
-        ];
-        $weights = json_decode(
-            (string) (Database::scalar('SELECT personalisation_json FROM ' . Database::table('app_config') . ' WHERE id = 1') ?: '{}'),
-            true
-        ) ?: [];
-
-        $offers = Database::fetchAll("SELECT offer_id AS id, category, name, price, validity, band FROM " . Database::table('offers') . " WHERE status='active'");
-        $scored = [];
-        foreach ($offers as $o) {
-            $s = BillboardService::scoreOffer($o, $behaviour, $weights);
-            if ($s['excluded']) {
-                continue; // bought-today once-per-day excluded
-            }
-            $scored[] = ['offer' => $o, 'score' => $s];
-        }
-        usort($scored, fn($a, $b) => $b['score']['total'] <=> $a['score']['total']);
-        $topPool = (int) ($weights['top_pool'] ?? 5);
-
-        $this->view('billboards/simulator', $this->simulatorData($behaviour, [
-            'ranked' => $scored, 'topPool' => $topPool, 'weights' => $weights,
-        ]));
-    }
-
-    private function simulatorData(array $behaviour, ?array $result): array
-    {
-        return [
-            'activeNav' => 'billboards', 'pageTitle' => 'Billboard simulator',
-            'behaviour' => $behaviour, 'result' => $result,
-        ];
     }
 
     /* helpers */

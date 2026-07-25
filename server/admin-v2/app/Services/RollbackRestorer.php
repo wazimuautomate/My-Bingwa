@@ -112,17 +112,11 @@ final class RollbackRestorer
         }
         Database::run(
             'UPDATE ' . Database::table('app_config') . ' SET
-                maintenance_mode=?, maintenance_title=?, maintenance_message=?, maintenance_allow_help=?,
-                sync_interval_minutes=?, snapshot_cache_hours=?, offline_config_valid_hours=?,
-                quiet_hours_start=?, quiet_hours_end=?, campaign_daily_cap=?, feature_flags_json=?, personalisation_json=?, emergency_disable_json=?,
+                maintenance_mode=?, maintenance_message=?, sync_interval_minutes=?, general_support_message=?,
                 row_version = row_version + 1, updated_at=UTC_TIMESTAMP(), updated_by=? WHERE id=1',
             [
-                !empty($c['maintenanceMode']) ? 1 : 0, $c['maintenanceTitle'] ?? '', $c['maintenanceMessage'] ?? '',
-                !empty($c['maintenanceAllowHelp']) ? 1 : 0, (int) ($c['syncIntervalMinutes'] ?? 360),
-                (int) ($c['snapshotCacheHours'] ?? 168), (int) ($c['offlineConfigValidHours'] ?? 168),
-                $c['quietHours']['start'] ?? '21:00', $c['quietHours']['end'] ?? '07:00', (int) ($c['campaignDailyCap'] ?? 2),
-                json_encode($c['featureFlags'] ?? new \stdClass()), json_encode($c['personalisation'] ?? new \stdClass()),
-                json_encode($c['emergencyDisable'] ?? new \stdClass()), $actor,
+                !empty($c['maintenanceMode']) ? 1 : 0, $c['maintenanceMessage'] ?? '',
+                (int) ($c['syncIntervalMinutes'] ?? 360), $c['generalSupportMessage'] ?? '', $actor,
             ]
         );
     }

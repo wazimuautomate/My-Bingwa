@@ -33,8 +33,7 @@ $toLocal = function (?string $utc) {
         <div class="field full"><label>CTA destination (deep link)</label><input type="text" name="cta_destination" value="<?= e($b['cta_destination'] ?? '') ?>" placeholder="mybingwa://offers/data_6"></div>
         <div class="field full"><label>Image <span class="muted small">(advanced — JPEG/PNG/WebP, max 3 MB, re-encoded)</span></label><input type="file" name="image" accept="image/*"><?php if (!empty($image)): ?><span class="hint">Current: <?= (int) $image['width'] ?>×<?= (int) $image['height'] ?></span><?php endif; ?></div>
         <div class="field full"><label>Image alt text</label><input type="text" name="alt_text" value="<?= e($b['alt_text'] ?? '') ?>" maxlength="160"></div>
-        <div class="field"><label>Audience rule</label><input type="text" name="audience_rule" value="<?= e($b['audience_rule'] ?? 'all') ?>"></div>
-        <div class="field"><label>Frequency cap / day <span class="muted small">(0 = none)</span></label><input type="number" name="frequency_cap" value="<?= (int) ($b['frequency_cap'] ?? 0) ?>" min="0"></div>
+        <div class="field"><label>Display frequency / day <span class="muted small">(0 = no limit)</span></label><input type="number" name="frequency_cap" value="<?= (int) ($b['frequency_cap'] ?? 0) ?>" min="0"></div>
         <div class="field"><label>Starts at</label><input type="datetime-local" name="starts_at" value="<?= e($toLocal($b['starts_at'] ?? null)) ?>"></div>
         <div class="field"><label>Ends at</label><input type="datetime-local" name="ends_at" value="<?= e($toLocal($b['ends_at'] ?? null)) ?>"></div>
         <div class="field"><label>Status</label><select name="status"><?php foreach (['draft', 'scheduled', 'active', 'paused', 'archived'] as $s): ?><option value="<?= $s ?>" <?= ($b['status'] ?? 'draft') === $s ? 'selected' : '' ?>><?= ucfirst($s) ?></option><?php endforeach; ?></select></div>

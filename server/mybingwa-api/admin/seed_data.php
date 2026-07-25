@@ -9,10 +9,10 @@ return [
 
     // Contact / payment details (mirror AppConfig.DEFAULT).
     'settings' => [
-        'till_number'      => '4953696',
-        'paybill_number'   => '40450595',
-        'support_number'   => '0727921038',
-        'support_whatsapp' => '254727921038',
+        'till_number'      => '',
+        'paybill_number'   => '',
+        'support_number'   => '',
+        'support_whatsapp' => '',
     ],
 
     // Catalogue (mirror the app's bundled offers). [id, category, name, price,

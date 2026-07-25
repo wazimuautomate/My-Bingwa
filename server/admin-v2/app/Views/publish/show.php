@@ -28,7 +28,6 @@
       <div class="stack" style="gap:8px">
         <div class="between"><span class="muted small">Version</span><b>v<?= (int) $release['version'] ?></b></div>
         <div class="between"><span class="muted small">Schema</span><b><?= (int) $release['schema_version'] ?></b></div>
-        <div class="between"><span class="muted small">Signature</span><span><?= ($release['signature'] ?? '') ? '<span class="status active">' . e($release['signature_algo']) . '</span>' : '<span class="status draft">Unsigned</span>' ?></span></div>
         <div class="field"><label class="small">SHA-256 checksum</label><input class="mono" type="text" value="<?= e($release['checksum']) ?>" readonly></div>
         <div class="row">
           <span class="tag muted">Offers: <?= count($snap['offers'] ?? []) ?></span>
@@ -43,7 +42,7 @@
         <div class="card__head"><?= icon('rollback', 18) ?><h3>Roll back to this version</h3></div>
         <p class="small muted">Copies this version's contents into the working draft and publishes it as a new, later version. Old versions are never modified.</p>
         <form method="post" action="<?= e(url('/releases/' . (int) $release['version'] . '/rollback')) ?>" data-once
-              data-confirm="Roll back to v<?= (int) $release['version'] ?>? This creates a NEW version with these contents." data-confirm-title="Confirm rollback" data-reauth>
+              data-confirm="Roll back to v<?= (int) $release['version'] ?>? This creates a NEW version with these contents." data-confirm-title="Confirm rollback">
           <?= App\Core\Csrf::field() ?>
           <div class="field mb"><label>Reason (required)</label><input type="text" name="reason" required placeholder="Why are you rolling back?"></div>
           <button class="btn btn--warn btn--block" type="submit"><?= icon('rollback', 18) ?> Roll back</button>

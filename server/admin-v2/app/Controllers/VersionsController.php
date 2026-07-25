@@ -90,14 +90,6 @@ final class VersionsController extends Controller
             $this->redirect($isNew ? '/versions/new' : '/versions/' . $id . '/edit');
         }
 
-        // Forced update → Super Admin + re-authentication.
-        if ($input['mandatory']) {
-            if (!Auth::isSuperAdmin()) { Flash::error('Only a Super Admin can set a forced update.'); $this->redirect('/versions'); }
-            if (!Auth::reauthenticate((string) $request->post('reauth_password', ''), (string) $request->post('reauth_totp', ''))) {
-                Flash::error('Re-authentication failed. Forced-update rule not saved.'); $this->redirect('/versions');
-            }
-        }
-
         $actor = Auth::user()['name'] ?? 'system';
         // Only one active rule at a time.
         if ($input['status'] === 'active') {
@@ -139,14 +131,6 @@ final class VersionsController extends Controller
         $this->guard('releases.manage');
         $row = Database::fetch('SELECT * FROM ' . $this->table() . ' WHERE id = ?', [(int) $id]);
         if (!$row) { Flash::error('Version rule not found.'); $this->redirect('/versions'); }
-        // Activating a forced-update rule is the same privileged outcome as saving one:
-        // require Super Admin + re-authentication (matches save()).
-        if ((int) $row['mandatory'] === 1) {
-            if (!Auth::isSuperAdmin()) { Flash::error('Only a Super Admin can activate a forced update.'); $this->redirect('/versions'); }
-            if (!Auth::reauthenticate((string) $request->post('reauth_password', ''), (string) $request->post('reauth_totp', ''))) {
-                Flash::error('Re-authentication failed. Forced-update rule not activated.'); $this->redirect('/versions');
-            }
-        }
         Database::run('UPDATE ' . $this->table() . " SET status='inactive' WHERE status='active'");
         Database::run('UPDATE ' . $this->table() . " SET status='active', updated_at=UTC_TIMESTAMP() WHERE id = ?", [(int) $id]);
         Audit::log(['action' => 'version.activate', 'entity_type' => 'app_version', 'entity_id' => (int) $id]);

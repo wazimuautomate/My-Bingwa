@@ -2,8 +2,8 @@
 /**
  * Safaricom message-recognition templates. Patterns are validated for ReDoS safety;
  * activating a template requires positive AND negative samples that actually pass
- * (every positive matches, no negative matches, sender included). Overlaps are surfaced
- * in the match console. Every revision is retained.
+ * (every positive matches, no negative matches, sender included). You can test one
+ * sample message against a saved template. Every revision is retained.
  *
  * Delivery detection is only "a recognised message arrived on this device" — never
  * authoritative fulfilment proof (see the app-side copy rules).
@@ -26,7 +26,6 @@ final class TemplatesController extends Controller
     private const CATEGORIES = ['DATA', 'SMS', 'MINUTES', 'SPECIAL'];
 
     private function table(): string { return Database::table('message_templates'); }
-    private function senderTable(): string { return Database::table('message_sender_ids'); }
 
     public function index(Request $request): void
     {
@@ -57,7 +56,6 @@ final class TemplatesController extends Controller
         $this->view('templates/form', [
             'activeNav' => 'templates', 'pageTitle' => $isNew ? 'Add template' : 'Edit template',
             'tpl' => $row, 'isNew' => $isNew, 'purposes' => self::PURPOSES, 'categories' => self::CATEGORIES,
-            'senders' => Database::fetchAll('SELECT * FROM ' . $this->senderTable() . ' ORDER BY sender_id'),
         ]);
     }
 
@@ -234,57 +232,33 @@ final class TemplatesController extends Controller
         $this->redirect('/message-templates');
     }
 
-    /* -------------------------------------------------- match test console */
+    /* -------------------------------------------------- test one sample */
 
-    public function console(Request $request): void
-    {
-        $this->guard('templates.manage');
-        $this->view('templates/console', [
-            'activeNav' => 'templates', 'pageTitle' => 'Match console',
-            'sender' => '', 'body' => '', 'results' => null, 'validation' => null,
-        ]);
-    }
-
-    public function runConsole(Request $request): void
+    /** Test a single sample message against a saved template; flashes the result. */
+    public function testSample(Request $request): void
     {
         Csrf::check($request);
         $this->guard('templates.manage');
-        $sender = (string) $request->post('sender', '');
-        $body = (string) $request->post('body', '');
-        $active = Database::fetchAll('SELECT * FROM ' . $this->table() . " WHERE status='active'");
-        $hits = TemplateMatcher::diagnose($active, $sender, $body);
-        $this->view('templates/console', [
-            'activeNav' => 'templates', 'pageTitle' => 'Match console',
-            'sender' => $sender, 'body' => $body, 'results' => $hits, 'validation' => null,
-        ]);
-    }
+        $id = (int) $request->post('id', 0);
+        $sample = (string) $request->post('sample', '');
+        $row = Database::fetch('SELECT * FROM ' . $this->table() . ' WHERE id = ?', [$id]);
+        if (!$row) { Flash::error('Save the template first, then test a sample message.'); $this->redirect('/message-templates'); }
 
-    /* -------------------------------------------------- sender IDs */
-
-    public function senders(Request $request): void
-    {
-        $this->guard('templates.manage');
-        $this->view('templates/senders', [
-            'activeNav' => 'templates', 'pageTitle' => 'Sender IDs',
-            'senders' => Database::fetchAll('SELECT * FROM ' . $this->senderTable() . ' ORDER BY sender_id'),
-        ]);
-    }
-
-    public function saveSender(Request $request): void
-    {
-        Csrf::check($request);
-        $this->guard('templates.manage');
-        $sid = trim((string) $request->post('sender_id', ''));
-        if ($sid === '') { Flash::error('Sender ID is required.'); $this->redirect('/message-templates/senders'); }
-        Database::run(
-            'INSERT INTO ' . $this->senderTable() . ' (sender_id, normalised, note, created_at)
-             VALUES (?, ?, ?, UTC_TIMESTAMP())
-             ON DUPLICATE KEY UPDATE normalised = VALUES(normalised), note = VALUES(note)',
-            [$sid, strtoupper($sid), substr((string) $request->post('note', ''), 0, 160)]
+        $res = TemplateMatcher::test(
+            ['sender_id' => $row['sender_id'], 'pattern' => $row['pattern'], 'case_sensitive' => (int) $row['case_sensitive']],
+            (string) $row['sender_id'],
+            $sample
         );
-        Audit::log(['action' => 'sender.save', 'entity_type' => 'sender_id', 'entity_id' => $sid]);
-        Flash::success('Sender ID saved.');
-        $this->redirect('/message-templates/senders');
+        if ($res['error']) {
+            Flash::error('Pattern problem: ' . $res['error']);
+        } elseif ($res['matched']) {
+            Flash::success('That sample MATCHES this template.');
+        } elseif (!$res['senderMatched']) {
+            Flash::warning('The sender does not match this template’s Sender ID.');
+        } else {
+            Flash::warning('That sample does NOT match this template’s pattern.');
+        }
+        $this->redirect('/message-templates/' . $id . '/edit');
     }
 
     /* helpers */

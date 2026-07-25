@@ -3,12 +3,10 @@
  * Session-based admin authentication with:
  *  - password_hash/password_verify (bcrypt by default, upgradeable),
  *  - login throttling + temporary lockout,
- *  - TOTP two-factor (pending state between password and code),
- *  - session id rotation after login and after a privilege change,
- *  - short-lived re-authentication gate for sensitive actions.
+ *  - session id rotation after login.
  *
  * The signed-in user id lives in the session; the full user record is loaded per
- * request from the database so role/permission changes take effect immediately.
+ * request from the database so an access change takes effect immediately.
  */
 
 namespace App\Core;
@@ -19,7 +17,6 @@ final class Auth
 {
     private const MAX_ATTEMPTS = 5;
     private const LOCK_MINUTES = 15;
-    private const REAUTH_WINDOW_SECONDS = 600; // 10 minutes
 
     private static ?array $cachedUser = null;
 
@@ -27,8 +24,7 @@ final class Auth
 
     /**
      * Attempt a username/password login.
-     * Returns: 'ok' (fully signed in), 'totp' (password ok, 2FA code needed),
-     *          'locked', or 'invalid'.
+     * Returns: 'ok' (signed in), 'locked', or 'invalid'.
      */
     public static function attempt(string $email, string $password, string $ip): string
     {
@@ -65,62 +61,8 @@ final class Auth
             );
         }
 
-        if ((int) $user['totp_enabled'] === 1) {
-            Session::set('_2fa_pending', (int) $user['id']);
-            Session::set('_2fa_time', time());
-            return 'totp';
-        }
-
         self::completeLogin($user, $ip);
         return 'ok';
-    }
-
-    /** Complete a pending 2FA login with a TOTP or recovery code. */
-    public static function completeTotp(string $code, string $ip): bool
-    {
-        $uid = (int) Session::get('_2fa_pending', 0);
-        if ($uid === 0 || (time() - (int) Session::get('_2fa_time', 0)) > 300) {
-            return false;
-        }
-        $user = self::findById($uid);
-        if (!$user) {
-            Session::forget('_2fa_pending');
-            return false;
-        }
-        // The TOTP step is throttled by the SAME lockout as the password step, so a
-        // stolen password cannot be used to brute-force the 6-digit code.
-        if (self::isLocked($user)) {
-            Session::forget('_2fa_pending');
-            self::recordAttempt((string) $user['email'], $ip, false);
-            return false;
-        }
-        $secret = Crypto::decrypt((string) $user['totp_secret']);
-        $verified = $secret !== '' && Totp::verify($secret, $code);
-
-        if (!$verified) {
-            $verified = self::consumeRecoveryCode($user, $code);
-        }
-        if (!$verified) {
-            self::recordAttempt((string) $user['email'], $ip, false);
-            self::bumpFailure($user);
-            // If that tripped the lockout, drop the pending 2FA session entirely.
-            $fresh = self::findById($uid);
-            if ($fresh && self::isLocked($fresh)) {
-                Session::forget('_2fa_pending');
-                Session::forget('_2fa_time');
-            }
-            return false;
-        }
-
-        // Success: clear the failure counter and the pending 2FA state.
-        Database::run(
-            'UPDATE ' . Database::table('admin_users') . ' SET failed_attempts = 0, locked_until = NULL WHERE id = ?',
-            [$user['id']]
-        );
-        Session::forget('_2fa_pending');
-        Session::forget('_2fa_time');
-        self::completeLogin($user, $ip);
-        return true;
     }
 
     private static function completeLogin(array $user, string $ip): void
@@ -128,18 +70,15 @@ final class Auth
         Session::regenerate();
         Session::set('_uid', (int) $user['id']);
         Session::set('_login_at', time());
-        Session::set('_reauth_at', time());
         self::recordAttempt((string) $user['email'], $ip, true);
         Database::run(
             'UPDATE ' . Database::table('admin_users') . ' SET last_login_at = UTC_TIMESTAMP() WHERE id = ?',
             [$user['id']]
         );
-        self::trackSession($ip);
     }
 
     public static function logout(): void
     {
-        self::untrackSession();
         Session::destroy();
         self::$cachedUser = null;
     }
@@ -186,30 +125,6 @@ final class Auth
         );
     }
 
-    /* -------------------------------------------------------- re-authenticate */
-
-    public static function reauthFresh(): bool
-    {
-        return (time() - (int) Session::get('_reauth_at', 0)) <= self::REAUTH_WINDOW_SECONDS;
-    }
-
-    /** Confirm the current user's password (and TOTP if enabled) for a sensitive action. */
-    public static function reauthenticate(string $password, string $totp = ''): bool
-    {
-        $user = self::user();
-        if (!$user || !password_verify($password, (string) $user['password_hash'])) {
-            return false;
-        }
-        if ((int) $user['totp_enabled'] === 1) {
-            $secret = Crypto::decrypt((string) $user['totp_secret']);
-            if ($secret === '' || !Totp::verify($secret, $totp)) {
-                return false;
-            }
-        }
-        Session::set('_reauth_at', time());
-        return true;
-    }
-
     /* ----------------------------------------------------------- throttling */
 
     private static function isLocked(array $user): bool
@@ -252,66 +167,6 @@ final class Auth
             );
         } catch (Throwable $e) {
             // Never block login on the audit/throttle table being briefly unavailable.
-        }
-    }
-
-    /* ------------------------------------------------------- recovery codes */
-
-    private static function consumeRecoveryCode(array $user, string $code): bool
-    {
-        $code = strtolower(trim($code));
-        $stored = json_decode((string) ($user['recovery_codes'] ?? '[]'), true) ?: [];
-        foreach ($stored as $i => $hash) {
-            if (password_verify($code, (string) $hash)) {
-                unset($stored[$i]);
-                Database::run(
-                    'UPDATE ' . Database::table('admin_users') . ' SET recovery_codes = ? WHERE id = ?',
-                    [json_encode(array_values($stored)), $user['id']]
-                );
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /* --------------------------------------------------------- session track */
-
-    private static function trackSession(string $ip): void
-    {
-        try {
-            Database::run(
-                'INSERT INTO ' . Database::table('admin_sessions') . '
-                    (admin_user_id, session_id, ip, user_agent, created_at, last_seen_at)
-                 VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
-                 ON DUPLICATE KEY UPDATE ip = VALUES(ip), user_agent = VALUES(user_agent), last_seen_at = UTC_TIMESTAMP()',
-                [self::id(), session_id(), substr($ip, 0, 45), substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255)]
-            );
-        } catch (Throwable $e) {
-        }
-    }
-
-    public static function touchSession(string $ip): void
-    {
-        if (!self::check()) {
-            return;
-        }
-        try {
-            Database::run(
-                'UPDATE ' . Database::table('admin_sessions') . ' SET last_seen_at = UTC_TIMESTAMP(), ip = ? WHERE session_id = ?',
-                [substr($ip, 0, 45), session_id()]
-            );
-        } catch (Throwable $e) {
-        }
-    }
-
-    private static function untrackSession(): void
-    {
-        try {
-            Database::run(
-                'DELETE FROM ' . Database::table('admin_sessions') . ' WHERE session_id = ?',
-                [session_id()]
-            );
-        } catch (Throwable $e) {
         }
     }
 }

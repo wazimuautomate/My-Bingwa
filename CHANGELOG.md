@@ -12,37 +12,33 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Added
 
-- **Admin V2 — fresh, layered administration system (`server/admin-v2/`).** A clean
-  PHP 8.2 admin built beside the legacy `server/mybingwa-api` (which is preserved and
-  untouched), coexisting in the same MySQL database via the `mb_` table prefix and
-  reading the legacy `payments` table read-only. Runs on plain cPanel with **no
-  Composer/Node dependency at runtime** (own PSR-4 autoloader, pre-built CSS/JS,
-  self-drawn dependency-free SVG charts).
-  - Every sidebar destination implemented: Dashboard, Offers, Billboard adverts
-    (simple/advanced + secure image re-encoding + an explainable personalisation
-    simulator), Notifications, Message templates (ReDoS-safe regex + a match-test
-    console + sample-gated activation), Payments (read-only, masked identifiers),
-    Support details, App configuration, Updates & versions (lockout guards), an
-    append-only Audit log, and Settings (profile, password, TOTP 2FA, sessions,
-    administrators, roles/permissions).
-  - **Draft → publish → rollback** with immutable, versioned, **SHA-256 checksummed and
-    RSA-signed** configuration snapshots; rollback creates a new later version and never
-    mutates old snapshots; optimistic locking prevents silent overwrites.
-  - **Versioned read-only sync API** (`/api/v1/app/manifest`, `/snapshot/{v}`, `/sync`,
-    backward-compatible `/offers` `/config` `/templates`, `/sync-events`, `/health`)
-    that exposes only published, app-safe data with ETag/`304` and rate limiting.
+- **Admin V2 — a simple private control panel (`server/admin-v2/`).** A small PHP 8.2
+  admin for **two people** (Super Admin + Admin), built beside the legacy
+  `server/mybingwa-api` (which is preserved and untouched), coexisting in the same MySQL
+  database via the `mb_` prefix and reading the legacy `payments` table read-only. Runs
+  on plain cPanel with **no Composer/Node dependency at runtime**.
+  - Eleven sidebar pages: Dashboard, Offers, Billboard adverts (simple/advanced + secure
+    image re-encoding), Notifications, Message templates (ReDoS-safe regex + a
+    single-sample test), Payments (read-only, masked identifiers), Support details, App
+    configuration, Updates & versions, an append-only Audit log, and Settings.
+  - **Two account types only:** Super Admin (full control) and Admin (the Super Admin
+    ticks which sidebar pages the Admin may see/edit). No roles matrix, no 2FA.
+  - **Auto-generated offer IDs** (`data_14`-style) — the admin never types an ID.
+  - **Draft → publish → rollback** with immutable, versioned, SHA-256 checksummed
+    snapshots; a baseline is published on install so imported records are live (not
+    dozens of "drafts"); rollback creates a new later version.
+  - **One read-only sync endpoint** `GET /api/app-data` returns the latest published
+    offers, adverts, templates, support details, app config, update info and version
+    (ETag/`304`, rate-limited).
+  - **Zero-touch install:** the database provisions all tables + seed data + baseline on
+    first load (no phpMyAdmin, no SQL). On cPanel you create the DB + user once in the
+    MySQL wizard and fill `config.php`; everything inside the DB is automatic thereafter.
+  - **Offline Till/Paybill/support** are set on the Support page and served via
+    `/api/app-data` — never hardcoded, and distinct from the server-side STK shortcode
+    (which stays in `mybingwa-api/config.php`).
   - My Bingwa brand design system (Outfit/Poppins, action-green primary, light/dark/
-    system themes, glassy-but-readable chrome, responsive mobile drawer). Categorical
-    chart palette validated for colour-vision and contrast in both themes.
-  - Safe MySQL migrations + idempotent seeder + a legacy-data importer
-    (`bin/import_legacy.php`, dry-run/apply). Pure-logic test harness (`tests/run.php`).
-  - **Payment gateway settings editable from the dashboard** (Super Admin, re-auth,
-    audited): server-side Till/Paybill routing, fulfilment phone, business name and SMS
-    provider (API key encrypted at rest) in `mb_gateway_config` — never synced to the
-    app; an opt-in `cutover/gateway_bridge.php` lets the legacy payment API read it.
-  - Docs: `docs/APP_SYNC_CONTRACT.md` (Android handoff), `docs/ADMIN_V2_DEPLOYMENT.md`
-    (cPanel), `docs/MIGRATION_CUTOVER.md` (import/cutover/rollback + a documented fix for
-    the live "receiver party information is invalid" Daraja routing error).
+    system themes, responsive mobile drawer). Safe MySQL migrations + idempotent seeder.
+    Pure-logic test harness (`tests/run.php`).
 - **Permanent release identity for version 1.** The app now carries its permanent
   production `applicationId` **`com.bingwasokoni`** with **`versionName 1.0.0`** and
   **`versionCode 1`** — the identity used on both Google Play and the direct/GitHub
@@ -78,6 +74,33 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Changed
 
+- **Admin V2 drastically simplified to a two-person control panel.** Removed the
+  enterprise features that were never needed: two-factor authentication, granular
+  role/permission matrix, the Analyst & Publisher roles, the "why-this" billboard
+  simulator, personalisation weight controls, feature flags, emergency-disable controls,
+  quiet-hours / campaign caps, snapshot-signing UI, the separate payment "gateway" page
+  (and its `mybingwa-api` config overlay), separate Sender-ID management, the message
+  regex "console", system diagnostics (`diag.php`), device telemetry / sync-events,
+  active-session management, production/environment badges, per-record draft badges and
+  the sidebar draft count, and the sync-health / release-history / revenue-chart
+  dashboard cards. Access is now Super Admin (full) + Admin (page-level), the dashboard
+  shows only six tiles + latest payments, and every page uses plain customer-friendly
+  language. Payment and database functionality is unchanged.
+- **Hardcoded seller numbers removed everywhere.** The Till (`4953696`), Paybill
+  (`40450595`/`4050595`) and personal number (`0727921038`) are no longer baked into the
+  server (`settings.sql`, `get_config.php`, `admin/*`, `config.sample.php`, admin-v2 seed)
+  — they default to blank and are set from the admin **Support** page. The **offline**
+  Till/Paybill shown to customers is now decoupled from the server-side STK shortcode used
+  to initiate payments (which stays only in `mybingwa-api/config.php`).
+- **Offer IDs are generated automatically** (`data_14`-style, per category) instead of
+  being typed by the operator; existing IDs stay immutable.
+- **App-sync API consolidated to a single `GET /api/app-data`** (was
+  `/api/v1/app/manifest|snapshot|sync|offers|config|templates|sync-events`).
+- **Payment API auto-creates its `payments` table** on first DB connection
+  (`mybingwa-api/db.php`), so `schema.sql` no longer needs a manual phpMyAdmin import.
+- **Publishing/rollback simplified** (no signing UI, no re-auth prompts, no draft
+  badges): a "Preview changes" button appears in the header only when changes exist, and
+  a baseline is published on install so imported records are live rather than drafts.
 - **Release output is now flavor-qualified.** With the `direct`/`play` flavors, the
   shipping variants are `directRelease` (APK) and `playRelease` (AAB) instead of a
   single release variant.

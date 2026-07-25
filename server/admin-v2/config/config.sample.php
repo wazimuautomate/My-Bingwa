@@ -17,9 +17,8 @@ return [
     // 'production' hides error detail and enables HSTS behaviour. Use 'staging' while testing.
     'environment' => 'production',
 
-    // Random 64+ char string. Used to derive the encryption key for secrets at rest
-    // (e.g. a user's 2FA secret). Generate once and never change casually, or existing
-    // encrypted values become unreadable. e.g. bin2hex(random_bytes(32)).
+    // Random 64+ char string used internally (CSRF/session hardening). Generate once.
+    // e.g. bin2hex(random_bytes(32)).
     'app_key' => 'CHANGE_ME_TO_A_LONG_RANDOM_STRING',
 
     // ---- MySQL (same database as the legacy API; admin-v2 uses the mb_ prefix) ----
@@ -32,9 +31,11 @@ return [
         'prefix'  => 'mb_',
     ],
 
-    // ---- First Super Admin (created once by the installer / seeder) --------------
-    // If password is blank or shorter than 10 chars, a strong one is generated and
-    // shown to you a single time during install. Change it after first login.
+    // ---- First Super Admin (created automatically on the first visit) ------------
+    // The database provisions itself on first load. SET A PASSWORD (10+ chars) here for a
+    // fully silent, zero-touch install — you then just open the admin URL and sign in.
+    // If you leave it blank, a strong password is generated and written once to
+    // storage/first-login-password.txt (delete that file after logging in).
     'bootstrap_admin' => [
         'name'     => 'Owner',
         'email'    => 'owner@example.com',

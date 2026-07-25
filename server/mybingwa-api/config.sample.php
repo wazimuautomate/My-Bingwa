@@ -33,8 +33,8 @@ return [
     'business_shortcode' => 'PUT_SHORTCODE',
 
     // The number that actually RECEIVES the money.
-    //  - Buy Goods (Till): the Till number (e.g. 4953696).
-    //  - Paybill: the Paybill number.
+    //  - Buy Goods (Till): your Till number.
+    //  - Paybill: your Paybill number.
     'party_b' => 'PUT_TILL_NUMBER',
 
     // 'CustomerBuyGoodsOnline' for a Till, 'CustomerPayBillOnline' for a Paybill.
@@ -85,7 +85,7 @@ return [
     // MOCKED M-Pesa SMS whose "received from" number is the RECIPIENT (not the payer),
     // to your fulfilment phone, so your operator loads the bundle for the right line.
     // Uses the BlazeTechScope bulk-SMS API. Leave sms_api_key empty to disable.
-    'fulfilment_phone' => 'PUT_FULFILMENT_PHONE',   // e.g. 0727921038 — receives the mocked SMS
+    'fulfilment_phone' => 'PUT_FULFILMENT_PHONE',   // your operator's phone — receives the mocked SMS
     'business_name'    => 'MyBingwa',                // shown UPPERCASED inside the SMS body
     'sms_api_url'      => 'https://sms.blazetechscope.com/v1/bulksms',
     'sms_api_key'      => 'PUT_YOUR_SMS_API_KEY',
@@ -97,10 +97,11 @@ return [
     'admin_pass' => 'PUT_A_STRONG_ADMIN_PASSWORD',
 
     // ---- Fallback seller details (only used if the settings table is empty) --
-    // Normally you manage these from the admin panel; these are just defaults.
-    'paybill_number'   => '40450595',
-    'support_number'   => '0727921038',
-    'support_whatsapp' => '254727921038',
+    // Leave these BLANK. You set the offline Till/Paybill and support numbers from the
+    // admin Support page — they are never hardcoded here.
+    'paybill_number'   => '',
+    'support_number'   => '',
+    'support_whatsapp' => '',
 
     // ---- MySQL database (create it in cPanel → MySQL Databases) -----------
     'db_host' => 'localhost',

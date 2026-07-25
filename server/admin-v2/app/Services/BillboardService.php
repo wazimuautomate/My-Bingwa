@@ -1,8 +1,8 @@
 <?php
 /**
- * Billboard token resolution, validation and the explainable personalisation scoring
- * used by the "Why this billboard" simulator. Scoring is a transparent weighted model
- * (never opaque AI) whose weights come from app_config within validated bounds.
+ * Billboard token resolution and validation. Turns a simple billboard's linked offer
+ * into display copy and refuses to publish any unresolved {{token}}. Personalisation
+ * (which advert a given customer sees) runs automatically in the app, not here.
  */
 
 namespace App\Services;
@@ -81,65 +81,5 @@ final class BillboardService
             }
         }
         return array_values(array_unique($bad));
-    }
-
-    /**
-     * Explainable personalisation score for a candidate offer given anonymous local
-     * behaviour. Returns the total and a per-factor breakdown for the admin simulator.
-     *
-     * @param array $offer   candidate offer (category, price, validity band)
-     * @param array $behaviour ['categoryCounts'=>['DATA'=>3,...], 'avgSpend'=>float, 'boughtTodayIds'=>[]]
-     * @param array $weights app_config personalisation weights
-     */
-    public static function scoreOffer(array $offer, array $behaviour, array $weights): array
-    {
-        $freqWeight    = (float) ($weights['frequency_weight'] ?? 1.0);
-        $valueWeight   = (float) ($weights['value_weight'] ?? 0.6);
-        $validityWeight= (float) ($weights['validity_weight'] ?? 0.4);
-        $maxStepUp     = (float) ($weights['max_step_up'] ?? 3.0);
-
-        $catCounts = $behaviour['categoryCounts'] ?? [];
-        $totalBuys = array_sum($catCounts) ?: 1;
-        $avgSpend  = (float) ($behaviour['avgSpend'] ?? 0);
-
-        // Frequency: prefer categories the customer buys more often.
-        $catShare = ($catCounts[$offer['category']] ?? 0) / $totalBuys;
-        $freqScore = $catShare * $freqWeight;
-
-        // Value step-up: reward a reasonable increase over normal spend, penalise extremes.
-        $price = (float) $offer['price'];
-        $ratio = $avgSpend > 0 ? $price / $avgSpend : 1.0;
-        $stepScore = 0.0;
-        if ($ratio >= 1.0 && $ratio <= $maxStepUp) {
-            // Peak reward around a moderate step up (~1.5x).
-            $stepScore = (1 - abs($ratio - 1.5) / max(0.5, $maxStepUp)) * $valueWeight;
-        } elseif ($ratio < 1.0) {
-            $stepScore = ($ratio - 0.2) * $valueWeight * 0.3; // slight reward for same/cheaper
-        } // ratio > maxStepUp → 0 (irrelevant extreme jump)
-        $stepScore = max(0.0, $stepScore);
-
-        // Validity: longer-validity offers get a small boost.
-        $validityScore = self::validityRank($offer['band'] ?? $offer['validity'] ?? '') * $validityWeight;
-
-        $total = $freqScore + $stepScore + $validityScore;
-        return [
-            'total'    => round($total, 4),
-            'factors'  => [
-                'frequency' => round($freqScore, 4),
-                'valueStepUp' => round($stepScore, 4),
-                'validity' => round($validityScore, 4),
-            ],
-            'ratio'    => round($ratio, 2),
-            'excluded' => in_array($offer['id'] ?? '', $behaviour['boughtTodayIds'] ?? [], true),
-        ];
-    }
-
-    private static function validityRank(string $band): float
-    {
-        $b = strtolower($band);
-        if (str_contains($b, 'month') || str_contains($b, '30')) return 1.0;
-        if (str_contains($b, 'week') || str_contains($b, '7')) return 0.7;
-        if (str_contains($b, 'day') || str_contains($b, 'midnight') || str_contains($b, '24')) return 0.4;
-        return 0.2;
     }
 }

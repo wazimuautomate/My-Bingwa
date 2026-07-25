@@ -1,7 +1,7 @@
 <div class="page-head">
   <div>
-    <h1>Review &amp; publish</h1>
-    <div class="sub">Compare the working draft with the live app and publish an immutable, signed version.</div>
+    <h1>Preview &amp; publish changes</h1>
+    <div class="sub">See what changed since the app last updated, then publish it.</div>
   </div>
   <div class="page-head__actions">
     <span class="chip"><span class="dot"></span>Live: v<?= (int) ($current['version'] ?? 0) ?></span>
@@ -39,23 +39,20 @@
   <div class="card">
     <div class="card__head"><h3>Publish</h3></div>
     <?php if (can('publish.execute')): ?>
-      <form method="post" action="<?= e(url('/publish/execute')) ?>" data-once data-confirm="Publish these changes to a new immutable version? The app will sync it in the background." data-confirm-title="Publish configuration">
+      <form method="post" action="<?= e(url('/publish/execute')) ?>" data-once data-confirm="Publish these changes? The app will download them on its next background sync." data-confirm-title="Publish changes">
         <?= App\Core\Csrf::field() ?>
         <div class="field mb">
-          <label>Release notes <span class="muted small">(optional)</span></label>
+          <label>Notes <span class="muted small">(optional)</span></label>
           <textarea name="notes" placeholder="What changed and why"></textarea>
         </div>
-        <button class="btn btn--block" type="submit" <?= !empty($errors) || empty($pending) ? 'disabled' : '' ?>><?= icon('publish', 18) ?> Publish now</button>
+        <button class="btn btn--block" type="submit" <?= !empty($errors) || empty($pending) ? 'disabled' : '' ?>><?= icon('publish', 18) ?> Publish changes</button>
         <?php if (empty($pending)): ?><p class="small muted mt">There are no changes to publish.</p><?php endif; ?>
       </form>
     <?php else: ?>
-      <div class="alert info">You can review drafts but do not have permission to publish. Ask a Super Admin or a Publisher to publish.</div>
+      <div class="alert info">You can preview changes but do not have permission to publish. Ask the Super Admin to publish.</div>
     <?php endif; ?>
     <div class="mt small muted">
-      <p><?= icon('shield', 14) ?> Each publish creates a checksummed<?= \App\Core\Signer::isConfigured() ? ' and signed' : '' ?> snapshot and an audit record. Rollback creates a new later version — old versions are never changed.</p>
-      <?php if (!\App\Core\Signer::isConfigured()): ?>
-        <div class="alert warning mt"><div>Snapshot signing key is not configured — releases are checksum-only (marked unsigned). See the deployment guide to enable signing.</div></div>
-      <?php endif; ?>
+      <p>Each publish gets a version number and date. Rollback restores a previous published version as a new, later version — old versions are never changed.</p>
     </div>
   </div>
 </div>

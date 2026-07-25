@@ -29,6 +29,10 @@ date_default_timezone_set('UTC');
 Config::load(__DIR__ . '/config/config.php');
 Database::boot();
 
+// Zero-touch install: a fresh database provisions all tables + seed data on first hit
+// (no phpMyAdmin, no manual SQL). No-op once installed. See App\Core\Installer.
+App\Core\Installer::autoProvision();
+
 $request = new Request();
 $isApi = strpos($request->path(), '/api/') === 0;
 
@@ -38,37 +42,26 @@ if (!$isApi) {
     Response::securityHeaders();
     View::boot(__DIR__ . '/app/Views');
     View::share('basePath', Request::basePath());
-    if (Auth::check()) {
-        Auth::touchSession($request->ip());
-    }
 }
 
 $router = new Router();
 
 /* --------------------------------------------------------------- public API */
-$router->get('/api/v1/app/manifest',          [App\Controllers\Api\SyncController::class, 'manifest']);
-$router->get('/api/v1/app/snapshot/{version}',[App\Controllers\Api\SyncController::class, 'snapshot']);
-$router->get('/api/v1/app/sync',              [App\Controllers\Api\SyncController::class, 'sync']);
-$router->get('/api/v1/app/offers',            [App\Controllers\Api\SyncController::class, 'offers']);
-$router->get('/api/v1/app/config',            [App\Controllers\Api\SyncController::class, 'config']);
-$router->get('/api/v1/app/templates',         [App\Controllers\Api\SyncController::class, 'templates']);
-$router->post('/api/v1/app/sync-events',      [App\Controllers\Api\SyncController::class, 'events']);
-$router->get('/api/v1/health',                [App\Controllers\Api\SyncController::class, 'health']);
+// One read-only endpoint the Android app polls: it returns the latest published
+// offers, adverts, templates, support details, app config and update info.
+$router->get('/api/app-data', [App\Controllers\Api\SyncController::class, 'appData']);
+$router->get('/api/health',   [App\Controllers\Api\SyncController::class, 'health']);
 
 /* --------------------------------------------------------------- auth flow */
 $router->get('/login',   [App\Controllers\AuthController::class, 'showLogin']);
 $router->post('/login',  [App\Controllers\AuthController::class, 'login']);
-$router->get('/2fa',     [App\Controllers\AuthController::class, 'show2fa']);
-$router->post('/2fa',    [App\Controllers\AuthController::class, 'verify2fa']);
 $router->get('/forgot',  [App\Controllers\AuthController::class, 'showForgot']);
-$router->post('/forgot', [App\Controllers\AuthController::class, 'forgot']);
 $router->post('/logout', [App\Controllers\AuthController::class, 'logout']);
 // No GET /logout — sign-out is POST-only (CSRF-protected) to prevent logout CSRF.
 
 /* --------------------------------------------------------------- install */
 $router->get('/install',  [App\Controllers\InstallController::class, 'show']);
 $router->post('/install', [App\Controllers\InstallController::class, 'run']);
-$router->post('/migrate', [App\Controllers\InstallController::class, 'migrate']);
 
 /* --------------------------------------------------------------- dashboard */
 $router->get('/',          [App\Controllers\DashboardController::class, 'index']);
@@ -94,8 +87,6 @@ $router->get('/billboards/{id}/edit',  [App\Controllers\BillboardsController::cl
 $router->post('/billboards/save',      [App\Controllers\BillboardsController::class, 'save']);
 $router->post('/billboards/{id}/status', [App\Controllers\BillboardsController::class, 'setStatus']);
 $router->post('/billboards/{id}/delete', [App\Controllers\BillboardsController::class, 'delete']);
-$router->get('/billboards/simulator',  [App\Controllers\BillboardsController::class, 'simulator']);
-$router->post('/billboards/simulator', [App\Controllers\BillboardsController::class, 'runSimulator']);
 
 /* --------------------------------------------------------------- notifications */
 $router->get('/notifications',           [App\Controllers\NotificationsController::class, 'index']);
@@ -114,10 +105,7 @@ $router->post('/message-templates/save',      [App\Controllers\TemplatesControll
 $router->post('/message-templates/{id}/status', [App\Controllers\TemplatesController::class, 'setStatus']);
 $router->post('/message-templates/{id}/duplicate', [App\Controllers\TemplatesController::class, 'duplicate']);
 $router->post('/message-templates/{id}/delete', [App\Controllers\TemplatesController::class, 'delete']);
-$router->get('/message-templates/console',    [App\Controllers\TemplatesController::class, 'console']);
-$router->post('/message-templates/console',   [App\Controllers\TemplatesController::class, 'runConsole']);
-$router->get('/message-templates/senders',    [App\Controllers\TemplatesController::class, 'senders']);
-$router->post('/message-templates/senders/save', [App\Controllers\TemplatesController::class, 'saveSender']);
+$router->post('/message-templates/test',      [App\Controllers\TemplatesController::class, 'testSample']);
 
 /* --------------------------------------------------------------- payments */
 $router->get('/payments',            [App\Controllers\PaymentsController::class, 'index']);
@@ -127,10 +115,6 @@ $router->get('/payments-export',     [App\Controllers\PaymentsController::class,
 /* --------------------------------------------------------------- support */
 $router->get('/support',      [App\Controllers\SupportController::class, 'index']);
 $router->post('/support/save',[App\Controllers\SupportController::class, 'save']);
-
-/* --------------------------------------------------------------- payment gateway (server-side) */
-$router->get('/gateway',      [App\Controllers\GatewayController::class, 'index']);
-$router->post('/gateway/save',[App\Controllers\GatewayController::class, 'save']);
 
 /* --------------------------------------------------------------- app config */
 $router->get('/app-config',      [App\Controllers\AppConfigController::class, 'index']);
@@ -152,15 +136,9 @@ $router->get('/audit-export', [App\Controllers\AuditController::class, 'exportCs
 $router->get('/settings',                  [App\Controllers\SettingsController::class, 'index']);
 $router->post('/settings/profile',         [App\Controllers\SettingsController::class, 'saveProfile']);
 $router->post('/settings/password',        [App\Controllers\SettingsController::class, 'savePassword']);
-$router->get('/settings/2fa',              [App\Controllers\SettingsController::class, 'twoFactor']);
-$router->post('/settings/2fa/enable',      [App\Controllers\SettingsController::class, 'enable2fa']);
-$router->post('/settings/2fa/disable',     [App\Controllers\SettingsController::class, 'disable2fa']);
-$router->post('/settings/sessions/revoke', [App\Controllers\SettingsController::class, 'revokeSession']);
 $router->get('/settings/admins',           [App\Controllers\SettingsController::class, 'admins']);
 $router->post('/settings/admins/save',     [App\Controllers\SettingsController::class, 'saveAdmin']);
 $router->post('/settings/admins/{id}/disable', [App\Controllers\SettingsController::class, 'disableAdmin']);
-$router->get('/settings/roles',            [App\Controllers\SettingsController::class, 'roles']);
-$router->post('/settings/roles/save',      [App\Controllers\SettingsController::class, 'saveRole']);
 
 /* --------------------------------------------------------------- publishing */
 $router->get('/publish',              [App\Controllers\PublishController::class, 'review']);

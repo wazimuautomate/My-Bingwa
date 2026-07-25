@@ -65,8 +65,10 @@ final class OffersController extends Controller
         $isNew = $request->post('is_new') === '1';
         $this->guard($isNew ? 'offers.create' : 'offers.edit');
 
+        // The offer ID is generated automatically for a new offer and is immutable
+        // afterwards (the edit form submits it back in a hidden field).
         $input = [
-            'offer_id' => strtolower(trim((string) $request->post('offer_id', ''))),
+            'offer_id' => $isNew ? '' : strtolower(trim((string) $request->post('offer_id', ''))),
             'category' => (string) $request->post('category', 'DATA'),
             'name' => trim((string) $request->post('name', '')),
             'price' => $request->post('price', ''),
@@ -85,7 +87,6 @@ final class OffersController extends Controller
 
         $v = Validator::make($input);
         $rules = [
-            'offer_id' => 'required|slug|max:48',
             'category' => 'required|in:' . implode(',', OfferRepository::CATEGORIES),
             'name' => 'required|max:80',
             'price' => 'required|int|min:1|max:100000',
@@ -96,9 +97,6 @@ final class OffersController extends Controller
         if ($input['daily_rule'] === 'MAX_PER_RECIPIENT_PER_DAY' && ($input['max_per_day'] === null || $input['max_per_day'] < 1)) {
             $v->add('max_per_day', 'Set a maximum count for this rule.');
         }
-        if ($isNew && OfferRepository::exists($input['offer_id'])) {
-            $v->add('offer_id', 'That offer ID already exists.');
-        }
         if (!$isNew && !OfferRepository::exists($input['offer_id'])) {
             $v->add('offer_id', 'Offer not found.');
         }
@@ -106,6 +104,11 @@ final class OffersController extends Controller
             Flash::error('Please correct the highlighted fields.');
             Flash::keepOld(array_merge($input, ['_errors' => $v->firstErrors()]));
             $this->redirect($isNew ? '/offers/new' : '/offers/' . $input['offer_id'] . '/edit');
+        }
+
+        // Validation passed → assign the generated id for a new offer.
+        if ($isNew) {
+            $input['offer_id'] = OfferRepository::nextOfferId($input['category']);
         }
 
         $expectedVersion = $isNew ? null : (int) $request->post('row_version', 0);
@@ -134,12 +137,8 @@ final class OffersController extends Controller
             Flash::error('Offer not found.');
             $this->redirect('/offers');
         }
-        // New stable id + a draft copy; never overwrites the source.
-        $newId = $this->uniqueCopyId($id);
-        $data = $src;
-        $data['offer_id'] = $newId;
-        $data['status'] = 'draft';
-        $data['name'] = $src['name'];
+        // New auto-generated id + a draft copy; never overwrites the source.
+        $newId = OfferRepository::nextOfferId($src['category']);
         OfferRepository::save([
             'offer_id' => $newId, 'category' => $src['category'], 'name' => $src['name'], 'price' => $src['price'],
             'validity' => $src['validity'], 'band' => $src['band'], 'daily_rule' => $src['daily_rule'],
@@ -228,16 +227,5 @@ final class OffersController extends Controller
         } catch (\Throwable $e) {
             return null;
         }
-    }
-
-    private function uniqueCopyId(string $id): string
-    {
-        $base = $id . '_copy';
-        $candidate = $base;
-        $i = 1;
-        while (OfferRepository::exists($candidate)) {
-            $candidate = $base . '_' . (++$i);
-        }
-        return $candidate;
     }
 }

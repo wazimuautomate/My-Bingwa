@@ -61,20 +61,6 @@ final class SupportController extends Controller
             $this->redirect('/support');
         }
 
-        // Payment-route change → Super Admin + re-authentication required.
-        $routeChanged = ($current['till_number'] ?? '') !== $input['till_number']
-            || ($current['paybill_number'] ?? '') !== $input['paybill_number'];
-        if ($routeChanged) {
-            if (!Auth::isSuperAdmin()) {
-                Flash::error('Only a Super Admin can change the Till or Paybill route.');
-                $this->redirect('/support');
-            }
-            if (!Auth::reauthenticate((string) $request->post('reauth_password', ''), (string) $request->post('reauth_totp', ''))) {
-                Flash::error('Re-authentication failed. Payment route was not changed.');
-                $this->redirect('/support');
-            }
-        }
-
         Database::run(
             'UPDATE ' . Database::table('support_config') . ' SET
                 till_number=?, paybill_number=?, support_number=?, support_whatsapp=?,
@@ -88,14 +74,11 @@ final class SupportController extends Controller
         );
 
         Audit::log([
-            'action' => $routeChanged ? 'support.route_change' : 'support.update',
+            'action' => 'support.update',
             'entity_type' => 'support_config', 'entity_id' => 1,
             'before' => $current, 'after' => $this->load(),
-            'reason' => $routeChanged ? 'Payment route change' : null,
         ]);
-        Flash::success($routeChanged
-            ? 'Payment route updated (draft). Publish to apply — the app uses the last published version.'
-            : 'Support details saved as a draft change. Publish to apply.');
+        Flash::success('Support details saved. Publish changes to apply them in the app.');
         $this->redirect('/support');
     }
 }

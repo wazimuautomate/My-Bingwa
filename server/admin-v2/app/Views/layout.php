@@ -44,17 +44,6 @@ $authUser = $authUser ?? null;
   <div class="modal">
     <h3 data-confirm-title>Please confirm</h3>
     <p data-confirm-body>Are you sure?</p>
-    <div data-reauth-wrap style="display:none;margin-top:14px">
-      <div class="field">
-        <label>Confirm your password</label>
-        <input type="password" data-reauth-input autocomplete="current-password" placeholder="Your admin password">
-      </div>
-      <div class="field" style="margin-top:10px">
-        <label>Two-factor code <span class="muted small">(if 2FA is enabled)</span></label>
-        <input type="text" data-reauth-totp inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code">
-        <span class="hint">Required for payment routes, roles, rollback and forced updates.</span>
-      </div>
-    </div>
     <div class="modal__actions">
       <button class="btn btn--secondary" data-confirm-cancel type="button">Cancel</button>
       <button class="btn btn--warn" data-confirm-ok type="button">Confirm</button>
@@ -63,6 +52,5 @@ $authUser = $authUser ?? null;
 </div>
 
 <script src="<?= e(asset('js/app.js')) ?>" defer></script>
-<script src="<?= e(asset('js/charts.js')) ?>" defer></script>
 </body>
 </html>

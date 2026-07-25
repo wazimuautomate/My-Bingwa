@@ -30,6 +30,7 @@ final class Seeder
             self::seedCatalogue($data, $messages);
             self::seedTemplates($data, $messages);
             $generatedPassword = self::seedSuperAdmin($messages);
+            self::publishBaseline($messages);
 
             return ['ok' => true, 'messages' => $messages, 'generatedPassword' => $generatedPassword, 'error' => null];
         } catch (Throwable $e) {
@@ -103,13 +104,10 @@ final class Seeder
             $a = $data['app_config'];
             Database::run(
                 "INSERT INTO {$ac}
-                 (id, maintenance_mode, sync_interval_minutes, snapshot_cache_hours, offline_config_valid_hours,
-                  quiet_hours_start, quiet_hours_end, campaign_daily_cap, feature_flags_json, personalisation_json,
+                 (id, maintenance_mode, sync_interval_minutes, general_support_message,
                   row_version, updated_at, updated_by)
-                 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, UTC_TIMESTAMP(), 'seed')",
-                [$a['maintenance_mode'], $a['sync_interval_minutes'], $a['snapshot_cache_hours'],
-                 $a['offline_config_valid_hours'], $a['quiet_hours_start'], $a['quiet_hours_end'],
-                 $a['campaign_daily_cap'], json_encode($a['feature_flags']), json_encode($a['personalisation'])]
+                 VALUES (1, ?, ?, ?, 1, UTC_TIMESTAMP(), 'seed')",
+                [$a['maintenance_mode'], $a['sync_interval_minutes'], $a['general_support_message']]
             );
             $msg[] = 'App configuration seeded.';
         }
@@ -203,6 +201,23 @@ final class Seeder
         );
         $msg[] = "Super Admin created: {$email}";
         return $generated;
+    }
+
+    /**
+     * Publish an initial baseline so the seeded catalogue/config is treated as LIVE data,
+     * not a pile of pending "drafts". After this, the admin shows 0 pending changes until
+     * someone actually edits something.
+     */
+    private static function publishBaseline(array &$msg): void
+    {
+        $rt = Database::table('configuration_releases');
+        if (!Database::tableExists('configuration_releases') || Database::fetch("SELECT id FROM {$rt} LIMIT 1")) {
+            return; // nothing to publish into, or a release already exists
+        }
+        $r = \App\Services\PublishingService::publish('Initial baseline (install).');
+        $msg[] = $r['ok']
+            ? 'Baseline configuration published (v' . $r['version'] . ').'
+            : 'Baseline publish skipped: ' . implode(' ', $r['errors']);
     }
 
     private static function randomPassword(): string

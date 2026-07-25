@@ -1,8 +1,6 @@
 <div class="page-head">
   <div><h1>Message templates</h1><div class="sub">Recognise Safaricom delivery &amp; low-balance messages. A match means a recognised message arrived — not verified fulfilment.</div></div>
   <div class="page-head__actions">
-    <a class="btn btn--secondary" href="<?= e(url('/message-templates/senders')) ?>"><?= icon('user', 18) ?> Sender IDs</a>
-    <a class="btn btn--secondary" href="<?= e(url('/message-templates/console')) ?>"><?= icon('templates', 18) ?> Match console</a>
     <a class="btn" href="<?= e(url('/message-templates/new')) ?>"><?= icon('plus', 18) ?> Add template</a>
   </div>
 </div>

@@ -1,10 +1,8 @@
 <?php
-/** Compact top bar: mobile menu, search, publish/sync status, theme, profile. */
+/** Compact top bar: mobile menu, search, preview-changes, theme, profile. */
 $user = $authUser ?? [];
 $initials = strtoupper(substr((string) ($user['name'] ?? 'A'), 0, 1));
-$version = (int) ($publishStatus['version'] ?? 0);
 $draftCount = (int) ($publishStatus['draftCount'] ?? 0);
-$env = $publishStatus['environment'] ?? 'Production';
 $theme = $_COOKIE['mb_theme'] ?? 'system';
 ?>
 <header class="topbar">
@@ -17,10 +15,9 @@ $theme = $_COOKIE['mb_theme'] ?? 'system';
 
   <div class="topbar__spacer"></div>
 
-  <span class="chip" title="Current environment and published configuration version">
-    <span class="dot <?= $draftCount > 0 ? 'warn' : '' ?>"></span>
-    <?= e($env) ?> · v<?= $version ?><?php if ($draftCount > 0): ?> · <?= $draftCount ?> draft<?= $draftCount === 1 ? '' : 's' ?><?php endif; ?>
-  </span>
+  <?php if ($draftCount > 0): ?>
+    <a class="btn btn--secondary btn--sm" href="<?= e(url('/publish')) ?>">Preview changes</a>
+  <?php endif; ?>
 
   <button class="iconbtn" data-theme-toggle title="Theme (light / dark / system)" aria-label="Toggle theme">
     <?= icon($theme === 'dark' ? 'moon' : 'sun', 18) ?>
@@ -37,7 +34,6 @@ $theme = $_COOKIE['mb_theme'] ?? 'system';
     </button>
     <div class="dropdown-menu" id="profile-menu">
       <a href="<?= e(url('/settings')) ?>"><?= icon('user', 18) ?> My profile</a>
-      <a href="<?= e(url('/settings/2fa')) ?>"><?= icon('shield', 18) ?> Two-factor auth</a>
       <span data-theme-label style="display:none"></span>
       <div class="divider"></div>
       <form method="post" action="<?= e(url('/logout')) ?>">

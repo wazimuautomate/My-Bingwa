@@ -5,7 +5,7 @@ $qs = http_build_query(array_filter($filters));
 <div class="page-head">
   <div>
     <h1>Offers</h1>
-    <div class="sub">The catalogue the app syncs. Changes are drafts until you publish.</div>
+    <div class="sub">The catalogue the app syncs. Publish changes to apply them.</div>
   </div>
   <div class="page-head__actions">
     <a class="btn btn--secondary" href="<?= e(url('/offers/export' . ($qs ? '?' . $qs : ''))) ?>"><?= icon('download', 18) ?> Export CSV</a>
@@ -22,11 +22,6 @@ $qs = http_build_query(array_filter($filters));
     <div class="field"><select name="status"><option value="">Any status</option>
       <?php foreach (['active', 'draft', 'archived'] as $s): ?><option value="<?= $s ?>" <?= $filters['status'] === $s ? 'selected' : '' ?>><?= ucfirst($s) ?></option><?php endforeach; ?>
     </select></div>
-    <div class="field"><select name="rule"><option value="">Any rule</option>
-      <?php foreach (OfferRepository::RULES as $k => $lab): ?><option value="<?= $k ?>" <?= $filters['rule'] === $k ? 'selected' : '' ?>><?= e($lab) ?></option><?php endforeach; ?>
-    </select></div>
-    <div class="field"><input type="number" name="min" value="<?= e($filters['min']) ?>" placeholder="Min KSh" style="width:100px"></div>
-    <div class="field"><input type="number" name="max" value="<?= e($filters['max']) ?>" placeholder="Max KSh" style="width:100px"></div>
     <button class="btn btn--secondary btn--sm" type="submit"><?= icon('filter', 16) ?> Filter</button>
     <?php if ($qs): ?><a class="btn btn--ghost btn--sm" href="<?= e(url('/offers')) ?>">Clear</a><?php endif; ?>
   </form>
@@ -34,10 +29,10 @@ $qs = http_build_query(array_filter($filters));
   <div class="table-wrap">
     <table class="data">
       <thead><tr>
-        <th>ID</th><th>Category</th><th>Name</th><th>Price</th><th>Validity</th><th>Rule</th><th>Status</th><th>Published</th><th></th>
+        <th>ID</th><th>Category</th><th>Name</th><th>Price</th><th>Validity</th><th>Rule</th><th>Status</th><th></th>
       </tr></thead>
       <tbody>
-        <?php foreach ($offers as $o): $unpub = OfferRepository::hasUnpublishedChange($o, $published); ?>
+        <?php foreach ($offers as $o): ?>
           <tr>
             <td class="mono"><?= e($o['offer_id']) ?></td>
             <td><span class="tag <?= strtolower($o['category']) ?>"><?= e($o['category']) ?></span></td>
@@ -46,11 +41,6 @@ $qs = http_build_query(array_filter($filters));
             <td class="muted"><?= e($o['validity']) ?></td>
             <td class="muted small"><?= e(OfferRepository::RULES[$o['daily_rule']] ?? $o['daily_rule']) ?></td>
             <td><span class="status <?= e($o['status']) ?>"><?= ucfirst($o['status']) ?></span></td>
-            <td>
-              <?php if ($unpub): ?><span class="tag minutes" title="Unpublished change"><?= icon('edit', 12) ?> Draft change</span>
-              <?php elseif (isset($published[$o['offer_id']])): ?><span class="tag sms">Live</span>
-              <?php else: ?><span class="tag muted">—</span><?php endif; ?>
-            </td>
             <td>
               <div class="row-actions">
                 <?php if (can('offers.edit')): ?><a class="btn btn--secondary btn--sm" href="<?= e(url('/offers/' . $o['offer_id'] . '/edit')) ?>"><?= icon('edit', 14) ?></a><?php endif; ?>
@@ -78,7 +68,7 @@ $qs = http_build_query(array_filter($filters));
           </tr>
         <?php endforeach; ?>
         <?php if (!$offers): ?>
-          <tr><td colspan="9"><div class="empty"><?= icon('offers', 32) ?><h3>No offers match</h3><p>Adjust the filters or add a new offer.</p></div></td></tr>
+          <tr><td colspan="8"><div class="empty"><?= icon('offers', 32) ?><h3>No offers match</h3><p>Adjust the filters or add a new offer.</p></div></td></tr>
         <?php endif; ?>
       </tbody>
     </table>

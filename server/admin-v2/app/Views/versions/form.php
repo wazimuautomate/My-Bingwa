@@ -6,7 +6,7 @@
 <div class="grid two">
   <div class="card">
     <form method="post" action="<?= e(url('/versions/save')) ?>" data-once
-          data-confirm="A forced update interrupts every eligible user. Confirm your password." data-confirm-title="Confirm release rule" data-reauth>
+          data-confirm="A required update interrupts every eligible user. Continue?" data-confirm-title="Confirm release rule">
       <?= App\Core\Csrf::field() ?>
       <input type="hidden" name="is_new" value="<?= $isNew ? '1' : '0' ?>">
       <?php if (!$isNew): ?><input type="hidden" name="id" value="<?= (int) $v['id'] ?>"><?php endif; ?>
@@ -21,7 +21,7 @@
         <div class="field full"><label>Release notes</label><textarea name="release_notes"><?= e($v['release_notes'] ?? '') ?></textarea></div>
       </div>
       <div class="row mt" style="justify-content:space-between">
-        <label class="switch"><input type="checkbox" name="mandatory" <?= (int) ($v['mandatory'] ?? 0) ? 'checked' : '' ?>><span class="track"></span><span>Forced update (Super Admin only)</span></label>
+        <label class="switch"><input type="checkbox" name="mandatory" <?= (int) ($v['mandatory'] ?? 0) ? 'checked' : '' ?>><span class="track"></span><span>Required update</span></label>
         <label class="checkbox"><input type="checkbox" name="active" <?= (($v['status'] ?? 'active') === 'active' || $isNew) ? 'checked' : '' ?>> Make this the active rule</label>
       </div>
       <div class="mt"><button class="btn" type="submit"><?= icon('check', 18) ?> Save rule</button></div>
@@ -34,7 +34,6 @@
       <li><?= icon('check', 13) ?> Forced update requires a destination</li>
       <li><?= icon('check', 13) ?> No downgrade below the active latest</li>
       <li><?= icon('check', 13) ?> Rollout 0–100%</li>
-      <li><?= icon('shield', 13) ?> Forced updates need re-authentication</li>
     </ul>
   </div>
 </div>

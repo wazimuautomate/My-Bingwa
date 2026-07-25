@@ -1,7 +1,6 @@
 <div class="page-head">
-  <div><h1>Billboard adverts</h1><div class="sub">Simple (offer-linked) or advanced (image) adverts, shown by a transparent scoring model.</div></div>
+  <div><h1>Billboard adverts</h1><div class="sub">Simple (offer-linked) or advanced (image) adverts. Publish changes to apply them.</div></div>
   <div class="page-head__actions">
-    <a class="btn btn--secondary" href="<?= e(url('/billboards/simulator')) ?>"><?= icon('billboards', 18) ?> Why-this simulator</a>
     <a class="btn btn--secondary" href="<?= e(url('/billboards/calendar')) ?>"><?= icon('calendar', 18) ?> Schedule</a>
     <a class="btn" href="<?= e(url('/billboards/new')) ?>"><?= icon('plus', 18) ?> New billboard</a>
   </div>

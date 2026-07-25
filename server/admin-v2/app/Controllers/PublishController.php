@@ -96,12 +96,6 @@ final class PublishController extends Controller
             Flash::error('A reason is required to roll back.');
             $this->redirect('/releases/' . (int) $version);
         }
-        // Re-authenticate for this sensitive action.
-        $password = (string) $request->post('reauth_password', '');
-        if (!Auth::reauthenticate($password, (string) $request->post('reauth_totp', ''))) {
-            Flash::error('Re-authentication failed. Rollback was not performed.');
-            $this->redirect('/releases/' . (int) $version);
-        }
 
         if (!PublishingService::restoreWorkingFrom((int) $version)) {
             Flash::error('Could not load that release for rollback.');

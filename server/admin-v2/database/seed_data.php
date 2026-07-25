@@ -34,62 +34,27 @@ return [
         'admins.manage'       => ['Settings', 'Manage administrators & roles'],
     ],
 
-    // role_key => [name, description, is_system, [permission_keys]]
-    'roles' => [
-        'administrator' => [
-            'Administrator',
-            'Owner\'s partner. Creates and edits drafts in assigned modules; cannot publish, roll back, change payment routes or manage admins by default.',
-            1,
-            [
-                'dashboard.view', 'offers.view', 'offers.create', 'offers.edit',
-                'billboards.manage', 'notifications.create', 'notifications.schedule',
-                'templates.manage', 'payments.view',
-            ],
-        ],
-        'publisher' => [
-            'Publisher',
-            'Administrator who may also publish reviewed drafts.',
-            1,
-            [
-                'dashboard.view', 'offers.view', 'offers.create', 'offers.edit', 'offers.archive',
-                'billboards.manage', 'notifications.create', 'notifications.schedule',
-                'templates.manage', 'payments.view', 'config.edit', 'releases.manage',
-                'publish.execute',
-            ],
-        ],
-        'analyst' => [
-            'Analyst',
-            'Read-only access to the dashboard, offers, payments and the audit log.',
-            1,
-            ['dashboard.view', 'offers.view', 'payments.view', 'audit.view'],
-        ],
-    ],
+    // Two account types only (Super Admin + Admin). Access is page-level, so there are
+    // no seeded roles or a permission matrix.
+    'roles' => [],
 
-    // Support / payment public config defaults (mirror the app + legacy get_config.php).
+    // Support / payment public config defaults. Numbers are BLANK on purpose — the owner
+    // sets the real offline Till/Paybill and support numbers from the admin Support page.
     'support_config' => [
-        'till_number'      => '4953696',
-        'paybill_number'   => '40450595',
-        'support_number'   => '0727921038',
-        'support_whatsapp' => '254727921038',
-        'offline_self_instructions'  => 'Go to M-PESA > Lipa na M-PESA > Buy Goods and Services. Enter Till 4953696, enter the exact amount, then your PIN.',
-        'offline_other_instructions' => 'Go to M-PESA > Lipa na M-PESA > Pay Bill. Enter Business no. 40450595, use the recipient number as the Account number, enter the exact amount, then your PIN.',
+        'till_number'      => '',
+        'paybill_number'   => '',
+        'support_number'   => '',
+        'support_whatsapp' => '',
+        'offline_self_instructions'  => 'On M-PESA, choose Lipa na M-PESA > Buy Goods and Services. Enter the Till number shown above, then the exact amount and your PIN.',
+        'offline_other_instructions' => 'On M-PESA, choose Lipa na M-PESA > Pay Bill. Enter the Business (Paybill) number shown above, use the recipient number as the Account number, then the exact amount and your PIN.',
         'support_banner'   => '',
-        'working_hours'    => 'Daily, 8:00 AM - 9:00 PM',
+        'working_hours'    => '',
     ],
 
     'app_config' => [
         'maintenance_mode'       => 0,
         'sync_interval_minutes'  => 360,
-        'snapshot_cache_hours'   => 168,
-        'offline_config_valid_hours' => 168,
-        'quiet_hours_start'      => '21:00',
-        'quiet_hours_end'        => '07:00',
-        'campaign_daily_cap'     => 2,
-        'feature_flags'          => ['sms_parsing' => false, 'billboards' => true],
-        'personalisation'        => [
-            'frequency_weight' => 1.0, 'value_weight' => 0.6, 'validity_weight' => 0.4,
-            'diversity_floor'  => 0.2, 'max_step_up' => 3.0, 'top_pool' => 5,
-        ],
+        'general_support_message' => '',
     ],
 
     'app_version' => [

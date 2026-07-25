@@ -1,57 +1,58 @@
 # My Bingwa Admin V2
 
-A clean, layered PHP admin for the My Bingwa app: offers, billboard adverts, notification
-campaigns, Safaricom message templates, payments (read-only), support/payment details,
-remote app configuration, version/update rules, an append-only audit log, RBAC with
-2FA-ready auth, and a **draft → publish → rollback** workflow that produces immutable,
-signed configuration snapshots served by a versioned **sync API**.
+A small, private control panel for the My Bingwa app — built for **two people** (one
+Super Admin, one Admin). It manages offers, billboard adverts, notifications, Safaricom
+message templates, payments (read-only), support/payment details, remote app configuration
+and update rules, with an append-only audit log and a simple **draft → publish → rollback**
+workflow. A single read-only endpoint (`GET /api/app-data`) serves the latest published
+data to the Android app.
 
-Built to run on plain cPanel PHP 8.2+ with **no Composer/Node dependency at runtime** —
-upload the folder, add `config.php`, open the installer.
+Runs on plain cPanel PHP 8.2+ with **no Composer/Node dependency at runtime**. Create the
+database + user once in cPanel, add `config.php`, then open the admin URL — it installs
+every table and seeds itself automatically (no phpMyAdmin, no manual SQL).
 
 ## Layout
 
 ```
 admin-v2/
-  index.php              front controller (all routes)
+  index.php              front controller (all routes) + auto-install
   config/config.sample.php
   app/
     Core/                kernel: Router, Request, Response, View, Auth, Rbac, Csrf,
-                         Session, Database, Config, Crypto, Totp, Signer, Snapshot, Audit
-    Controllers/         one per sidebar module + Api/SyncController
+                         Session, Database, Config, Signer, Snapshot, Audit, Installer
+    Controllers/         one per sidebar page + Api/SyncController
     Repositories/        Offer + Payment (read-only legacy payments)
-    Services/            Publishing, Billboard(+personalisation), TemplateMatcher,
-                         ImageUploader, Gateway, RateLimiter, Settings, RollbackRestorer
+    Services/            Publishing, Billboard, TemplateMatcher, ImageUploader,
+                         RateLimiter, Settings, RollbackRestorer
     Views/               server-rendered pages (+ partials, layout)
     Support/             helpers, Icons (inline SVG), Csv
   database/
     migrations/*.sql     schema (mb_ prefixed)   migrate.php   seed.php   seed_data.php
-  assets/                pre-built css + js (self-drawn SVG charts, no chart lib)
+  assets/                css + js
   uploads/               billboard images (non-executable)
-  cutover/               opt-in bridges for the legacy payment API
   tests/run.php          dependency-free pure-logic tests
-  bin/import_legacy.php  legacy → mb_* importer (dry-run + apply)
 ```
 
 ## Key properties
 
+- **Two roles only:** Super Admin (full control) and Admin (you pick which sidebar pages
+  they can see/edit via `mb_admin_users.allowed_pages`). No permission matrix, no 2FA.
 - **Coexists** with `server/mybingwa-api` in the same DB via the `mb_` prefix; reads the
-  legacy `payments` table read-only; never modifies legacy data.
-- **Draft/publish/rollback:** working tables → validated → immutable
-  `mb_configuration_releases` (versioned, SHA-256 checksum, RSA signature) → audit.
-- **Sync API** (`/api/v1/app/*`) serves published, app-safe data only; ETag/`304`;
-  rate-limited; signed. Backward-compatible offers/config/templates shapes included.
-- **Security:** session auth, bcrypt/argon2 hashing, CSRF on every write, TOTP 2FA,
-  login throttling, session rotation, re-auth for payment routes/rollback/forced updates,
-  server-side RBAC, output escaping, prepared SQL, safe image re-encoding, CSP + security
-  headers, secrets encrypted at rest.
+  legacy `payments` table read-only; never modifies legacy data or initiates payments.
+- **Draft/publish/rollback:** editing app data creates a draft; "Publish changes" writes an
+  immutable, versioned `mb_configuration_releases` row (SHA-256 checksum). Rollback restores
+  a previous version as a new, later version.
+- **Sync API:** `GET /api/app-data` returns the latest published offers, adverts, templates,
+  support details, app config, update info and version. ETag/`304`; rate-limited.
+- **Offline Till/Paybill** shown to customers are set on the Support page — never hardcoded,
+  and separate from the server-side STK shortcode (which stays in `mybingwa-api/config.php`).
 
 ## Run
 
-See `docs/ADMIN_V2_DEPLOYMENT.md` (deploy), `docs/APP_SYNC_CONTRACT.md` (Android handoff),
-`docs/MIGRATION_CUTOVER.md` (import/cutover/rollback + the payment-gateway bridge).
+See `docs/ADMIN_V2_DEPLOYMENT.md`.
 
 ```bash
-php database/migrate.php && php database/seed.php   # or open /admin/install
+# Normally automatic on first visit; these also work from the CLI:
+php database/migrate.php && php database/seed.php
 php tests/run.php
 ```

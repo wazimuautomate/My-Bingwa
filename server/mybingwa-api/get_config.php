@@ -7,8 +7,9 @@
  * Response (JSON):
  *   { tillNumber, paybillNumber, supportNumber, supportWhatsapp, updatedAt }
  *
- * Values come from the `settings` table (managed later from the admin panel). If a
- * key is missing there, it falls back to config.php so the endpoint always answers.
+ * Values come from the `settings` table (managed from the admin panel). These are the
+ * OFFLINE Till/Paybill shown to customers — NOT the server-side STK shortcode used to
+ * initiate payments. If a key is missing, it falls back to blank so nothing fake is shown.
  */
 
 $config = require __DIR__ . '/config.php';
@@ -16,12 +17,12 @@ require __DIR__ . '/lib.php';
 
 require_app_key($config);
 
-// Defaults from config.php (so this still works before the settings table is seeded).
+// Offline display values come from the settings table; blank until the admin sets them.
 $out = [
-    'tillNumber'      => (string) ($config['party_b'] ?? ''),
-    'paybillNumber'   => (string) ($config['paybill_number'] ?? '40450595'),
-    'supportNumber'   => (string) ($config['support_number'] ?? '0727921038'),
-    'supportWhatsapp' => (string) ($config['support_whatsapp'] ?? '254727921038'),
+    'tillNumber'      => (string) ($config['till_number'] ?? ''),
+    'paybillNumber'   => (string) ($config['paybill_number'] ?? ''),
+    'supportNumber'   => (string) ($config['support_number'] ?? ''),
+    'supportWhatsapp' => (string) ($config['support_whatsapp'] ?? ''),
     'updatedAt'       => null,
 ];
 

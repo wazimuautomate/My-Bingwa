@@ -33,11 +33,20 @@ $hasErr = fn($k) => isset($errs[$k]) ? 'has-error' : '';
       <input type="hidden" name="is_new" value="<?= $isNew ? '1' : '0' ?>">
       <?php if (!$isNew): ?><input type="hidden" name="row_version" value="<?= (int) ($o['row_version'] ?? 0) ?>"><?php endif; ?>
       <div class="form-grid">
-        <div class="field <?= $hasErr('offer_id') ?>">
-          <label>Offer ID</label>
-          <input type="text" name="offer_id" value="<?= e($val('offer_id')) ?>" <?= $isNew ? '' : 'readonly' ?> placeholder="data_14" required>
-          <span class="hint">Stable, lowercase. The app matches purchases by this ID.</span><?= $err('offer_id') ?>
-        </div>
+        <?php if ($isNew): ?>
+          <div class="field full">
+            <label>Offer ID</label>
+            <input type="text" value="Generated automatically from the category" disabled>
+            <span class="hint">You don't set this — it is created for you, e.g. data_14.</span>
+          </div>
+        <?php else: ?>
+          <div class="field full">
+            <label>Offer ID</label>
+            <input type="text" value="<?= e($o['offer_id'] ?? '') ?>" readonly>
+            <input type="hidden" name="offer_id" value="<?= e($o['offer_id'] ?? '') ?>">
+            <span class="hint">The app matches purchases by this ID, so it never changes.</span>
+          </div>
+        <?php endif; ?>
         <div class="field <?= $hasErr('category') ?>">
           <label>Category</label>
           <select name="category"><?php foreach (OfferRepository::CATEGORIES as $c): ?>

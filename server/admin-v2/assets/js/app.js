@@ -68,8 +68,6 @@
     if (!backdrop) { this.submit(); return; }
     backdrop.querySelector('[data-confirm-title]').textContent = this.getAttribute('data-confirm-title') || 'Please confirm';
     backdrop.querySelector('[data-confirm-body]').textContent = this.getAttribute('data-confirm');
-    var reauth = backdrop.querySelector('[data-reauth-wrap]');
-    if (reauth) reauth.style.display = this.hasAttribute('data-reauth') ? 'block' : 'none';
     backdrop.classList.add('open');
   });
   if (backdrop) {
@@ -78,20 +76,6 @@
     });
     backdrop.querySelector('[data-confirm-ok]').addEventListener('click', function () {
       if (!pendingForm) return;
-      if (pendingForm.hasAttribute('data-reauth')) {
-        var reauth = backdrop.querySelector('[data-reauth-input]');
-        var totp = backdrop.querySelector('[data-reauth-totp]');
-        if (reauth) {
-          var hp = document.createElement('input');
-          hp.type = 'hidden'; hp.name = 'reauth_password'; hp.value = reauth.value || '';
-          pendingForm.appendChild(hp);
-        }
-        if (totp) {
-          var ht = document.createElement('input');
-          ht.type = 'hidden'; ht.name = 'reauth_totp'; ht.value = totp.value || '';
-          pendingForm.appendChild(ht);
-        }
-      }
       pendingForm.dataset.confirmed = '1';
       pendingForm.submit();
     });

@@ -31,6 +31,34 @@ final class OfferRepository
         return self::find($offerId) !== null;
     }
 
+    /**
+     * Generate the next stable offer id for a category, e.g. DATA -> "data_14".
+     * The admin never types an id; it is derived from the category and the highest
+     * existing number, and guaranteed unique.
+     */
+    public static function nextOfferId(string $category): string
+    {
+        $prefix = strtolower(trim($category));
+        if ($prefix === '') {
+            $prefix = 'offer';
+        }
+        $rows = Database::fetchAll(
+            'SELECT offer_id FROM ' . Database::table('offers') . ' WHERE offer_id LIKE ?',
+            [$prefix . '\_%']
+        );
+        $max = 0;
+        foreach ($rows as $r) {
+            if (preg_match('/^' . preg_quote($prefix, '/') . '_(\d+)$/', (string) $r['offer_id'], $m)) {
+                $max = max($max, (int) $m[1]);
+            }
+        }
+        $next = $max + 1;
+        while (self::exists($prefix . '_' . $next)) {
+            $next++;
+        }
+        return $prefix . '_' . $next;
+    }
+
     /** @return array filtered offer rows */
     public static function search(array $f): array
     {
