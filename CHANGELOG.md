@@ -12,6 +12,24 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Added
 
+- **Android background sync (WorkManager).** A periodic `CatalogueSyncWorker`
+  (`CoroutineWorker`, `CONNECTED` constraint, 6-hour period, exponential backoff)
+  refreshes the seller config and offer catalogue from the published server data and
+  persists them on-device. Synced offers are now stored in the installation snapshot
+  and restored on launch, so the UI reads offers from **local storage** (not the
+  network), previously synced offers stay available **offline** and across process
+  death, and a failed/empty/incomplete sync never overwrites good local data — offers
+  and the stored catalogue version are only replaced after a complete, validated
+  response. Repository construction moved into a new `MyBingwaApplication` so the UI
+  and the worker share one process-wide instance.
+- **Admin V2 — three-dot (kebab) row menus** on Offers (View, Edit, Duplicate,
+  Archive/Restore, Delete), Message templates (View, Deactivate, Edit, Delete) and
+  Payments (View + existing actions), replacing the visible per-row button strips.
+- **Admin V2 — payment details open in an overlay modal** (not a separate page),
+  showing every recorded field unmasked for operator reconciliation.
+- **Admin V2 — collapsible desktop sidebar** (icon-only rail, persisted in `mb_nav`)
+  alongside the existing mobile off-canvas drawer, and the real My Bingwa logo asset in
+  the brand/header (plus favicon) in place of the placeholder "B".
 - **Admin V2 — a simple private control panel (`server/admin-v2/`).** A small PHP 8.2
   admin for **two people** (Super Admin + Admin), built beside the legacy
   `server/mybingwa-api` (which is preserved and untouched), coexisting in the same MySQL
@@ -74,6 +92,16 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Changed
 
+- **Admin V2 is now centre-aligned everywhere.** The shared design system and
+  components centre page content, cards, sections, headings, titles, text, forms and
+  empty states across every admin page; tables keep their column structure but the
+  table, its headings, cells and the actions column are visually centred.
+- **Admin V2 dashboard trimmed.** The "Last app sync" card was removed and "Latest
+  payments" now shows only the six most recent records.
+- **Admin V2 removals (per owner request):** the Support page no longer exposes the
+  editable "Offline purchase instructions" fields (stored values are preserved and
+  still published); App configuration no longer has the "General support message"
+  setting; and the Settings page no longer has any Appearance/theme controls.
 - **Admin V2 drastically simplified to a two-person control panel.** Removed the
   enterprise features that were never needed: two-factor authentication, granular
   role/permission matrix, the Analyst & Publisher roles, the "why-this" billboard
@@ -186,6 +214,12 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Fixed
 
+- **Support Till/Paybill/phone details now save.** The Support form validated these
+  fields with `max:24`, but the validator treats a numeric-looking string as a numeric
+  comparison, so any real Till/Paybill/phone number greater than 24 was rejected with
+  "Must be at most 24…". A new length-based `maxlen`/`minlen` rule (always `mb_strlen`)
+  replaces `max:24` on those fields, so valid shortcodes and numbers save while length
+  is still bounded and the `msisdn` format check is unchanged.
 - **A fresh install no longer shows prefilled data and opens on onboarding.** The
   default profile was seeded with a real name/number and `isOnboardingCompleted=true`,
   so a new install skipped onboarding and showed the owner's details. The default
