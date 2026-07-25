@@ -13,6 +13,10 @@
     <div class="card__head mt"><?= icon('sync', 18) ?><h3>App sync</h3></div>
     <div class="field"><label>App sync interval (minutes)</label><input type="number" name="sync_interval_minutes" value="<?= (int) ($c['sync_interval_minutes'] ?? 360) ?>" min="<?= $syncMin ?>" max="<?= $syncMax ?>"><span class="hint">How often the app checks for new data. Between <?= $syncMin ?> and <?= $syncMax ?> minutes.</span></div>
 
+    <div class="card__head mt"><?= icon('payments', 18) ?><h3>Payments</h3></div>
+    <div class="field"><label>Payment Till number (Buy&nbsp;Goods)</label><input type="text" name="payment_till_number" inputmode="numeric" pattern="[0-9]*" value="<?= e($paymentTill ?? '') ?>" placeholder="e.g. 4953696"><span class="hint">The Buy&nbsp;Goods <strong>Till</strong> that collects <strong>buy&nbsp;for&nbsp;myself</strong> money. Must be a Till, never a Paybill. Applies immediately. Leave blank to use the server default.</span></div>
+    <div class="field"><label>Fulfilment number</label><input type="text" name="fulfilment_number" inputmode="numeric" pattern="[0-9]*" value="<?= e($fulfilmentNumber ?? '') ?>" placeholder="e.g. 0111327201"><span class="hint">The phone that receives the <strong>buy&nbsp;for&nbsp;another</strong> notification SMS. Applies immediately. Leave blank to use the server default.</span></div>
+
     <div class="mt"><button class="btn" type="submit"><?= icon('check', 18) ?> Save configuration</button></div>
   </div>
 </form>

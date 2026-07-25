@@ -10,7 +10,29 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ## [Unreleased]
 
+### Fixed
+
+- **Payments — buy-for-myself now collects to the Till, not a Paybill (critical).**
+  The live payment config had `transaction_type = CustomerPayBillOnline` with
+  `party_b = 4050595`, so own-number STK pushes were initiated against a Paybill instead
+  of the Buy Goods Till that recommends the data. `server/mybingwa-api/config.php` now
+  pins the self route to `CustomerBuyGoodsOnline` with `party_b` = the Buy Goods Till
+  (fallback `4953696`) and keeps a separate `paybill_shortcode` (`4050595`) so
+  buy-for-another still collects on the Paybill with the recipient number as the account
+  reference. No `lib.php` change was needed — the routing code was already correct; only
+  the config values were wrong.
+
 ### Added
+
+- **Admin V2 — payment routing on App configuration.** Two new fields, **Payment Till
+  number** (the Buy Goods Till that collects buy-for-myself money → STK `party_b`) and
+  **Fulfilment number** (the phone that receives the buy-for-another notification SMS →
+  `fulfilment_phone`). Stored digits-only in the `mb_settings` key/value table and read
+  live by the payment API through the new `server/admin-v2/cutover/gateway_bridge.php`
+  overlay. They apply immediately (server-side routing, not part of the app Publish
+  snapshot); blank falls back to the `config.php` defaults. The bridge only ever
+  overrides `party_b` and `fulfilment_phone` — never auth/paybill shortcodes — and fails
+  safe to no-op if the admin is absent or the DB is unreachable.
 
 - **Android background sync (WorkManager).** A periodic `CatalogueSyncWorker`
   (`CoroutineWorker`, `CONNECTED` constraint, 6-hour period, exponential backoff)
