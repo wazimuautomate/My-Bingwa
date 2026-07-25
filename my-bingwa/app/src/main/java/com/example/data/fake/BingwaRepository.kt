@@ -45,8 +45,8 @@ data class OfferFilterState(
     val selectedCategory: OfferCategory = OfferCategory.ALL,
     val selectedValidity: ValidityFilter = ValidityFilter.ALL,
     val searchQuery: String = "",
-    val maxPriceKsh: Int = MAX_OFFER_PRICE_KSH,
-    val selectedSort: SortOption = SortOption.POPULAR
+    val maxPriceKsh: Int = Int.MAX_VALUE,
+    val selectedSort: SortOption = SortOption.LOWEST_PRICE
 )
 
 interface BingwaRepository {

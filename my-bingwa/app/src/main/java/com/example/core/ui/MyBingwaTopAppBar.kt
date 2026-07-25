@@ -1,5 +1,6 @@
 package com.example.core.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -48,12 +49,11 @@ fun MyBingwaTopAppBar(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Compact transparent symbol logo
-        Icon(
-            painter = painterResource(id = R.drawable.ic_mybingwa_symbol),
-            contentDescription = "My Bingwa Logo",
-            modifier = Modifier.size(36.dp),
-            tint = androidx.compose.ui.graphics.Color.Unspecified
+        // Real approved brand mark (from the logo kit)
+        Image(
+            painter = painterResource(id = R.drawable.img_onboarding_logo),
+            contentDescription = "My Bingwa logo",
+            modifier = Modifier.size(36.dp)
         )
 
         Spacer(modifier = Modifier.width(10.dp))

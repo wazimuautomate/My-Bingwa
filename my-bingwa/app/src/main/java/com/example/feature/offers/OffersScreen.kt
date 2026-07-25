@@ -336,8 +336,6 @@ private fun FilterBottomSheetContent(
     onClear: () -> Unit
 ) {
     var selectedValidity by remember(currentFilter) { mutableStateOf(currentFilter.selectedValidity) }
-    var selectedSort by remember(currentFilter) { mutableStateOf(currentFilter.selectedSort) }
-    var maxPrice by remember(currentFilter) { mutableFloatStateOf(currentFilter.maxPriceKsh.toFloat()) }
 
     Column(
         modifier = Modifier
@@ -352,53 +350,6 @@ private fun FilterBottomSheetContent(
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
-
-        Spacer(Modifier.height(16.dp))
-
-        // Maximum price
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Maximum price",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "KSh ${maxPrice.toInt()}",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Slider(
-            value = maxPrice,
-            onValueChange = { maxPrice = it },
-            valueRange = 5f..MAX_OFFER_PRICE_KSH.toFloat(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("price_slider")
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        Text(
-            text = "Sort by",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(Modifier.height(10.dp))
-        SortOption.entries.forEach { option ->
-            SelectableRow(
-                label = option.label,
-                selected = selectedSort == option,
-                onSelect = { selectedSort = option },
-                testTag = "sort_option_${option.name.lowercase()}"
-            )
-        }
 
         Spacer(Modifier.height(16.dp))
 
@@ -439,8 +390,8 @@ private fun FilterBottomSheetContent(
                     onApplyFilter(
                         currentFilter.copy(
                             selectedValidity = selectedValidity,
-                            selectedSort = selectedSort,
-                            maxPriceKsh = maxPrice.toInt()
+                            selectedSort = SortOption.LOWEST_PRICE,
+                            maxPriceKsh = Int.MAX_VALUE
                         )
                     )
                 },

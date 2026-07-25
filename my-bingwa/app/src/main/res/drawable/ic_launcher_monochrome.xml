@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Themed launcher layer: the mono symbol kept inside the adaptive safe zone. -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="72dp"
-        android:height="72dp"
-        android:drawable="@drawable/ic_mybingwa_symbol_mono"
-        android:gravity="center" />
-</layer-list>
