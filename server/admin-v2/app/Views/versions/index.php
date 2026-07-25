@@ -19,7 +19,9 @@
               <div class="row-actions">
                 <a class="btn btn--secondary btn--sm" href="<?= e(url('/versions/' . (int) $v['id'] . '/edit')) ?>"><?= icon('edit', 14) ?></a>
                 <?php if ($v['status'] !== 'active'): ?>
-                  <form method="post" action="<?= e(url('/versions/' . (int) $v['id'] . '/activate')) ?>" data-confirm="Make this the active version rule?">
+                  <form method="post" action="<?= e(url('/versions/' . (int) $v['id'] . '/activate')) ?>"
+                        data-confirm="<?= (int) $v['mandatory'] === 1 ? 'Activate this FORCED update? Every eligible user will be prompted.' : 'Make this the active version rule?' ?>"
+                        <?= (int) $v['mandatory'] === 1 ? 'data-reauth' : '' ?>>
                     <?= App\Core\Csrf::field() ?><button class="btn btn--ghost btn--sm">Activate</button>
                   </form>
                 <?php endif; ?>

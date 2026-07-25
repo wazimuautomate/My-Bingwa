@@ -69,7 +69,7 @@ final class SupportController extends Controller
                 Flash::error('Only a Super Admin can change the Till or Paybill route.');
                 $this->redirect('/support');
             }
-            if (!Auth::reauthenticate((string) $request->post('reauth_password', ''))) {
+            if (!Auth::reauthenticate((string) $request->post('reauth_password', ''), (string) $request->post('reauth_totp', ''))) {
                 Flash::error('Re-authentication failed. Payment route was not changed.');
                 $this->redirect('/support');
             }

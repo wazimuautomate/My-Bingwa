@@ -84,6 +84,14 @@ final class Auth
         }
         $user = self::findById($uid);
         if (!$user) {
+            Session::forget('_2fa_pending');
+            return false;
+        }
+        // The TOTP step is throttled by the SAME lockout as the password step, so a
+        // stolen password cannot be used to brute-force the 6-digit code.
+        if (self::isLocked($user)) {
+            Session::forget('_2fa_pending');
+            self::recordAttempt((string) $user['email'], $ip, false);
             return false;
         }
         $secret = Crypto::decrypt((string) $user['totp_secret']);
@@ -94,9 +102,21 @@ final class Auth
         }
         if (!$verified) {
             self::recordAttempt((string) $user['email'], $ip, false);
+            self::bumpFailure($user);
+            // If that tripped the lockout, drop the pending 2FA session entirely.
+            $fresh = self::findById($uid);
+            if ($fresh && self::isLocked($fresh)) {
+                Session::forget('_2fa_pending');
+                Session::forget('_2fa_time');
+            }
             return false;
         }
 
+        // Success: clear the failure counter and the pending 2FA state.
+        Database::run(
+            'UPDATE ' . Database::table('admin_users') . ' SET failed_attempts = 0, locked_until = NULL WHERE id = ?',
+            [$user['id']]
+        );
         Session::forget('_2fa_pending');
         Session::forget('_2fa_time');
         self::completeLogin($user, $ip);

@@ -27,6 +27,19 @@ final class InstallController extends Controller
             && (int) (Database::scalar('SELECT COUNT(*) FROM ' . Database::table('admin_users')) ?? 0) > 0;
     }
 
+    /**
+     * Migrator/Seeder live under database/ (App\Database namespace) but the web
+     * autoloader only maps App\ -> app/, so they must be required explicitly here.
+     * Their CLI self-run blocks are guarded by PHP_SAPI === 'cli', so requiring them
+     * from the web only defines the classes.
+     */
+    private function loadDbTools(): void
+    {
+        $base = dirname(__DIR__, 2) . '/database';
+        require_once $base . '/migrate.php';
+        require_once $base . '/seed.php';
+    }
+
     public function show(Request $request): void
     {
         Session::start();
@@ -55,6 +68,7 @@ final class InstallController extends Controller
             $this->redirect('/login');
         }
         Csrf::check($request);
+        $this->loadDbTools();
 
         $log = [];
         $mig = Migrator::run();
@@ -85,6 +99,7 @@ final class InstallController extends Controller
         $this->requireAuth();
         \App\Core\Rbac::requireSuperAdmin();
         Csrf::check($request);
+        $this->loadDbTools();
         $mig = Migrator::run();
         if ($mig['error']) {
             Flash::error('Migration failed: ' . $mig['error']);

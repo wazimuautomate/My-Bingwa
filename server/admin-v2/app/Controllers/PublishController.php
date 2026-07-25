@@ -98,7 +98,7 @@ final class PublishController extends Controller
         }
         // Re-authenticate for this sensitive action.
         $password = (string) $request->post('reauth_password', '');
-        if (!Auth::reauthenticate($password)) {
+        if (!Auth::reauthenticate($password, (string) $request->post('reauth_totp', ''))) {
             Flash::error('Re-authentication failed. Rollback was not performed.');
             $this->redirect('/releases/' . (int) $version);
         }

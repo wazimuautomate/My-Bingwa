@@ -48,6 +48,10 @@ $authUser = $authUser ?? null;
       <div class="field">
         <label>Confirm your password</label>
         <input type="password" data-reauth-input autocomplete="current-password" placeholder="Your admin password">
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label>Two-factor code <span class="muted small">(if 2FA is enabled)</span></label>
+        <input type="text" data-reauth-totp inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code">
         <span class="hint">Required for payment routes, roles, rollback and forced updates.</span>
       </div>
     </div>

@@ -78,11 +78,19 @@
     });
     backdrop.querySelector('[data-confirm-ok]').addEventListener('click', function () {
       if (!pendingForm) return;
-      var reauth = backdrop.querySelector('[data-reauth-input]');
-      if (pendingForm.hasAttribute('data-reauth') && reauth && reauth.value) {
-        var hidden = document.createElement('input');
-        hidden.type = 'hidden'; hidden.name = 'reauth_password'; hidden.value = reauth.value;
-        pendingForm.appendChild(hidden);
+      if (pendingForm.hasAttribute('data-reauth')) {
+        var reauth = backdrop.querySelector('[data-reauth-input]');
+        var totp = backdrop.querySelector('[data-reauth-totp]');
+        if (reauth) {
+          var hp = document.createElement('input');
+          hp.type = 'hidden'; hp.name = 'reauth_password'; hp.value = reauth.value || '';
+          pendingForm.appendChild(hp);
+        }
+        if (totp) {
+          var ht = document.createElement('input');
+          ht.type = 'hidden'; ht.name = 'reauth_totp'; ht.value = totp.value || '';
+          pendingForm.appendChild(ht);
+        }
       }
       pendingForm.dataset.confirmed = '1';
       pendingForm.submit();

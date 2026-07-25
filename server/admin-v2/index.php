@@ -63,7 +63,7 @@ $router->post('/2fa',    [App\Controllers\AuthController::class, 'verify2fa']);
 $router->get('/forgot',  [App\Controllers\AuthController::class, 'showForgot']);
 $router->post('/forgot', [App\Controllers\AuthController::class, 'forgot']);
 $router->post('/logout', [App\Controllers\AuthController::class, 'logout']);
-$router->get('/logout',  [App\Controllers\AuthController::class, 'logout']);
+// No GET /logout — sign-out is POST-only (CSRF-protected) to prevent logout CSRF.
 
 /* --------------------------------------------------------------- install */
 $router->get('/install',  [App\Controllers\InstallController::class, 'show']);

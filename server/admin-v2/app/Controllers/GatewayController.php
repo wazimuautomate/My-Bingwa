@@ -41,7 +41,7 @@ final class GatewayController extends Controller
         Rbac::requireSuperAdmin();
 
         // Payment-route change → re-authentication.
-        if (!Auth::reauthenticate((string) $request->post('reauth_password', ''))) {
+        if (!Auth::reauthenticate((string) $request->post('reauth_password', ''), (string) $request->post('reauth_totp', ''))) {
             Flash::error('Re-authentication failed. Gateway settings were not changed.');
             $this->redirect('/gateway');
         }

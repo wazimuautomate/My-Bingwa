@@ -128,10 +128,17 @@ final class SyncController
             Response::json([], 304, ['ETag' => $etag]);
         }
         $this->record($request, 'manifest', (int) $rel['version']);
-        Response::json([
-            'manifest' => $this->buildManifest($rel),
-            'snapshot' => json_decode($rel['snapshot_json'], true),
-        ], 200, ['ETag' => $etag, 'Cache-Control' => 'no-cache']);
+        // Emit the snapshot as the VERBATIM stored canonical bytes (what was signed), not
+        // a re-encoded array — otherwise the co-delivered signature would not verify and
+        // empty maps like {} would flip to []. The manifest is small and safe to encode.
+        http_response_code(200);
+        header('Content-Type: application/json; charset=utf-8');
+        header('ETag: ' . $etag);
+        header('Cache-Control: no-cache');
+        echo '{"manifest":'
+            . json_encode($this->buildManifest($rel), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+            . ',"snapshot":' . $rel['snapshot_json'] . '}';
+        exit;
     }
 
     /* ------------- backward-compatible shapes (for the future app client) ------------- */
