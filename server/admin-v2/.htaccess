@@ -1,0 +1,38 @@
+# My Bingwa Admin V2 — front-controller routing + hard protection of internals.
+#
+# Upload this whole folder into public_html (e.g. public_html/admin) and visit it at
+# https://your-domain/admin/. Everything routes through index.php; the app/, config/,
+# database/, storage/ and tests/ directories are never web-served.
+
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Serve real static asset files (css/js/images) directly.
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^assets/ - [L]
+
+    # Everything else → front controller (single entry point).
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Block direct download of source/config/data even if rewrite is off.
+<FilesMatch "\.(php)$">
+    # Allow only the front controller to be requested directly.
+</FilesMatch>
+RedirectMatch 403 ^/.*/(app|config|database|storage|tests)/.*$
+
+<FilesMatch "\.(sql|md|json|lock|pem|key|log|dist|sample)$">
+    Require all denied
+</FilesMatch>
+
+# Never serve the config directory.
+<IfModule mod_authz_core.c>
+    <FilesMatch "^config\.php$">
+        Require all denied
+    </FilesMatch>
+</IfModule>

@@ -1,0 +1,3 @@
+# Storage holds generated files. Never web-serve it directly.
+Require all denied
+Deny from all

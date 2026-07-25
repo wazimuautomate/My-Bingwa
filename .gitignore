@@ -68,3 +68,16 @@ desktop.ini
 
 # Server: real payment config holds Daraja secrets — never commit it.
 server/mybingwa-api/config.php
+
+# Admin V2: real config, signing keys, uploaded images and runtime storage.
+server/admin-v2/config/config.php
+server/admin-v2/config/*.pem
+server/admin-v2/config/*.key
+server/admin-v2/**/*.pem
+server/admin-v2/**/*.key
+server/admin-v2/uploads/*
+!server/admin-v2/uploads/.htaccess
+server/admin-v2/storage/*
+!server/admin-v2/storage/.htaccess
+!server/admin-v2/storage/.gitkeep
+server/admin-v2/vendor/

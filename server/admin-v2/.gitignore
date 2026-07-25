@@ -1,0 +1,19 @@
+# Admin V2 — never commit real config, secrets, uploads or generated files.
+config/config.php
+config/*.pem
+config/*.key
+*.pem
+*.key
+
+# Uploaded billboard images (runtime content, not source).
+uploads/*
+!uploads/.htaccess
+
+# Generated / runtime.
+storage/*
+!storage/.htaccess
+!storage/.gitkeep
+
+# Composer (optional dev tooling).
+/vendor/
+composer.lock

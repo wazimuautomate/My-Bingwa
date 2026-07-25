@@ -1,0 +1,3 @@
+# Defence in depth: never serve anything from the application source directory.
+Require all denied
+Deny from all
