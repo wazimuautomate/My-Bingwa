@@ -44,7 +44,14 @@ data class StkPushRequest(
     val amountKsh: Int,
     val payerMsisdn: String,      // 2547XXXXXXXX (E.164 without '+')
     val recipientMsisdn: String,  // 2547XXXXXXXX
-    val clientRequestId: String   // idempotency key
+    val clientRequestId: String,  // idempotency key
+    /**
+     * True for a buy-for-myself purchase (Till / Buy Goods route); false for a
+     * buy-for-another purchase, which the backend routes to Paybill with the
+     * recipient number as the account reference (CLAUDE.md §7). The backend, not
+     * the app, owns the actual shortcodes.
+     */
+    val forSelf: Boolean = true
 )
 
 data class StkStatusQuery(

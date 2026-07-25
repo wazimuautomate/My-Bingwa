@@ -73,19 +73,46 @@ cPanel → **File Manager** → open your subdomain's Document Root (from Step 1
 Copy `config.sample.php` to `config.php` (File Manager → right-click → Copy), then
 edit `config.php` → **Edit**. `config.php` is git-ignored and holds your secrets;
 `config.sample.php` is the safe template. Replace every `PUT_...`:
-- `app_key` → invent a long random string (keep it; the app needs the same one).
+- `app_key` → invent a long random string. It must equal the app's
+  **`PAYMENTS_APP_KEY`** GitHub secret (Step 8); requests without a matching
+  `X-App-Key` header get `401 UNAUTHORISED`.
 - `daraja_env` → `sandbox` to test, later `production`.
 - `consumer_key`, `consumer_secret`, `passkey`, `business_shortcode` → from Daraja.
 - `party_b` → your Till number (the number that receives the money).
 - `transaction_type` → `CustomerBuyGoodsOnline` for a Till.
-- `callback_url` → `https://api.yourdomain.co.ke/callback.php` (your real subdomain).
+- `callback_secret` → invent a **second** long random string (different from
+  `app_key`). This is the token that authenticates Daraja's callback.
+- `callback_url` → `https://api.yourdomain.co.ke/callback.php?token=<callback_secret>`
+  — it MUST include `?token=` with the exact `callback_secret` value, and it must
+  be the exact URL you register with Daraja in Step 7.
+- `paybill_shortcode` → your Paybill number for **buy-for-another** purchases
+  (leave as a copy of `business_shortcode` if you only use a Till for now).
+  Optional `paybill_passkey` only if Daraja gave the Paybill a distinct passkey.
+- `callback_ip_allowlist` → leave `[]` (allow all) unless you want to restrict to
+  Safaricom's callback IPs. `trusted_proxy_header` → leave `''` unless a proxy you
+  control fronts this server.
 - `db_name`, `db_user`, `db_pass` → from Step 3.
 Save.
 
 ## Step 7 — Tell Daraja your callback
 
-In the Daraja portal for your app/short code, set the **STK CallbackURL** to
-`https://api.yourdomain.co.ke/callback.php`.
+In the Daraja portal for your app/short code, set the **STK CallbackURL** to the
+**tokenised** URL, exactly matching `callback_url` in `config.php`:
+`https://api.yourdomain.co.ke/callback.php?token=<your callback_secret>`
+
+The token is what proves a callback really came via your registered URL. A POST to
+`callback.php` without the correct `?token=` (or, if you set one, from an IP
+outside `callback_ip_allowlist`) is acknowledged to Safaricom but **ignored** — no
+payment is ever marked paid. If you rotate `callback_secret`, update BOTH
+`callback_url` in `config.php` AND the CallbackURL registered in the Daraja portal.
+
+### Buy-for-another (Paybill) vs buy-for-self (Till)
+- **Self** (default): STK uses the Till / `CustomerBuyGoodsOnline` with `party_b`.
+- **Another**: when the app sends `forSelf=false` (or `route:"another"`), the STK
+  uses `paybill_shortcode` with `CustomerPayBillOnline`, and the **recipient's
+  number** becomes the M-Pesa AccountReference. The STK password uses the same
+  Paybill shortcode. Set `paybill_shortcode` (and optional `paybill_passkey`)
+  before enabling buy-for-another in production.
 
 ## Step 8 — Point the app at your API
 
@@ -141,7 +168,12 @@ Changes you make go live on the app's **next online sync**:
 ## If something fails
 - `TOKEN_FAILED` → wrong consumer key/secret, or wrong `daraja_env`.
 - `STK_REJECTED` → wrong shortcode/passkey/till, or not Go-Live for production.
-- App stuck on "Still checking" → callback not reaching you; check the CallbackURL is
-  exactly your `callback.php` and HTTPS works. `status.php` also falls back to a direct
-  Daraja query, so it should still resolve within ~30s.
+- App stuck on "Still checking" → callback not reaching you or being ignored; check
+  the CallbackURL is exactly your `callback.php?token=<callback_secret>`, that the
+  `?token=` matches `callback_secret` in `config.php`, and that HTTPS works.
+  `status.php` also falls back to a direct Daraja query, so it should still resolve
+  within ~30s even if the callback is ignored.
+- Payment paid on the phone but the row is still `PAYMENT_REQUESTED` with a
+  `FLAGGED amount mismatch` in `result_desc` → the callback's paid Amount did not
+  match the server-recomputed price; it was held for manual review, not confirmed.
 - `DB_UNAVAILABLE` → wrong db name/user/password in `config.php`.

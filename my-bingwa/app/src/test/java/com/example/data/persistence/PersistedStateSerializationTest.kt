@@ -1,0 +1,95 @@
+package com.example.data.persistence
+
+import com.example.core.model.NotificationItem
+import com.example.core.model.PaymentMethod
+import com.example.core.model.PaymentStatus
+import com.example.core.model.PurchaseRecord
+import com.example.core.model.UserProfile
+import com.example.core.payment.PaymentTxnState
+import com.example.data.payment.ActiveOrder
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Test
+
+/**
+ * Verifies the on-device persistence snapshot survives a JSON round-trip with the
+ * same Moshi setup [LocalStore] uses. This is the part that must not silently break:
+ * if serialisation of any persisted model (profile, purchases + enums, notifications,
+ * active order) regresses, the customer's data would not survive a restart.
+ */
+class PersistedStateSerializationTest {
+
+    private val adapter =
+        Moshi.Builder().add(KotlinJsonAdapterFactory()).build().adapter(PersistedState::class.java)
+
+    @Test
+    fun `round-trips a fully populated snapshot unchanged`() {
+        val original = PersistedState(
+            profile = UserProfile(
+                name = "Amina",
+                primaryNumber = "0722000111",
+                isOnboardingCompleted = true,
+                notificationsEnabled = true,
+                smsAlertsEnabled = true
+            ),
+            theme = "DARK",
+            favouriteIds = listOf("data_6", "sms_2"),
+            boughtTodayIds = listOf("data_1"),
+            purchases = listOf(
+                PurchaseRecord(
+                    id = "pur_1",
+                    offerId = "data_6",
+                    offerName = "2GB",
+                    allowance = "2GB",
+                    priceKsh = 110,
+                    recipientNumber = "0722000111",
+                    payerNumber = "0722000111",
+                    mpesaCode = "RHK123",
+                    timestampMillis = 1_000L,
+                    status = PaymentStatus.RECEIVED,
+                    paymentMethod = PaymentMethod.STK_PUSH,
+                    clientRequestId = "crid-1",
+                    orderReference = "ORD1",
+                    isDeliveryConfirmed = true
+                )
+            ),
+            notifications = listOf(
+                NotificationItem(
+                    id = "n1",
+                    title = "Payment received",
+                    body = "Recorded",
+                    timestampMillis = 5L,
+                    isRead = false,
+                    deepLinkRoute = "activity"
+                )
+            ),
+            recentRecipients = listOf("0722000111", "0700000000"),
+            activeOrder = ActiveOrder(
+                clientRequestId = "crid-2",
+                offerId = "data_1",
+                offerName = "1GB",
+                priceKsh = 19,
+                recipientNumber = "0700000000",
+                payerNumber = "0722000111",
+                isForSelf = false,
+                state = PaymentTxnState.AWAITING_APPROVAL,
+                orderReference = "ORD2"
+            ),
+            initialized = true
+        )
+
+        val restored = adapter.fromJson(adapter.toJson(original))
+
+        assertNotNull(restored)
+        assertEquals(original, restored)
+    }
+
+    @Test
+    fun `round-trips an empty saved snapshot`() {
+        val empty = PersistedState(initialized = true)
+        val restored = adapter.fromJson(adapter.toJson(empty))
+        assertEquals(empty, restored)
+    }
+}

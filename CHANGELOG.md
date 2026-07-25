@@ -12,6 +12,47 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Added
 
+- **Real on-device persistence (replaces the in-memory "Fake" store).** A new
+  `data/persistence/LocalStore` (Preferences DataStore + Moshi JSON, no KSP) loads
+  state on start and re-saves the whole snapshot on every change, so the customer's
+  **name, profile, favourites, Activity (purchases), notifications, recent recipients
+  and any in-flight order now survive process death** — the CLAUDE.md §2 promise that
+  these are "local to the installation" is now actually true. Previously everything
+  lived in `MutableStateFlow` and reset to seeded demo data on every restart. Unit
+  test: full serialisation round-trip of the persisted snapshot (incl. enums).
+- **Safe process-death payment restore.** The in-flight order is persisted; on a
+  relaunch after the app was killed mid-payment it is settled to an honest **Waiting
+  to verify** record (never silently lost, never re-charged) and appears in Activity.
+- **Buy-for-another is now a real payment route (was permanently mocked).** With a
+  configured backend it goes through the real gateway carrying `forSelf=false`; the
+  hardened backend routes it to **Paybill with the recipient number as the account**
+  (`stk.php` + `lib.php`). Only a debug build with no backend still simulates it.
+
+### Security
+
+- **Payment callback can no longer be spoofed.** `callback.php` now requires a
+  shared-secret URL token (`?token=…`) and an optional Safaricom IP allowlist before
+  any DB write, and cross-checks the callback amount against the server-recomputed
+  price (a mismatch is flagged, not confirmed). Previously anyone who knew a
+  `CheckoutRequestID` could POST a fake receipt and flip a payment to confirmed.
+- **`X-App-Key` validation is now fail-closed** on `stk.php`/`status.php` (empty/
+  missing key → 401), and **STK idempotency is atomic** (insert-first on the unique
+  `client_request_id`) so concurrent duplicate requests no longer fire two real STK
+  prompts or 500. New server config keys: `callback_secret`, `callback_ip_allowlist`,
+  `paybill_shortcode`, `paybill_passkey`, `trusted_proxy_header` (documented in
+  `config.sample.php`; no real secrets committed).
+- **A release build can never fake a payment success.** When no backend is configured,
+  release builds use `UnavailablePaymentGateway` (payments fail honestly) instead of
+  the dev simulation that returned a fabricated M-Pesa receipt. Real STK requires both
+  a base URL (defaults to the production API host) and the `PAYMENTS_APP_KEY` secret.
+
+### Fixed
+
+- **Settings notification/SMS toggles now reflect the real OS permission** and are
+  persisted, instead of showing "on" optimistically regardless of the actual grant.
+  MainActivity writes the true `POST_NOTIFICATIONS` / `RECEIVE_SMS` state into the
+  profile on start and after every permission result.
+
 - **Offline-first (Phase 6) + server sync & admin (Phase 7).** The app now knows when
   it is offline and stays fully usable; the server (owner's cPanel) is sync-only.
   - Real connectivity drives the offline state (`setConnectionState(NONE)` ⇒ offline).

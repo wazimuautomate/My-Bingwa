@@ -20,12 +20,14 @@ android {
     // Base URL of the My Bingwa payment backend proxy (owns Daraja + the STK
     // callback). This is a NON-SECRET configuration value, never a credential —
     // Daraja consumer key/secret and the passkey live only on that backend
-    // (CLAUDE.md §2/§10). Injected from the `paymentsBaseUrl` Gradle property or
-    // the PAYMENTS_BASE_URL env var; empty by default, in which case the app uses a
-    // clearly-labelled local simulation instead of a real STK call.
-    val paymentsBaseUrl = (project.findProperty("paymentsBaseUrl") as String?)
-      ?: System.getenv("PAYMENTS_BASE_URL")
-      ?: ""
+    // (CLAUDE.md §2/§10). Overridable via the `paymentsBaseUrl` Gradle property or
+    // the PAYMENTS_BASE_URL env var; defaults to the production API host so a signed
+    // build talks to the real backend. Real STK still also requires PAYMENTS_APP_KEY
+    // (see below); without it a release build fails payments honestly rather than
+    // faking a success, and a debug build falls back to a labelled local simulation.
+    val paymentsBaseUrl = (project.findProperty("paymentsBaseUrl") as String?)?.takeIf { it.isNotBlank() }
+      ?: System.getenv("PAYMENTS_BASE_URL")?.takeIf { it.isNotBlank() }
+      ?: "https://mybingwa.blazetechscope.com/"
     buildConfigField("String", "PAYMENTS_BASE_URL", "\"$paymentsBaseUrl\"")
 
     // Shared app-key sent as the X-App-Key header so only our app can call the
@@ -93,8 +95,12 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
   implementation(libs.androidx.navigation.compose)
-  // Room runtime is declared ahead of Phase 6 (canonical local source); no
-  // entities/DAOs exist yet, so the KSP compiler is not applied.
+  // Preferences DataStore backs the real on-device persistence (LocalStore): the
+  // installation-local profile, favourites, Activity, notifications and any in-flight
+  // order survive process death. No KSP/codegen — the snapshot is Moshi JSON.
+  implementation(libs.androidx.datastore.preferences)
+  // Room runtime is declared ahead of a future migration to a relational local
+  // source; no entities/DAOs exist yet, so the KSP compiler is not applied.
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   // Retrofit/OkHttp/Moshi are declared ahead of the Phase 7 network layer.

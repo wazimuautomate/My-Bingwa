@@ -784,3 +784,71 @@ destinations.
 - **Verification:** No local build (no JDK). Static review: no leftover `*symbol*.xml`; foreground/monochrome refs resolve to the new PNGs; onboarding/header use `Color.Unspecified`; HomeScreen anim imports present. CI is the authority.
 - **Git:** Branch `feature/activity-support-settings`; commit + push; watch CI. `main` still owned by coordinator.
 - **Next:** Confirm CI green; owner installs the APK to verify the real icon on the launcher + header and the Special twinkle. Note: docs still reference the old root `assets/` path (owner moved it) — update if it becomes authoritative.
+
+---
+
+## 2026-07-25 EAT — Make the audited "fake" areas real: persistence, payment routing, callback security
+
+- **Objective:** After a deep audit found several docs claims were mock/unwired, the
+  owner asked to "implement anything claimed real but fake" and push. Delegated the
+  server work to a subagent; did the Android work directly (no local build — CI is the
+  gate).
+- **Result:** Implemented (source complete; **CI/phone unverified at time of writing**).
+- **Changed (real implementations):**
+  - **On-device persistence (NEW):** `data/persistence/LocalStore.kt` — Preferences
+    DataStore + Moshi JSON snapshot (no KSP). `FakeBingwaRepositoryImpl` gained
+    `localStore` + `fallbackGateway` params; loads on init, `persist()` after every
+    mutation. Profile, favourites, purchases/Activity, notifications, recents and the
+    active order now survive process death. Backward compatible: no store injected
+    (unit tests) ⇒ old in-memory behaviour. Test: `PersistedStateSerializationTest`
+    (pure Moshi round-trip incl. enums).
+  - **Safe process-death payment restore:** persisted `activeOrder`; on relaunch an
+    unfinished order is settled to `WAITING_VERIFY` (never lost, never re-charged).
+  - **Buy-for-another is now real:** both routes use the injected backend gateway;
+    `StkPushRequest.forSelf`/`StkRequestDto.forSelf` added; server routes another-number
+    to Paybill + recipient account. Removed the hardcoded `anotherNumberGateway`
+    simulation.
+  - **Honest payment config:** `PaymentGatewayProvider.isBackendConfigured(baseUrl,
+    appKey)` now requires BOTH; `PAYMENTS_BASE_URL` defaults to the prod host
+    (`https://mybingwa.blazetechscope.com/`, non-secret, overridable). New
+    `UnavailablePaymentGateway` is the **release** fallback so a misconfigured
+    production build fails honestly instead of faking success; debug still simulates.
+  - **Real permission toggles:** MainActivity writes the true POST_NOTIFICATIONS /
+    RECEIVE_SMS grant into the (now persisted) profile on start + on each result;
+    Settings SMS toggle reads `profile.smsAlertsEnabled`. Added `UserProfile
+    .smsAlertsEnabled` + repo `setNotificationsEnabled`/`setSmsAlertsEnabled`.
+  - **Server hardening (subagent, `server/mybingwa-api/`):** `callback.php` now needs a
+    `?token=` shared secret + optional IP allowlist and cross-checks the amount (kills
+    the spoofable-callback hole); `stk.php` idempotency is atomic (insert-first on the
+    unique client_request_id); `X-App-Key` fail-closed on stk/status; Paybill route in
+    `lib.php`. New config keys in `config.sample.php` (no real secrets); `config.php`
+    untouched.
+- **Files:** NEW `data/persistence/LocalStore.kt`, `data/payment/UnavailablePaymentGateway.kt`,
+  test `data/persistence/PersistedStateSerializationTest.kt`; edited `MainActivity.kt`,
+  `FakeBingwaRepositoryImpl.kt`, `BingwaRepository.kt`, `UserProfile.kt`, `SettingsScreen.kt`,
+  `PaymentGateway.kt`, `PaymentApi.kt`, `BackendPaymentGateway.kt`, `PaymentGatewayProvider.kt`,
+  `app/build.gradle.kts`; server `callback.php`/`stk.php`/`lib.php`/`config.sample.php`/`README.md`;
+  `CHANGELOG.md`, `memory.md`. Did NOT stage `docs/CLAUDE_KICKOFF_AND_BUILD_PHASES.md`
+  (pre-existing working-tree change, not mine).
+- **Decisions/assumptions:** Used DataStore+Moshi JSON (not Room/KSP) for persistence —
+  real, survives restart, and avoids the KSP2 CI crash that removed Room codegen earlier;
+  Room swap can happen later behind the same interface. Default base URL set to the prod
+  host reported by the audit (from git-ignored `config.php`); overridable. FCM remote push
+  and WorkManager still NOT implemented — FCM needs the owner's Firebase project +
+  `google-services.json` (adding the plugin without it breaks the build), documented as
+  owner-blocked.
+- **Verification:** No local build (no JDK). Static self-review + grep: all
+  `BingwaRepository` members implemented (only `FakeBingwaRepositoryImpl` implements it);
+  all tests construct the repo with named args so the new ctor params don't break them;
+  `isBackendConfigured` two-arg call site updated. Authoritative build = GitHub Actions.
+- **Git:** Branch `feature/real-payments-persistence` off `feature/activity-support-settings`
+  HEAD (`6c52f89`). Commit + push; drive CI green on-branch. **`main` NOT merged** — it has
+  an UNRELATED history (no common ancestor with this lineage; `git merge` refuses). Forcing
+  would destroy the other lineage's work, so it needs an owner decision. Recorded, not forced.
+- **Risks/blockers:** (1) CI must confirm the DataStore/Moshi + payment changes compile.
+  (2) Real STK in the shipping app still needs the backend deployed + `PAYMENTS_APP_KEY`
+  secret in a signed release job. (3) Owner must register the tokenised Daraja CallbackURL
+  (`?token=…`) + set `callback_secret`/`app_key` on the server. (4) main/branch lineage
+  reconciliation is an open owner decision.
+- **Next:** Push branch; watch CI; fix any compile error on-branch without weakening tests.
+  Then owner: decide main reconciliation, deploy server changes + secrets, phone-test.

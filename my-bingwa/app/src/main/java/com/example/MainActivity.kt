@@ -2,9 +2,12 @@ package com.example
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -49,6 +52,8 @@ import com.example.data.config.AndroidRemoteConfigSource
 import com.example.data.fake.BingwaRepository
 import com.example.data.fake.FakeBingwaRepositoryImpl
 import com.example.data.payment.PaymentGatewayProvider
+import com.example.data.payment.UnavailablePaymentGateway
+import com.example.data.persistence.LocalStore
 import com.example.feature.activity.ActivityScreen
 import com.example.feature.help.HelpScreen
 import com.example.feature.home.CatalogueViewModel
@@ -73,24 +78,38 @@ class MainActivity : ComponentActivity() {
     // `by lazy` so applicationContext is attached before the RemoteConfigSource
     // (SharedPreferences) is built — property init runs before the base context.
     private val repository: BingwaRepository by lazy {
-        val backendConfigured = PaymentGatewayProvider.isBackendConfigured(BuildConfig.PAYMENTS_BASE_URL)
+        val baseUrl = BuildConfig.PAYMENTS_BASE_URL
+        val appKey = BuildConfig.PAYMENTS_APP_KEY
+        // Real STK needs BOTH a usable https base URL AND the app-key (the backend
+        // rejects calls without it). Config/catalogue sync only needs a base URL.
+        val paymentConfigured = PaymentGatewayProvider.isBackendConfigured(baseUrl, appKey)
+        val hasBaseUrl = baseUrl.isNotBlank() && baseUrl.startsWith("https://")
+
         FakeBingwaRepositoryImpl(
-            gateway = if (backendConfigured) {
+            gateway = if (paymentConfigured) {
                 PaymentGatewayProvider.create(
-                    baseUrl = BuildConfig.PAYMENTS_BASE_URL,
-                    appKey = BuildConfig.PAYMENTS_APP_KEY,
+                    baseUrl = baseUrl,
+                    appKey = appKey,
                     debugLogging = BuildConfig.DEBUG
                 )
             } else {
                 null
             },
+            // No real backend: a debug build uses a labelled on-device simulation so
+            // screens stay testable; a release build must NEVER fake a success, so it
+            // uses UnavailablePaymentGateway (payments fail honestly until configured).
+            fallbackGateway = if (!paymentConfigured && !BuildConfig.DEBUG) {
+                UnavailablePaymentGateway()
+            } else {
+                null
+            },
             // Seller Till/Paybill/support are synced from the server but always
-            // cached for offline use. Null (no base URL) → baked-in defaults only.
-            configSource = if (backendConfigured) {
+            // cached for offline use. No base URL → baked-in defaults only.
+            configSource = if (hasBaseUrl) {
                 AndroidRemoteConfigSource(
                     context = applicationContext,
-                    baseUrl = BuildConfig.PAYMENTS_BASE_URL,
-                    appKey = BuildConfig.PAYMENTS_APP_KEY,
+                    baseUrl = baseUrl,
+                    appKey = appKey,
                     enableLogging = BuildConfig.DEBUG
                 )
             } else {
@@ -98,15 +117,18 @@ class MainActivity : ComponentActivity() {
             },
             // Offers are synced from the server when online; the bundled catalogue
             // is the guaranteed offline base (server is only for syncing).
-            catalogueSource = if (backendConfigured) {
+            catalogueSource = if (hasBaseUrl) {
                 AndroidRemoteCatalogueSource(
-                    baseUrl = BuildConfig.PAYMENTS_BASE_URL,
-                    appKey = BuildConfig.PAYMENTS_APP_KEY,
+                    baseUrl = baseUrl,
+                    appKey = appKey,
                     enableLogging = BuildConfig.DEBUG
                 )
             } else {
                 null
-            }
+            },
+            // Real on-device persistence: name, profile, favourites, Activity,
+            // notifications and any in-flight order survive process death.
+            localStore = LocalStore(applicationContext)
         )
     }
 
@@ -204,15 +226,35 @@ fun MyBingwaApp(
         }
     }
 
+    // Real OS permission state → profile, so the Settings toggles reflect the actual
+    // grant (not an optimistic "on"). Checked on start and refreshed on every result.
+    fun notificationsGranted(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        } else {
+            NotificationManagerCompat.from(appContext).areNotificationsEnabled()
+        }
+
+    fun smsGranted(): Boolean =
+        ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECEIVE_SMS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    LaunchedEffect(Unit) {
+        repository.setNotificationsEnabled(notificationsGranted())
+        repository.setSmsAlertsEnabled(smsGranted())
+    }
+
     // Runtime permission launchers (Android 13+ POST_NOTIFICATIONS, RECEIVE_SMS).
-    // Settings shows the in-app rationale first, then invokes these.
+    // Settings shows the in-app rationale first, then invokes these; the granted
+    // result is written back so the toggle can never show "on" while the OS denied it.
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* result reflected implicitly: AppNotifier no-ops without the grant. */ }
+    ) { granted -> repository.setNotificationsEnabled(granted) }
 
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* granted → SmsDeliveryReceiver starts receiving; denied → stays silent. */ }
+    ) { granted -> repository.setSmsAlertsEnabled(granted) }
 
     val requestNotificationPermission: () -> Unit = {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

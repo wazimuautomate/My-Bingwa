@@ -1,34 +1,37 @@
 package com.example.data.payment
 
-import com.example.core.payment.PaymentTxnState
-
 /**
- * Selects the online payment gateway at composition root time.
+ * Selects the online payment gateway at composition-root time.
  *
- * - When a backend base URL is configured → the real [BackendPaymentGateway]
- *   (no secrets in the app; the backend owns Daraja).
- * - When it is blank → a clearly-labelled [SimulatedPaymentGateway] so the app
- *   stays testable on a phone until the backend exists.
+ * - A real backend is used only when BOTH a usable `https://` base URL AND a
+ *   non-blank app-key are present (the app-key is the shared token the backend
+ *   requires; without it every call is rejected, so treating that build as
+ *   "configured" would just fail every payment).
+ * - Otherwise the caller supplies a fallback: a labelled simulation in a debug
+ *   build, or [UnavailablePaymentGateway] in a release build so a misconfigured
+ *   production APK fails honestly instead of faking a success.
  *
- * The base URL is a non-secret value injected via `BuildConfig.PAYMENTS_BASE_URL`.
+ * Both values are non-secret BuildConfig fields. Daraja credentials never live in
+ * the app — only on the backend (CLAUDE.md §2/§10).
  */
 object PaymentGatewayProvider {
 
-    /** True when a usable backend base URL is present. */
-    fun isBackendConfigured(baseUrl: String?): Boolean =
-        !baseUrl.isNullOrBlank() && baseUrl.startsWith("https://")
+    /** True only when a usable https base URL AND an app-key are both present. */
+    fun isBackendConfigured(baseUrl: String?, appKey: String?): Boolean =
+        !baseUrl.isNullOrBlank() &&
+            baseUrl.startsWith("https://") &&
+            !appKey.isNullOrBlank()
 
     fun create(
-        baseUrl: String?,
+        baseUrl: String,
         appKey: String,
-        debugLogging: Boolean,
-        simulatedOutcome: () -> PaymentTxnState = { PaymentTxnState.PAYMENT_CONFIRMED }
+        debugLogging: Boolean
     ): PaymentGateway =
-        if (isBackendConfigured(baseUrl)) {
-            BackendPaymentGateway.create(normaliseBaseUrl(baseUrl!!), appKey = appKey, enableLogging = debugLogging)
-        } else {
-            SimulatedPaymentGateway(terminalOutcome = simulatedOutcome)
-        }
+        BackendPaymentGateway.create(
+            normaliseBaseUrl(baseUrl),
+            appKey = appKey,
+            enableLogging = debugLogging
+        )
 
     /** Retrofit requires the base URL to end with a slash. */
     private fun normaliseBaseUrl(baseUrl: String): String =

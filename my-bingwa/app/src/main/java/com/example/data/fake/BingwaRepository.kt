@@ -85,6 +85,10 @@ interface BingwaRepository {
 
     fun updateProfile(name: String, primaryNumber: String)
     fun setOnboardingCompleted(completed: Boolean)
+    /** Reflect the real OS notification-permission state into the profile (persisted). */
+    fun setNotificationsEnabled(enabled: Boolean)
+    /** Reflect the real OS RECEIVE_SMS grant into the profile (persisted). */
+    fun setSmsAlertsEnabled(enabled: Boolean)
     fun setAppTheme(theme: AppThemeSetting)
     fun toggleOfflineMode()
     fun setOfflineMode(offline: Boolean)
