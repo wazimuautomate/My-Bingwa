@@ -33,15 +33,18 @@ final class InstallController extends Controller
         if ($this->installed() && !Auth::isSuperAdmin()) {
             $this->redirect('/login');
         }
+        // Read and clear one-time values BEFORE rendering (Response::html exits).
+        $generated = Session::get('_install_pw');
+        $log = Session::get('_install_log', []);
+        Session::forget('_install_pw');
+        Session::forget('_install_log');
         Response::html(View::render('install/index', [
             'installed' => $this->installed(),
             'flashes'   => Flash::take(),
-            'generated' => Session::get('_install_pw'),
-            'log'       => Session::get('_install_log', []),
+            'generated' => $generated,
+            'log'       => $log,
             'pageTitle' => 'Install',
         ], null));
-        Session::forget('_install_pw');
-        Session::forget('_install_log');
     }
 
     public function run(Request $request): void

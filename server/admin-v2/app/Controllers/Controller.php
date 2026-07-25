@@ -43,7 +43,8 @@ abstract class Controller
             'activeNav'     => $data['activeNav'] ?? '',
             'pageTitle'     => $data['pageTitle'] ?? 'My Bingwa Admin',
         ];
-        Flash::clearOld();
+        // Note: repopulation data (_old) is consumed and cleared by the form view itself,
+        // not here — clearing before render would wipe it before the form can read it.
         View::renderTo($template, array_merge($shell, $data), 'layout', $code);
     }
 

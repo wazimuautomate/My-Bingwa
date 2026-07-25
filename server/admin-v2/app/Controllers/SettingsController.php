@@ -96,13 +96,15 @@ final class SettingsController extends Controller
                 Session::set('_totp_pending', $pendingSecret);
             }
         }
+        // Read + clear the one-time recovery codes BEFORE rendering (view() exits).
+        $recoveryCodes = Session::get('_recovery_codes_once');
+        Session::forget('_recovery_codes_once');
         $this->view('settings/twofa', [
             'activeNav' => 'settings', 'pageTitle' => 'Two-factor',
             'user' => $user, 'pendingSecret' => $pendingSecret,
             'provisioningUri' => $pendingSecret ? Totp::provisioningUri($pendingSecret, (string) $user['email'], 'My Bingwa Admin') : '',
-            'recoveryCodes' => Session::get('_recovery_codes_once'),
+            'recoveryCodes' => $recoveryCodes,
         ]);
-        Session::forget('_recovery_codes_once');
     }
 
     public function enable2fa(Request $request): void

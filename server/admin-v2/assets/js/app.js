@@ -90,8 +90,12 @@
     backdrop.addEventListener('click', function (e) { if (e.target === backdrop) { backdrop.classList.remove('open'); pendingForm = null; } });
   }
 
-  /* ---- Prevent double submit ---- */
+  /* ---- Prevent double submit ----
+     Skip forms that also use data-confirm: those submit programmatically via the modal
+     (which bypasses this event), and disabling the button here would strand it if the
+     user cancels the confirmation. The modal itself guards against double submits. */
   bind('form[data-once]', 'submit', function () {
+    if (this.hasAttribute('data-confirm')) return;
     var btn = this.querySelector('button[type=submit], .btn[type=submit]');
     if (btn) { btn.classList.add('is-loading'); setTimeout(function () { btn.setAttribute('disabled', 'disabled'); }, 0); }
   });

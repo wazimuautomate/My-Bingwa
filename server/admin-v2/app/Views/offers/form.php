@@ -2,6 +2,7 @@
 use App\Repositories\OfferRepository;
 use App\Core\Session;
 $old = Session::get('_old', []);
+Session::forget('_old'); // consume repopulation data exactly once
 $errs = $old['_errors'] ?? [];
 $o = $offer ?? [];
 // value(): prefer repopulated old input, then the loaded offer, then a default.
