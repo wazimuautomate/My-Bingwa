@@ -891,3 +891,13 @@ destinations.
   register the tokenised CallbackURL, else confirmations rely on the status-query fallback.
 - **Git:** `feature/real-payments-persistence`; committing offers.php + buy-for-another
   revert + docs. `config.php` never committed.
+- **Callback secret (DONE):** generated a 64-hex `callback_secret` and set BOTH
+  `config.php` `callback_secret` and the `callback_url` `?token=` to it (they match).
+  `callback.php` (deployed) then authenticates Daraja's callback; no Daraja-portal step
+  (the CallbackURL is sent per STK request by `lib.php`). Value lives only in the
+  git-ignored `config.php` (not in memory). `stk.php` AccountReference for self = "MyBingwa".
+- **Full deploy set (upload to web root where callback.php is served):** `config.php`,
+  `offers.php`, `stk.php`, `lib.php`, `callback.php`, `status.php`. Import `schema.sql`
+  (payments table) once; `offers.sql` optional (catalogue sync). After that the online
+  buy-for-myself loop is fully real: Paybill STK → callback confirms (token-authed) →
+  status.php reflects it → app shows Payment received. Only buy-for-another stays mocked.
