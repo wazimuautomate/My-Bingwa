@@ -1,3 +1,8 @@
-# Storage holds generated files. Never web-serve it directly.
-Require all denied
-Deny from all
+# Never web-serve this directory (portable Apache 2.2/2.4 + LiteSpeed).
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
