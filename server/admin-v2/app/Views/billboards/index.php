@@ -26,9 +26,7 @@
                 <?php else: ?>
                   <form method="post" action="<?= e(url('/billboards/' . (int) $b['id'] . '/status')) ?>"><?= App\Core\Csrf::field() ?><input type="hidden" name="status" value="paused"><button class="btn btn--ghost btn--sm" title="Pause"><?= icon('close', 14) ?></button></form>
                 <?php endif; ?>
-                <?php if ($b['status'] === 'draft'): ?>
-                  <form method="post" action="<?= e(url('/billboards/' . (int) $b['id'] . '/delete')) ?>" data-confirm="Delete this draft billboard?"><?= App\Core\Csrf::field() ?><button class="btn btn--danger btn--sm" title="Delete"><?= icon('trash', 14) ?></button></form>
-                <?php endif; ?>
+                <form method="post" action="<?= e(url('/billboards/' . (int) $b['id'] . '/delete')) ?>" data-confirm="Delete this billboard advert? This cannot be undone."><?= App\Core\Csrf::field() ?><button class="btn btn--danger btn--sm" title="Delete"><?= icon('trash', 14) ?></button></form>
               </div>
             </td>
           </tr>

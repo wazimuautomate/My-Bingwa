@@ -209,13 +209,11 @@ final class BillboardsController extends Controller
         $this->guard('billboards.manage');
         $row = Database::fetch('SELECT * FROM ' . $this->table() . ' WHERE id = ?', [(int) $id]);
         if (!$row) { $this->redirect('/billboards'); }
-        if ($row['status'] !== 'draft') {
-            Flash::error('Only draft billboards can be deleted. Archive others instead.');
-            $this->redirect('/billboards');
-        }
+        // Any billboard can be deleted (owner request). Publish afterwards so the app
+        // stops showing it; a deleted advert simply drops out of the next snapshot.
         Database::run('DELETE FROM ' . $this->table() . ' WHERE id = ?', [(int) $id]);
         Audit::log(['action' => 'billboard.delete', 'entity_type' => 'billboard', 'entity_id' => (int) $id, 'before' => $row]);
-        Flash::success('Draft billboard deleted.');
+        Flash::success('Billboard advert deleted. Publish to apply in the app.');
         $this->redirect('/billboards');
     }
 
