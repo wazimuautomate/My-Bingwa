@@ -12,6 +12,44 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 _Nothing yet. Next up: server→app notifications sync (FCM or poll+local-schedule)._
 
+## [1.0.2] - 2026-07-26
+
+Released to the direct/GitHub channel (`versionCode 3`).
+
+### Added
+
+- **In-app update install (no browser hand-off).** The direct build now downloads the
+  signed APK, optionally verifies its SHA-256 against `update.json`, and launches the
+  system installer via a `FileProvider` (`REQUEST_INSTALL_PACKAGES`). The in-place update
+  keeps the same `applicationId`/signing key, so profile, favourites and Activity survive
+  and onboarding never reappears. The `play` flavor omits the permission (Play self-updates).
+- **Force update.** A non-dismissible blocking screen when the release is `mandatory` or the
+  installed `versionCode` is below `minSupportedVersionCode`, plus an update notification and
+  a Home "update available" billboard. A new optional `update.json` field `updateSource`
+  (`github` | `play`, default `github`) routes the update action to the in-app installer or
+  the Play listing.
+- **Admin — Payments delete.** A CSRF-protected, audited action to delete a payment record.
+- **Admin — Updates & versions.** Fetch the latest GitHub release into a version rule,
+  force-update + `minSupportedVersionCode`, a Play-Store-vs-GitHub update-source selector,
+  and a copy-paste `update.json` panel.
+- **Admin — real Preview page.** "Preview changes" is now a page that shows the actual
+  working snapshot (offers, billboards, templates, support, config, version) instead of
+  placeholder data; publishing pushes exactly what it shows.
+
+### Fixed
+
+- **Billboards now appear in the app.** `selectPromotions()` was dropping every synced
+  "offer" billboard whose `linkedOfferId` wasn't in the cached catalogue; visibility now
+  depends only on the active time window, so admin-published billboards show.
+- **Admin — one working sidebar collapse.** Removed the two broken header toggle icons and
+  replaced them with a single working collapse toggle (persisted via `mb_nav`).
+
+### Changed
+
+- **Admin — Payments show full identifiers.** Payer, recipient and M-Pesa receipt are shown
+  unmasked on the Payments pages and CSV for owner reconciliation (owner-operated console).
+- **Admin — simple billboards** drop the CTA-destination, image and image-alt fields.
+
 ## [1.0.1] - 2026-07-26
 
 Released to the direct/GitHub channel (`versionCode 2`). Signed
