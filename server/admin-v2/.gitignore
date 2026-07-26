@@ -17,3 +17,6 @@ storage/*
 # Composer (optional dev tooling).
 /vendor/
 composer.lock
+
+# Backup/export archives — never source, and may bundle config/secrets. Never commit.
+*.zip
