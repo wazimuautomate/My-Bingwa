@@ -1,9 +1,9 @@
 {
-  "latestVersionCode": 1,
-  "latestVersionName": "1.0.0",
+  "latestVersionCode": 2,
+  "latestVersionName": "1.0.1",
   "minSupportedVersionCode": 1,
-  "apkUrl": "https://github.com/wazimuautomate/My-Bingwa/releases/download/v1.0.0/My-Bingwa-v1.0.0-direct.apk",
-  "apkSha256": "3540c80849fa6ab83431a672471b1063509af9e23cbd1ccaeb2b7cac0f2ce9c2",
-  "releaseNotes": "First public release of My Bingwa.",
+  "apkUrl": "https://github.com/wazimuautomate/My-Bingwa/releases/download/v1.0.1/My-Bingwa-v1.0.1-direct.apk",
+  "apkSha256": "aefc53f4c2698d201f6c3c3504ef18be15cd9f4223a9736b31638ee3f7c6da5f",
+  "releaseNotes": "Buy-for-myself now pays to the correct Till. Home billboards, offers and seller details now sync from the server. Stability fixes.",
   "mandatory": false
 }
