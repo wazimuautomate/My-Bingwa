@@ -24,6 +24,19 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Added
 
+- **Server→app billboard (promotions) sync.** The Home billboard now keeps a local,
+  offline-safe copy of the admin's published promotions instead of a hardcoded list,
+  mirroring the offer-catalogue sync. A new `get_billboards.php` endpoint serves the
+  published snapshot's `billboards` verbatim (empty when nothing is published, so the app
+  keeps its cache). The app fetches them through a new Retrofit `AndroidRemoteBillboardSource`
+  (same `X-App-Key` auth as the catalogue), maps each to a `Promotion` with a
+  kind-derived accent (offer→green, announcement→blue, update→navy — never orange), and
+  persists them in the installation snapshot. Promotions are replaced only on a non-empty
+  response and restored on launch, so a failed/empty sync never blanks the board and
+  synced promotions stay available offline and across process death. Remote images are
+  still deferred (no image-loading library) — a slide renders as a coloured text slide,
+  matching current behaviour.
+
 - **Admin V2 — payment routing on App configuration.** Two new fields, **Payment Till
   number** (the Buy Goods Till that collects buy-for-myself money → STK `party_b`) and
   **Fulfilment number** (the phone that receives the buy-for-another notification SMS →

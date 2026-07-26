@@ -6,7 +6,7 @@ import androidx.work.WorkerParameters
 import com.example.MyBingwaApplication
 
 /**
- * Periodic background sync of the seller config and offer catalogue.
+ * Periodic background sync of the seller config, offer catalogue and Home billboards.
  *
  * It refreshes the SAME process-wide repository the UI observes (obtained from
  * [MyBingwaApplication]), so a background refresh updates the live StateFlows and the
@@ -32,6 +32,7 @@ class CatalogueSyncWorker(
         return try {
             repository.syncRemoteConfig()
             repository.syncCatalogue()
+            repository.syncBillboards()
             Result.success()
         } catch (t: Throwable) {
             Result.retry()

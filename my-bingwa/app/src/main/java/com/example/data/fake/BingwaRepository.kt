@@ -161,6 +161,15 @@ interface BingwaRepository {
      */
     suspend fun syncCatalogue()
 
+    /**
+     * Fetch the Home billboards (promotions) from the server and replace [promotions]
+     * ONLY on a non-null, non-empty response, then persist them so they survive process
+     * death and stay available OFFLINE. A failed, null or empty response keeps the
+     * existing locally-stored billboards — never clearing them — so the app always has
+     * promotions offline. Promotions carry no per-user flags, so nothing is merged.
+     */
+    suspend fun syncBillboards()
+
     fun deletePurchaseRecord(recordId: String)
     fun deletePurchaseRecords(recordIds: List<String>)
     fun undoDeletePurchaseRecord(record: PurchaseRecord)

@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkRequest
+import com.example.data.catalogue.AndroidRemoteBillboardSource
 import com.example.data.catalogue.AndroidRemoteCatalogueSource
 import com.example.data.config.AndroidRemoteConfigSource
 import com.example.data.fake.BingwaRepository
@@ -88,6 +89,18 @@ class MyBingwaApplication : Application() {
             // the guaranteed offline base (server is only for syncing).
             catalogueSource = if (hasBaseUrl) {
                 AndroidRemoteCatalogueSource(
+                    baseUrl = baseUrl,
+                    appKey = appKey,
+                    enableLogging = BuildConfig.DEBUG
+                )
+            } else {
+                null
+            },
+            // Home billboards (promotions) are synced from the server when online; the
+            // bundled promotions are the guaranteed offline base (server is only for
+            // syncing). No base URL → seeded promotions only.
+            billboardSource = if (hasBaseUrl) {
+                AndroidRemoteBillboardSource(
                     baseUrl = baseUrl,
                     appKey = appKey,
                     enableLogging = BuildConfig.DEBUG

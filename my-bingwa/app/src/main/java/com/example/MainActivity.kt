@@ -148,6 +148,7 @@ fun MyBingwaApp(
             if (state != ConnectionState.NONE) {
                 repository.syncRemoteConfig()
                 repository.syncCatalogue()
+                repository.syncBillboards()
             }
         }
     }

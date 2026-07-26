@@ -16,6 +16,7 @@ import com.example.core.model.UserProfile
 import com.example.core.notifications.ConnectionState
 import com.example.core.payment.KenyanPhone
 import com.example.core.payment.PaymentTxnState
+import com.example.data.catalogue.RemoteBillboardSource
 import com.example.data.catalogue.RemoteCatalogueSource
 import com.example.data.config.AppConfig
 import com.example.data.config.RemoteConfigSource
@@ -65,6 +66,7 @@ class FakeBingwaRepositoryImpl(
     private val configProvider: OfflinePaymentConfigProvider = CachedOfflineConfigProvider(),
     private val configSource: RemoteConfigSource? = null,
     private val catalogueSource: RemoteCatalogueSource? = null,
+    private val billboardSource: RemoteBillboardSource? = null,
     private val localStore: SnapshotStore? = null,
     // The dispatcher persistence/restore run on. The app uses IO; tests can inject a
     // deterministic dispatcher so a restore is observable synchronously.
@@ -335,6 +337,10 @@ class FakeBingwaRepositoryImpl(
         _notifications.value = s.notifications
         _recentRecipients.value = s.recentRecipients
         _catalogueVersion.value = s.catalogueVersion
+        // Previously synced billboards are the offline source of truth; fall back to the
+        // seeded promotions only when nothing has been synced yet. No per-user flags to
+        // merge (unlike offers), so this is a plain restore.
+        _promotions.value = s.promotions.ifEmpty { initialPromotions }
         val favs = s.favouriteIds.toSet()
         val bought = s.boughtTodayIds.toSet()
         // Previously synced offers are the offline source of truth; fall back to the
@@ -388,6 +394,9 @@ class FakeBingwaRepositoryImpl(
         // process death.
         offers = _offers.value.map { it.copy(isFavourite = false, isBoughtToday = false) },
         catalogueVersion = _catalogueVersion.value,
+        // Persist the synced billboards so the Home promotions surface stays populated
+        // offline and across process death (no per-user flags to strip).
+        promotions = _promotions.value,
         initialized = true
     )
 
@@ -742,6 +751,28 @@ class FakeBingwaRepositoryImpl(
             }
         }
         _catalogueVersion.value = _catalogueVersion.value + 1
+        persist()
+    }
+
+    override suspend fun syncBillboards() {
+        val source = billboardSource ?: return
+        // Never sync into un-restored state: wait for the on-disk restore so a background
+        // sync replaces (and persists over) the real local promotions, never a blank
+        // cold-start snapshot (same guard as syncCatalogue()).
+        restoreComplete.await()
+
+        val fresh = try {
+            source.fetch()
+        } catch (t: Throwable) {
+            null
+        } ?: return // Failure/null → keep the existing locally-stored billboards.
+
+        // Empty → treat as an incomplete/absent publish and keep the last-good billboards
+        // rather than blanking the Home promotions surface. Promotions have no per-user
+        // flags, so a non-empty response replaces the pool wholesale.
+        if (fresh.isEmpty()) return
+
+        _promotions.value = fresh
         persist()
     }
 

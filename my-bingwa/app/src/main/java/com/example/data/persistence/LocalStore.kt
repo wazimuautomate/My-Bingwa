@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.core.model.NotificationItem
 import com.example.core.model.OfferItem
+import com.example.core.model.Promotion
 import com.example.core.model.PurchaseRecord
 import com.example.core.model.UserProfile
 import com.example.data.payment.ActiveOrder
@@ -43,6 +44,12 @@ private val Context.localDataStore: DataStore<Preferences> by preferencesDataSto
  * revision that only increases when a complete, validated catalogue was committed,
  * so a failed/empty sync can be told apart from a real update. Both are new fields
  * with defaults, so snapshots saved before this change still deserialise cleanly.
+ *
+ * [promotions] is the last set of Home billboards the app synced from the server; it is
+ * the on-device source the UI reads, so previously synced promotions remain available
+ * OFFLINE and across process death (an empty list means "nothing synced yet → fall back
+ * to the seeded promotions"). Like [offers]/[catalogueVersion] it is a new field with a
+ * default, so snapshots saved before this change still deserialise cleanly.
  */
 data class PersistedState(
     val profile: UserProfile? = null,
@@ -55,6 +62,7 @@ data class PersistedState(
     val activeOrder: ActiveOrder? = null,
     val offers: List<OfferItem> = emptyList(),
     val catalogueVersion: Long = 0L,
+    val promotions: List<Promotion> = emptyList(),
     val initialized: Boolean = false
 )
 

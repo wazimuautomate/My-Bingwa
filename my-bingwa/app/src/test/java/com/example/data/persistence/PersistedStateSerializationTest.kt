@@ -6,6 +6,9 @@ import com.example.core.model.OfferCategory
 import com.example.core.model.OfferItem
 import com.example.core.model.PaymentMethod
 import com.example.core.model.PaymentStatus
+import com.example.core.model.Promotion
+import com.example.core.model.PromotionAccent
+import com.example.core.model.PromotionKind
 import com.example.core.model.PurchaseRecord
 import com.example.core.model.UserProfile
 import com.example.core.payment.PaymentTxnState
@@ -14,6 +17,7 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -83,6 +87,21 @@ class PersistedStateSerializationTest {
                 )
             ),
             catalogueVersion = 7L,
+            promotions = listOf(
+                Promotion(
+                    id = "promo_1",
+                    kind = PromotionKind.OFFER,
+                    tag = "HOT DEAL",
+                    headline = "8GB + 400 Min",
+                    subhead = "Monthly mega bundle",
+                    ctaLabel = "Buy now",
+                    accent = PromotionAccent.GREEN,
+                    linkedOfferId = "data_13",
+                    priorityWeight = 100,
+                    startMillis = 1_000L,
+                    endMillis = 2_000L
+                )
+            ),
             activeOrder = ActiveOrder(
                 clientRequestId = "crid-2",
                 offerId = "data_1",
@@ -108,5 +127,23 @@ class PersistedStateSerializationTest {
         val empty = PersistedState(initialized = true)
         val restored = adapter.fromJson(adapter.toJson(empty))
         assertEquals(empty, restored)
+    }
+
+    @Test
+    fun `old snapshot without promotions field deserialises with default empty list`() {
+        // A snapshot written before billboards sync existed (no "promotions" key). The
+        // Kotlin default must apply so a pre-existing install still restores cleanly and
+        // the app falls back to its seeded promotions. This backward-compat is critical.
+        val oldJson = """
+            {"favouriteIds":[],"boughtTodayIds":[],"purchases":[],"notifications":[],
+             "recentRecipients":[],"offers":[],"catalogueVersion":3,"initialized":true}
+        """.trimIndent()
+
+        val restored = adapter.fromJson(oldJson)
+
+        assertNotNull(restored)
+        assertEquals(emptyList<Promotion>(), restored!!.promotions)
+        assertEquals(3L, restored.catalogueVersion)
+        assertTrue(restored.initialized)
     }
 }
