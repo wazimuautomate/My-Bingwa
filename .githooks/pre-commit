@@ -1,0 +1,39 @@
+#!/bin/sh
+# My Bingwa secret/config guard.
+# Refuses to commit real runtime config (config.php) or files that contain what
+# look like live secrets. Templates named *.sample.php are always allowed.
+# Emergency bypass (only if you are 100% certain): git commit --no-verify
+fail=0
+files=$(git diff --cached --name-only --diff-filter=ACM)
+for f in $files; do
+  case "$f" in
+    *.sample.php|.githooks/*|.gitignore|*/.gitignore) continue ;;
+  esac
+  case "$f" in
+    */config.php|config.php)
+      echo "BLOCKED: '$f' is runtime config and must never be committed."
+      echo "         Real config belongs only in a git-ignored config.php on the server."
+      fail=1
+      continue ;;
+  esac
+  blob=$(git show ":$f" 2>/dev/null) || continue
+  if printf '%s\n' "$blob" | grep -Eq 'BEGIN (RSA|OPENSSH|EC|DSA|PGP) PRIVATE KEY'; then
+    echo "BLOCKED: '$f' contains a private key block."
+    fail=1
+    continue
+  fi
+  hit=$(printf '%s\n' "$blob" \
+    | grep -Eni "(consumer_secret|consumer_key|passkey|app_key|'pass'|business_shortcode)[\"' ]*(=>|:|=)[\"' ]*[A-Za-z0-9._+/-]{16,}" \
+    | grep -viE "PUT_|CHANGE_ME|YOUR_|EXAMPLE|PLACEHOLDER|XXXX|=> ''|: ''" || true)
+  if [ -n "$hit" ]; then
+    echo "BLOCKED: '$f' looks like it contains a live secret:"
+    printf '%s\n' "$hit" | sed 's/^/    /'
+    echo "         Remove it; real secrets live only in the server-side config.php."
+    fail=1
+  fi
+done
+if [ "$fail" -ne 0 ]; then
+  echo ""
+  echo "Commit rejected by .githooks/pre-commit (secret/config guard)."
+fi
+exit $fail

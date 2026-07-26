@@ -81,3 +81,15 @@ server/admin-v2/storage/*
 !server/admin-v2/storage/.htaccess
 !server/admin-v2/storage/.gitkeep
 server/admin-v2/vendor/
+
+# --- Hard secret/config guard (also enforced locally by .githooks/pre-commit) ---
+# Real runtime config holds live secrets and must NEVER be committed. Only the
+# *.sample.php templates (placeholders) are tracked. Rotate + purge if leaked.
+**/config.php
+config.local.php
+config.production.php
+*.secret
+secrets.php
+# Keep tracked templates/source that the broad pattern above would otherwise ignore:
+!**/config.sample.php
+!server/admin-v2/app/Core/Config.php
