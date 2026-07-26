@@ -111,6 +111,7 @@ $router->post('/message-templates/test',      [App\Controllers\TemplatesControll
 $router->get('/payments',            [App\Controllers\PaymentsController::class, 'index']);
 $router->get('/payments/{id}',       [App\Controllers\PaymentsController::class, 'show']);
 $router->get('/payments-export',     [App\Controllers\PaymentsController::class, 'exportCsv']);
+$router->post('/payments/delete-bulk', [App\Controllers\PaymentsController::class, 'deleteBulk']);
 $router->post('/payments/{id}/delete', [App\Controllers\PaymentsController::class, 'delete']);
 
 /* --------------------------------------------------------------- support */

@@ -158,4 +158,31 @@
       closeDropdowns();
     }
   });
+
+  /* ---- Bulk row select (e.g. Payments "Delete selected") ----
+     A header [data-check-all] toggles every [data-row-check]; the [data-bulk-delete]
+     button disables and [data-bulk-count] updates when nothing is selected. Lives here
+     (not inline) because the CSP is script-src 'self' with no inline allowance. */
+  (function () {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('[data-row-check]'));
+    if (!rows.length) return;
+    var all = document.querySelector('[data-check-all]');
+    var btn = document.querySelector('[data-bulk-delete]');
+    var label = document.querySelector('[data-bulk-count]');
+    function sync() {
+      var n = rows.filter(function (c) { return c.checked; }).length;
+      if (label) label.textContent = n === 0 ? 'No records selected' : (n + ' selected');
+      if (btn) btn.disabled = n === 0;
+      if (all) {
+        all.checked = n > 0 && n === rows.length;
+        all.indeterminate = n > 0 && n < rows.length;
+      }
+    }
+    if (all) all.addEventListener('change', function () {
+      rows.forEach(function (c) { c.checked = all.checked; });
+      sync();
+    });
+    rows.forEach(function (c) { c.addEventListener('change', sync); });
+    sync();
+  })();
 })();

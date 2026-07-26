@@ -18,19 +18,9 @@ final class PublishController extends Controller
 {
     public function review(Request $request): void
     {
-        $this->requireAuth();
-        if (!Rbac::canAny(['publish.execute', 'rollback.execute', 'offers.view'])) {
-            Rbac::require('publish.execute');
-        }
-        $snapshot = PublishingService::buildWorkingSnapshot();
-        $check = PublishingService::validate($snapshot);
-        $this->view('publish/review', [
-            'activeNav' => 'publish', 'pageTitle' => 'Review & publish',
-            'pending' => PublishingService::pendingChanges(),
-            'errors' => $check['errors'], 'warnings' => $check['warnings'],
-            'current' => PublishingService::currentRelease(),
-            'snapshot' => $snapshot,
-        ]);
+        // Consolidated into the single change-focused Preview & publish page, which lists
+        // ONLY what changed (not the whole configuration).
+        $this->redirect('/preview');
     }
 
     public function execute(Request $request): void

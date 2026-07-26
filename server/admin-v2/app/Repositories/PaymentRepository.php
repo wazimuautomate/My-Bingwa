@@ -77,6 +77,26 @@ final class PaymentRepository
         Database::run('DELETE FROM payments WHERE id = ?', [$id]);
     }
 
+    /**
+     * Bulk-delete payment records by id — the same deliberate, audited write as delete(),
+     * for clearing many rows at once. The caller casts, de-duplicates and caps the ids and
+     * records them in the audit trail. No-ops (returns 0) when the table is absent or no ids
+     * are given. Returns the number of rows actually removed.
+     *
+     * @param int[] $ids
+     */
+    public static function deleteMany(array $ids): int
+    {
+        if (!self::available() || $ids === []) {
+            return 0;
+        }
+        $placeholders = implode(', ', array_fill(0, count($ids), '?'));
+        return Database::run(
+            "DELETE FROM payments WHERE id IN ({$placeholders})",
+            array_values($ids)
+        )->rowCount();
+    }
+
     private static function buildWhere(array $f): array
     {
         $clauses = [];

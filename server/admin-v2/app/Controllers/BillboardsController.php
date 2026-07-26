@@ -105,6 +105,10 @@ final class BillboardsController extends Controller
         if ($kind === 'simple') {
             $input['cta_destination'] = '';
             $input['alt_text'] = '';
+            // Simple billboards are always-on — no schedule to avoid an accidental expiry
+            // window hiding them from the app.
+            $input['starts_at'] = null;
+            $input['ends_at'] = null;
         }
 
         $v = Validator::make($input);

@@ -146,9 +146,17 @@ final class PublishingService
             if ($resolved === null) {
                 continue; // linked offer unavailable → billboard is disabled (never publish unresolved tokens)
             }
+            // The app understands PROMOTION kinds (offer/announcement/update), not the
+            // authoring mode ('simple'/'advanced'). Map by content: a linked offer becomes
+            // an OFFER slide, otherwise an announcement.
+            $isSimple = ($b['kind'] === 'simple');
+            $appKind  = ($b['linked_offer_id'] ?? '') !== '' ? 'offer' : 'announcement';
+            // Simple billboards are ALWAYS-ON: their schedule is ignored so they can never
+            // silently expire (an empty window = show whenever active). Advanced billboards
+            // keep their scheduled start/end window.
             $out[] = [
                 'id'          => (int) $b['id'],
-                'kind'        => $b['kind'],
+                'kind'        => $appKind,
                 'priority'    => (int) $b['priority'],
                 'linkedOfferId' => $b['linked_offer_id'],
                 'tag'         => $resolved['tag'],
@@ -160,8 +168,8 @@ final class PublishingService
                 'altText'     => $b['alt_text'],
                 'audienceRule'=> $b['audience_rule'],
                 'frequencyCap'=> (int) $b['frequency_cap'],
-                'startsAt'    => self::iso($b['starts_at']),
-                'endsAt'      => self::iso($b['ends_at']),
+                'startsAt'    => $isSimple ? null : self::iso($b['starts_at']),
+                'endsAt'      => $isSimple ? null : self::iso($b['ends_at']),
             ];
         }
         return $out;
@@ -258,9 +266,10 @@ final class PublishingService
         $errors = [];
         $warnings = [];
 
-        // Offers: unique ids, valid prices, sane availability, offline ambiguity warning.
+        // Offers: unique ids, valid prices, sane category. Different offers MAY share the
+        // same price by design (e.g. a duplicated offer placed in another category), so a
+        // shared price is deliberately NOT flagged — it is not this panel's concern.
         $seen = [];
-        $offlinePrices = [];
         foreach ($snapshot['offers'] as $o) {
             if (isset($seen[$o['id']])) {
                 $errors[] = "Duplicate offer id: {$o['id']}.";
@@ -271,15 +280,6 @@ final class PublishingService
             }
             if (!in_array($o['category'], ['DATA', 'SMS', 'MINUTES', 'SPECIAL'], true)) {
                 $errors[] = "Offer {$o['id']} has an unknown category.";
-            }
-            if ($o['offlineEligible']) {
-                $offlinePrices[$o['price']][] = $o['id'];
-            }
-        }
-        foreach ($offlinePrices as $price => $ids) {
-            if (count($ids) > 1) {
-                $warnings[] = 'Offline reconciliation ambiguity: offers ' . implode(', ', $ids)
-                    . " share price KSh {$price}. The operator must load the correct bundle manually.";
             }
         }
 

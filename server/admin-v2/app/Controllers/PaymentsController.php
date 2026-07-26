@@ -96,4 +96,34 @@ final class PaymentsController extends Controller
         Flash::success('Payment record deleted.');
         $this->redirect('/payments');
     }
+
+    /**
+     * Bulk-delete selected payment records to clean the table. Same safeguards as the single
+     * delete — CSRF-checked, guarded by payments.export and fully audited. Submitted ids are
+     * cast to positive ints, de-duplicated and capped so a crafted request cannot remove an
+     * unbounded number of rows in one call.
+     */
+    public function deleteBulk(Request $request): void
+    {
+        Csrf::check($request);
+        $this->guard('payments.export');
+        $ids = array_values(array_unique(array_filter(
+            array_map('intval', (array) $request->post('ids', [])),
+            static fn(int $id): bool => $id > 0
+        )));
+        $ids = array_slice($ids, 0, 500);
+        if ($ids === []) {
+            Flash::error('Select at least one record.');
+            $this->redirect('/payments');
+        }
+        $deleted = PaymentRepository::deleteMany($ids);
+        Audit::log([
+            'action' => 'payment.delete_bulk',
+            'entity_type' => 'payment',
+            'before' => ['count' => $deleted, 'ids' => $ids],
+            'after' => null,
+        ]);
+        Flash::success($deleted . ' payment record(s) deleted.');
+        $this->redirect('/payments');
+    }
 }

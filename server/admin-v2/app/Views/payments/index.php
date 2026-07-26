@@ -36,12 +36,24 @@ $payLabels = [
     <button class="btn btn--secondary btn--sm"><?= icon('filter', 16) ?> Filter</button>
     <?php if ($qs): ?><a class="btn btn--ghost btn--sm" href="<?= e(url('/payments')) ?>">Clear</a><?php endif; ?>
   </form>
+  <?php if ($canDelete): ?>
+    <?php // Bulk-delete toolbar. The checkboxes below live in the table but are associated
+          // with THIS form via the HTML5 form="pay-bulk-form" attribute — that keeps the
+          // per-row delete forms (inside table cells) from being nested inside it, which
+          // would be invalid HTML. app.js's data-confirm handler drives the confirmation. ?>
+    <form id="pay-bulk-form" class="between mb" method="post" action="<?= e(url('/payments/delete-bulk')) ?>" data-confirm="Delete the selected payment records? This cannot be undone.">
+      <?= App\Core\Csrf::field() ?>
+      <span class="muted small" data-bulk-count>No records selected</span>
+      <button type="submit" class="btn btn--danger btn--sm" data-bulk-delete><?= icon('trash', 16) ?> Delete selected</button>
+    </form>
+  <?php endif; ?>
   <div class="table-wrap">
     <table class="data">
-      <thead><tr><th>Time</th><th>Payer</th><th>Recipient</th><th>Offer</th><th>Amount</th><th>Receipt</th><th>State</th><th></th></tr></thead>
+      <thead><tr><?php if ($canDelete): ?><th class="nowrap"><input type="checkbox" form="pay-bulk-form" data-check-all aria-label="Select all payment records on this page"></th><?php endif; ?><th>Time</th><th>Payer</th><th>Recipient</th><th>Offer</th><th>Amount</th><th>Receipt</th><th>State</th><th></th></tr></thead>
       <tbody>
         <?php foreach ($rows as $p): $st = PaymentRepository::displayState($p['status']); ?>
           <tr>
+            <?php if ($canDelete): ?><td class="nowrap"><input type="checkbox" form="pay-bulk-form" name="ids[]" value="<?= (int) $p['id'] ?>" data-row-check aria-label="Select payment <?= (int) $p['id'] ?>"></td><?php endif; ?>
             <td class="muted nowrap"><?= e(fmt_nairobi($p['created_at'], 'd M H:i')) ?></td>
             <td class="mono"><?= e($p['payer'] ?: '—') ?></td>
             <td class="mono"><?= e(($p['recipient'] ?: $p['payer']) ?: '—') ?></td>
@@ -64,7 +76,7 @@ $payLabels = [
             </td>
           </tr>
         <?php endforeach; ?>
-        <?php if (!$rows): ?><tr><td colspan="8"><div class="empty"><?= icon('payments', 28) ?><h3>No payments match</h3></div></td></tr><?php endif; ?>
+        <?php if (!$rows): ?><tr><td colspan="<?= $canDelete ? 9 : 8 ?>"><div class="empty"><?= icon('payments', 28) ?><h3>No payments match</h3></div></td></tr><?php endif; ?>
       </tbody>
     </table>
   </div>
