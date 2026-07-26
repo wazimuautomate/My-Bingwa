@@ -166,6 +166,16 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ### Security
 
+- **Leaked server secrets purged from all Git history + push guards added.** An older
+  `server/mybingwa-api/config.php` (live Daraja consumer key/secret/passkey) had been
+  committed early in the project and later un-tracked, so its blobs remained reachable
+  in the public repo's history. All 93 commits were rewritten with `git filter-repo` to
+  strip the file from every branch and the `v1.0.0` tag, then force-pushed. `.gitignore`
+  now blocks `**/config.php` and common secret files (templates excepted), and
+  `.githooks/pre-commit`/`pre-push` (enabled via `core.hooksPath`) refuse to commit or
+  push `config.php` or files containing live-secret markers. The exposed keys must be
+  rotated (in progress) and treated as compromised; forks/clones and GitHub's cache may
+  retain old objects until GitHub GC.
 - **The Google Play build ships no restricted permission.** The `play` flavor's
   manifest overlay removes `RECEIVE_SMS` and the `SmsDeliveryReceiver`, so the Play
   (AAB) submission needs no SMS permissions declaration and cannot be rejected for
