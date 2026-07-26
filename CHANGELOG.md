@@ -10,6 +10,14 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ## [Unreleased]
 
+_Nothing yet. Next up: server→app notifications sync (FCM or poll+local-schedule)._
+
+## [1.0.1] - 2026-07-26
+
+Released to the direct/GitHub channel (`versionCode 2`). Signed
+`My-Bingwa-v1.0.1-direct.apk` + Play AAB published on the `v1.0.1` GitHub Release;
+`update.json` points at it so devices on 1.0.0 are offered the update.
+
 ### Fixed
 
 - **Payments — buy-for-myself now collects to the Till, not a Paybill (critical).**
