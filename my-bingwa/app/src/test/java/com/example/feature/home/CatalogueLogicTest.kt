@@ -392,18 +392,30 @@ class CatalogueLogicTest {
     )
 
     @Test
-    fun `selectPromotions drops inactive and dangling-offer slides and orders by weight`() {
+    fun `selectPromotions drops only inactive slides and orders by weight`() {
+        // Synced (admin) OFFER billboards routinely link to an offer id this install's
+        // cached catalogue lacks; they must STILL show (only the active window gates
+        // visibility). So "missingOffer" (linkedOfferId not in the catalogue) is kept,
+        // and only the time-expired "inactive" slide is dropped.
         val result = selectPromotions(promoPool, promoOffers, TODAY, seed = 0L)
         val ids = result.map { it.id }
-        assertEquals(listOf("update", "keepOffer", "announce"), ids)
+        assertEquals(listOf("update", "missingOffer", "keepOffer", "announce"), ids)
         assertFalse(ids.contains("inactive"))
-        assertFalse(ids.contains("missingOffer"))
+    }
+
+    @Test
+    fun `selectPromotions keeps an offer slide with no linked offer (synced billboard)`() {
+        // The common admin case: an OFFER-kind billboard published with a blank/absent
+        // linked offer. It must render, not be silently swallowed.
+        val pool = listOf(promo("noLink", PromotionKind.OFFER, weight = 10, linkedOfferId = null))
+        val result = selectPromotions(pool, promoOffers, TODAY, seed = 0L)
+        assertEquals(listOf("noLink"), result.map { it.id })
     }
 
     @Test
     fun `selectPromotions respects max`() {
         val result = selectPromotions(promoPool, promoOffers, TODAY, seed = 0L, max = 2)
-        assertEquals(listOf("update", "keepOffer"), result.map { it.id })
+        assertEquals(listOf("update", "missingOffer"), result.map { it.id })
     }
 
     // -----------------------------------------------------------------------

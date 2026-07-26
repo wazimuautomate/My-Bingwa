@@ -1,8 +1,15 @@
-<?php $v = $version ?? []; ?>
+<?php $v = $version ?? []; $fetched = $fetched ?? null; ?>
 <div class="page-head">
   <div><h1><?= $isNew ? 'Add release rule' : 'Edit release rule' ?></h1><div class="sub">Controls optional and forced updates. Drafts until published.</div></div>
   <div class="page-head__actions"><a class="btn btn--ghost" href="<?= e(url('/versions')) ?>">Cancel</a></div>
 </div>
+<?php if ($fetched): ?>
+  <div class="alert success mb"><?= icon('download', 18) ?><div style="text-align:left">
+    Prefilled from GitHub release <b><?= e($fetched['tag']) ?></b><?= $fetched['publishedAt'] ? ' (' . e(fmt_nairobi(str_replace(['T','Z'], [' ', ''], $fetched['publishedAt']))) . ')' : '' ?>.
+    Confirm the <b>versionCode</b> and SHA-256, then save.
+    <?php if (!empty($fetched['htmlUrl'])): ?> <a href="<?= e($fetched['htmlUrl']) ?>" target="_blank" rel="noopener">View on GitHub <?= icon('external', 12) ?></a><?php endif; ?>
+  </div></div>
+<?php endif; ?>
 <div class="grid two">
   <div class="card">
     <form method="post" action="<?= e(url('/versions/save')) ?>" data-once
@@ -15,8 +22,16 @@
         <div class="field"><label>Latest versionName</label><input type="text" name="latest_version_name" value="<?= e($v['latest_version_name'] ?? '') ?>" placeholder="1.0.0" required></div>
         <div class="field"><label>Minimum supported versionCode</label><input type="number" name="min_supported_version_code" value="<?= e($v['min_supported_version_code'] ?? 1) ?>" min="1" required></div>
         <div class="field"><label>Rollout percent</label><input type="number" name="rollout_percent" value="<?= e($v['rollout_percent'] ?? 100) ?>" min="0" max="100"></div>
+        <?php $src = $v['update_source'] ?? 'github'; ?>
+        <div class="field"><label>Update source</label>
+          <select name="update_source">
+            <option value="github" <?= $src !== 'play' ? 'selected' : '' ?>>Direct APK (GitHub)</option>
+            <option value="play" <?= $src === 'play' ? 'selected' : '' ?>>Play Store</option>
+          </select>
+          <span class="hint">Where the app sends users to update.</span>
+        </div>
         <div class="field full"><label>Play Store URL</label><input type="url" name="play_store_url" value="<?= e($v['play_store_url'] ?? '') ?>" placeholder="https://play.google.com/store/apps/details?id=com.bingwasokoni"></div>
-        <div class="field full"><label>Direct APK URL <span class="muted small">(optional)</span></label><input type="url" name="apk_url" value="<?= e($v['apk_url'] ?? '') ?>"></div>
+        <div class="field full"><label>Direct APK URL <span class="muted small">(GitHub release asset)</span></label><input type="url" name="apk_url" value="<?= e($v['apk_url'] ?? '') ?>"></div>
         <div class="field full"><label>APK SHA-256 <span class="muted small">(direct build)</span></label><input type="text" class="mono" name="apk_sha256" value="<?= e($v['apk_sha256'] ?? '') ?>"></div>
         <div class="field full"><label>Release notes</label><textarea name="release_notes"><?= e($v['release_notes'] ?? '') ?></textarea></div>
       </div>

@@ -10,9 +10,11 @@ $nav = [
     ['support',       'Support details',   '/support',          'support.edit',        'support'],
     ['config',        'App configuration', '/app-config',       'config.edit',         'config'],
     ['versions',      'Updates & versions','/versions',         'releases.manage',     'versions'],
+    ['publish',       'Preview & publish', '/preview',          'publish.execute',     'preview'],
     ['audit',         'Audit log',         '/audit',            'audit.view',          'audit'],
     ['settings',      'Settings',          '/settings',         null,                  'settings'],
 ];
+$draftCount = (int) ($publishStatus['draftCount'] ?? 0);
 ?>
 <aside class="sidebar">
   <a class="brand" href="<?= e(url('/')) ?>">
@@ -26,6 +28,7 @@ $nav = [
       <a class="nav__item <?= ($activeNav ?? '') === $key ? 'is-active' : '' ?>" href="<?= e(url($path)) ?>" title="<?= e($label) ?>">
         <?= icon($icon, 20) ?>
         <span><?= e($label) ?></span>
+        <?php if ($key === 'preview' && $draftCount > 0): ?><span class="nav__badge"><?= $draftCount ?></span><?php endif; ?>
       </a>
     <?php endforeach; ?>
   </nav>

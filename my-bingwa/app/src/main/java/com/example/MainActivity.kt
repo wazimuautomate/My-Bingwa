@@ -46,6 +46,12 @@ import com.example.core.notifications.ConnectionState
 import com.example.core.notifications.ConnectivityObserver
 import com.example.core.notifications.NotificationChannels
 import com.example.core.notifications.SmsSignal
+import com.example.core.update.UpdateChecker
+import com.example.core.update.UpdatePromotion
+import com.example.core.update.UpdateRequiredScreen
+import com.example.core.update.UpdateResult
+import com.example.core.update.UpdateSource
+import com.example.core.update.openPlayStoreListing
 import com.example.core.ui.MyBingwaBottomNav
 import com.example.data.fake.BingwaRepository
 import com.example.feature.activity.ActivityScreen
@@ -215,6 +221,25 @@ fun MyBingwaApp(
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
 
+    // --- Direct-channel update awareness (Task 8) --------------------------------
+    // One check at start drives all three surfaces: the force-update gate, the
+    // system notification and the Home "Update available" billboard. Play users
+    // update via the store; github users install in-app (AppUpdateInstaller).
+    var pendingUpdate by remember { mutableStateOf<UpdateResult.Available?>(null) }
+    LaunchedEffect(Unit) {
+        val result = UpdateChecker.check()
+        if (result is UpdateResult.Available) {
+            pendingUpdate = result
+            // Reuse the existing notification infrastructure (UPDATES channel). No-ops
+            // silently when POST_NOTIFICATIONS is not granted; a tap deep-links to
+            // Settings → update section (AppNotifier.postAppUpdate uses route "settings").
+            appNotifier.postAppUpdate(result.versionName.ifBlank { "update" })
+        }
+    }
+    // Non-dismissible gate required when mandatory OR this build is below the
+    // manifest's minSupportedVersionCode. A normal update stays a gentle prompt.
+    val updateRequired = pendingUpdate?.isRequired() == true
+
     val catalogueViewModel: CatalogueViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -225,6 +250,13 @@ fun MyBingwaApp(
 
     val homeUiState by catalogueViewModel.homeUiState.collectAsState()
     val offersUiState by catalogueViewModel.offersUiState.collectAsState()
+
+    // Surface an "Update available" billboard on Home while an update is pending
+    // (Task 8.3). Prepended (not run through billboard selection) so it always
+    // leads and is never filtered out — and it does not disturb synced billboards.
+    val homeState = pendingUpdate?.let { update ->
+        homeUiState.copy(promotions = listOf(UpdatePromotion.forUpdate(update)) + homeUiState.promotions)
+    } ?: homeUiState
 
     val userProfile by repository.userProfile.collectAsState()
     val appTheme by repository.appTheme.collectAsState()
@@ -268,7 +300,9 @@ fun MyBingwaApp(
         onConsumeDeepLink()
     }
 
-    val showBottomBar = currentRoute in listOf("home", "offers", "activity", "help", "settings")
+    // Hide navigation behind the non-dismissible "Update required" gate.
+    val showBottomBar = !updateRequired &&
+        currentRoute in listOf("home", "offers", "activity", "help", "settings")
 
     // Resolve details/purchase offers against the live catalogue so favourite
     // toggles inside a sheet stay reflected.
@@ -276,21 +310,45 @@ fun MyBingwaApp(
 
     val onUndoFavourite: (String) -> Unit = { id -> repository.setFavourite(id, true) }
 
+    // Browse the Offers tab, optionally pre-filtered to a category. Shared by
+    // announcement slides and by offer slides whose linked offer can't be resolved.
+    val browseOffers: (com.example.core.model.OfferCategory?) -> Unit = { category ->
+        category?.let { repository.setCategoryFilter(it) }
+        navController.navigate("offers") {
+            popUpTo("home") { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
     val onPromotionAction: (Promotion) -> Unit = { promo ->
-        when (promo.kind) {
-            PromotionKind.OFFER -> {
-                val target = promo.linkedOfferId?.let { id -> offers.find { it.id == id } }
-                if (target != null) activeOfferForPurchase = target
-            }
-            PromotionKind.ANNOUNCEMENT -> {
-                promo.linkedCategory?.let { repository.setCategoryFilter(it) }
-                navController.navigate("offers") {
-                    popUpTo("home") { saveState = true }
-                    launchSingleTop = true
-                    restoreState = true
+        when {
+            // The synthetic "Update available" slide (Task 8.3): its CTA opens the
+            // Settings update section (github) or the Play listing — handled the same
+            // way the Settings deep-link is, via the pending-update state below.
+            promo.id == UpdatePromotion.ID -> {
+                if (pendingUpdate?.source == UpdateSource.PLAY) {
+                    openPlayStoreListing(context)
+                } else {
+                    navController.navigate("settings") {
+                        popUpTo("home") { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 }
             }
-            PromotionKind.UPDATE -> showNotifications = true
+            promo.kind == PromotionKind.OFFER -> {
+                val target = promo.linkedOfferId?.let { id -> offers.find { it.id == id } }
+                if (target != null) {
+                    activeOfferForPurchase = target
+                } else {
+                    // Synced billboard whose linked offer isn't in this catalogue: don't
+                    // dead-end the CTA — browse offers (optionally by linked category).
+                    browseOffers(promo.linkedCategory)
+                }
+            }
+            promo.kind == PromotionKind.ANNOUNCEMENT -> browseOffers(promo.linkedCategory)
+            else -> showNotifications = true // PromotionKind.UPDATE (informational)
         }
     }
 
@@ -348,7 +406,7 @@ fun MyBingwaApp(
 
                 composable("home") {
                     HomeScreen(
-                        state = homeUiState,
+                        state = homeState,
                         unreadNotifCount = notifications.count { !it.isRead },
                         reducedMotion = reducedMotion,
                         listState = homeListState,
@@ -433,7 +491,8 @@ fun MyBingwaApp(
                             }
                         },
                         onEnablePushNotifications = requestNotificationPermission,
-                        onEnableSmsDetection = requestSmsPermission
+                        onEnableSmsDetection = requestSmsPermission,
+                        knownUpdate = pendingUpdate
                     )
                 }
             }
@@ -485,6 +544,16 @@ fun MyBingwaApp(
                     },
                     onDismiss = { showNotifications = false }
                 )
+            }
+
+            // Blocking "Update required" gate (Task 8.1). Drawn last so it overlays
+            // everything; the bottom bar is already hidden (showBottomBar). The user
+            // cannot proceed until they update (github install or Play), and back is
+            // swallowed inside the screen.
+            pendingUpdate?.let { update ->
+                if (updateRequired) {
+                    UpdateRequiredScreen(update = update)
+                }
             }
         }
     }

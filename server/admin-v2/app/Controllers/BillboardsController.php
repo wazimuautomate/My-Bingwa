@@ -99,6 +99,14 @@ final class BillboardsController extends Controller
             'status' => in_array($request->post('status'), self::STATUSES, true) ? (string) $request->post('status') : 'draft',
         ];
 
+        // The advanced-only fields (CTA destination, image, alt text) are removed from the
+        // simple billboard form, so they arrive empty. Default them defensively so a simple
+        // billboard always saves cleanly and never carries stale advanced data.
+        if ($kind === 'simple') {
+            $input['cta_destination'] = '';
+            $input['alt_text'] = '';
+        }
+
         $v = Validator::make($input);
         $v->validate(['name' => 'required|max:120']);
 
@@ -142,6 +150,11 @@ final class BillboardsController extends Controller
             if ($res['assetId'] !== null) {
                 $imageAssetId = $res['assetId'];
             }
+        }
+        // A simple billboard never carries an image (the upload field is not shown), so drop
+        // any linked asset — including when an advanced billboard is converted to simple.
+        if ($kind === 'simple') {
+            $imageAssetId = null;
         }
 
         $actor = Auth::user()['name'] ?? 'system';

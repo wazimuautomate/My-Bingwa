@@ -1,12 +1,16 @@
 <?php
 /**
- * Payment operations — READ-ONLY over the real payments table. Identifiers are masked;
- * full M-Pesa receipts are revealed only to holders of payments.export. Admin V2 never
- * writes payments and never marks an unverified payment successful.
+ * Payment operations over the real payments table. For reconciliation, the full
+ * identifiers (payer, recipient, M-Pesa receipt) are shown unmasked to holders of
+ * payments.view. The one write is deleting a payment record — CSRF-checked, guarded by
+ * payments.export and audited. Admin V2 never marks an unverified payment successful.
  */
 
 namespace App\Controllers;
 
+use App\Core\Audit;
+use App\Core\Csrf;
+use App\Core\Flash;
 use App\Core\Rbac;
 use App\Core\Request;
 use App\Repositories\PaymentRepository;
@@ -32,6 +36,7 @@ final class PaymentsController extends Controller
             'available' => PaymentRepository::available(),
             'rows' => $result['rows'], 'total' => $result['total'], 'page' => $page, 'per' => 25,
             'filters' => $filters, 'canReveal' => Rbac::can('payments.export'),
+            'canDelete' => Rbac::can('payments.export'),
         ]);
     }
 
@@ -43,6 +48,7 @@ final class PaymentsController extends Controller
         $this->view('payments/show', [
             'activeNav' => 'payments', 'pageTitle' => 'Payment #' . (int) $id,
             'p' => $row, 'canReveal' => Rbac::can('payments.export'),
+            'canDelete' => Rbac::can('payments.export'),
         ]);
     }
 
@@ -54,14 +60,40 @@ final class PaymentsController extends Controller
             'state' => (string) $request->get('state', ''), 'q' => (string) $request->get('q', ''),
         ], 1, 5000);
         Csv::stream('mybingwa-payments.csv',
-            ['id', 'time_nairobi', 'payer_masked', 'recipient_masked', 'offer', 'amount', 'status', 'receipt'],
+            ['id', 'time_nairobi', 'payer', 'recipient', 'offer', 'amount', 'status', 'receipt'],
             array_map(fn($r) => [
                 $r['id'], fmt_nairobi($r['created_at'], 'Y-m-d H:i'),
-                str_mask_phone($r['payer']), str_mask_phone($r['recipient']),
+                $r['payer'], $r['recipient'] ?: $r['payer'],
                 $r['offer_id'], $r['amount'],
                 PaymentRepository::displayState($r['status'])['label'],
                 $r['mpesa_receipt'] ?: '',
             ], $result['rows'])
         );
+    }
+
+    /**
+     * Delete a payment record. Admin V2 is otherwise read-only over payments, so this is
+     * a deliberate capability: CSRF-checked, guarded by the strongest payments permission
+     * (payments.export) and fully audited with the deleted row captured before removal.
+     */
+    public function delete(Request $request, string $id): void
+    {
+        Csrf::check($request);
+        $this->guard('payments.export');
+        $row = PaymentRepository::find((int) $id);
+        if (!$row) {
+            Flash::error('Payment record not found.');
+            $this->redirect('/payments');
+        }
+        PaymentRepository::delete((int) $id);
+        Audit::log([
+            'action' => 'payment.delete',
+            'entity_type' => 'payment',
+            'entity_id' => (int) $id,
+            'before' => $row,
+            'after' => null,
+        ]);
+        Flash::success('Payment record deleted.');
+        $this->redirect('/payments');
     }
 }

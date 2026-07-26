@@ -4,17 +4,22 @@ $st = PaymentRepository::displayState($p['status']);
 ?>
 <div class="page-head">
   <div><h1>Payment #<?= (int) $p['id'] ?></h1><div class="sub"><?= e($p['offer_id']) ?> · <?= e(ksh($p['amount'])) ?> · <?= e(fmt_nairobi($p['created_at'])) ?></div></div>
-  <div class="page-head__actions"><a class="btn btn--ghost" href="<?= e(url('/payments')) ?>">Back</a></div>
+  <div class="page-head__actions">
+    <a class="btn btn--ghost" href="<?= e(url('/payments')) ?>">Back</a>
+    <?php if (!empty($canDelete)): ?>
+      <form method="post" action="<?= e(url('/payments/' . (int) $p['id'] . '/delete')) ?>" data-confirm="Delete this payment record? This cannot be undone."><?= App\Core\Csrf::field() ?><button class="btn btn--danger" type="submit"><?= icon('trash', 16) ?> Delete record</button></form>
+    <?php endif; ?>
+  </div>
 </div>
 <div class="grid two">
   <div class="card">
     <div class="card__head"><h3>Payment</h3><span class="spacer"></span><span class="status <?= $st['class'] ?>"><?= e($st['label']) ?></span></div>
     <div class="stack" style="gap:8px">
-      <div class="between"><span class="muted small">Payer (M-Pesa number)</span><span class="mono"><?= e(str_mask_phone($p['payer'])) ?></span></div>
-      <div class="between"><span class="muted small">Bundle recipient</span><span class="mono"><?= e(str_mask_phone($p['recipient'] ?: $p['payer'])) ?></span></div>
+      <div class="between"><span class="muted small">Payer (M-Pesa number)</span><span class="mono"><?= e($p['payer'] ?: '—') ?></span></div>
+      <div class="between"><span class="muted small">Bundle recipient</span><span class="mono"><?= e(($p['recipient'] ?: $p['payer']) ?: '—') ?></span></div>
       <div class="between"><span class="muted small">Amount</span><b><?= e(ksh($p['amount'])) ?></b></div>
       <div class="between"><span class="muted small">M-Pesa receipt</span>
-        <span class="mono"><?= $canReveal && $p['mpesa_receipt'] ? e($p['mpesa_receipt']) : e(str_mask_receipt($p['mpesa_receipt'])) ?></span></div>
+        <span class="mono"><?= e($p['mpesa_receipt'] ?: '—') ?></span></div>
       <div class="between"><span class="muted small">Fulfilment / delivery</span><span class="tag muted">Tracked separately (v1)</span></div>
     </div>
   </div>

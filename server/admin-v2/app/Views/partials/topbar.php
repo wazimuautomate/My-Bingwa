@@ -1,13 +1,11 @@
 <?php
-/** Compact top bar: mobile menu, search, preview-changes, theme, profile. */
+/** Compact top bar: one navigation toggle, search, theme, profile. */
 $user = $authUser ?? [];
 $initials = strtoupper(substr((string) ($user['name'] ?? 'A'), 0, 1));
-$draftCount = (int) ($publishStatus['draftCount'] ?? 0);
 $theme = $_COOKIE['mb_theme'] ?? 'system';
 ?>
 <header class="topbar">
-  <button class="iconbtn topbar__menu" data-toggle-nav aria-label="Open navigation"><?= icon('menu', 20) ?></button>
-  <button class="iconbtn topbar__collapse" data-toggle-collapse title="Collapse or expand navigation" aria-label="Collapse or expand navigation"><?= icon('menu', 20) ?></button>
+  <button class="iconbtn topbar__nav" data-nav-toggle title="Collapse or expand the menu" aria-label="Collapse or expand the menu"><?= icon('menu', 20) ?></button>
 
   <form class="search" role="search" method="get" action="<?= e(url('/offers')) ?>">
     <?= icon('search', 18) ?>
@@ -15,10 +13,6 @@ $theme = $_COOKIE['mb_theme'] ?? 'system';
   </form>
 
   <div class="topbar__spacer"></div>
-
-  <?php if ($draftCount > 0): ?>
-    <a class="btn btn--secondary btn--sm" href="<?= e(url('/publish')) ?>">Preview changes</a>
-  <?php endif; ?>
 
   <button class="iconbtn" data-theme-toggle title="Theme (light / dark / system)" aria-label="Toggle theme">
     <?= icon($theme === 'dark' ? 'moon' : 'sun', 18) ?>

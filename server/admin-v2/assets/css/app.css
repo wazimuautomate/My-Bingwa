@@ -177,7 +177,7 @@ a:hover { text-decoration: underline; }
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--chrome-border);
 }
-.topbar__menu { display: none; }
+.topbar__nav { display: grid; }
 .search {
   flex: 1 1 auto; max-width: 420px;
   display: flex; align-items: center; gap: 8px;
@@ -432,9 +432,7 @@ table.data th, table.data td { text-align: center; }
   .sidebar { position: fixed; left: 0; top: 0; width: var(--sidebar-w); transform: translateX(-100%); transition: transform var(--t-slow); }
   .app.nav-open .sidebar { transform: none; }
   .app.nav-open .scrim { display: block; position: fixed; inset: 0; background: rgba(10,37,64,.4); z-index: 35; }
-  .topbar__menu { display: grid; }
-  /* Desktop collapse toggle is meaningless off-canvas; the mobile menu button takes over. */
-  .topbar__collapse { display: none; }
+  /* The single nav toggle stays visible off-canvas: here it opens the sliding drawer. */
   .search { display: none; }
   .content { padding: 16px; }
   .page-head h1 { font-size: 22px; }

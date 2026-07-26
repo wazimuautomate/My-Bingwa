@@ -6,11 +6,24 @@
   var root = document.documentElement;
   var app = document.querySelector('.app');
 
-  /* ---- Mobile navigation drawer ---- */
   function bind(sel, evt, fn) {
     document.querySelectorAll(sel).forEach(function (el) { el.addEventListener(evt, fn); });
   }
-  bind('[data-toggle-nav]', 'click', function () { if (app) app.classList.toggle('nav-open'); });
+
+  /* ---- Sidebar toggle ----
+     One header button (data-nav-toggle) drives both layouts: on desktop it collapses
+     or expands the icon rail and persists the choice in the mb_nav cookie; on the mobile
+     off-canvas layout it opens/closes the sliding drawer. The scrim closes the drawer. */
+  var navDesktop = window.matchMedia('(min-width: 901px)');
+  bind('[data-nav-toggle]', 'click', function () {
+    if (!app) return;
+    if (navDesktop.matches) {
+      var collapsed = app.classList.toggle('nav-collapsed');
+      setCookie('mb_nav', collapsed ? 'collapsed' : 'expanded');
+    } else {
+      app.classList.toggle('nav-open');
+    }
+  });
   bind('.scrim', 'click', function () { if (app) app.classList.remove('nav-open'); });
 
   /* ---- Theme: cycle light -> dark -> system, persisted in a cookie ---- */
@@ -144,12 +157,5 @@
       document.querySelectorAll('.modal-backdrop.open').forEach(function (m) { m.classList.remove('open'); });
       closeDropdowns();
     }
-  });
-
-  /* ---- Desktop sidebar collapse (persisted in the mb_nav cookie) ---- */
-  bind('[data-toggle-collapse]', 'click', function () {
-    if (!app) return;
-    var collapsed = app.classList.toggle('nav-collapsed');
-    setCookie('mb_nav', collapsed ? 'collapsed' : 'expanded');
   });
 })();

@@ -6,7 +6,6 @@ import com.example.core.model.OfferDailyState
 import com.example.core.model.OfferItem
 import com.example.core.model.PaymentStatus
 import com.example.core.model.Promotion
-import com.example.core.model.PromotionKind
 import com.example.core.model.PurchasePolicy
 import com.example.core.model.PurchaseRecord
 import com.example.data.fake.OfferFilterState
@@ -283,11 +282,21 @@ fun suggestSimilar(
 // ---------------------------------------------------------------------------
 
 /**
- * Pick the promotions shown on the Home billboard. We keep only active slides
- * whose linked offer still exists, then rank so the seller's biggest offers
+ * Pick the promotions shown on the Home billboard. We keep every slide whose
+ * time window is currently active, then rank so the seller's biggest offers
  * (higher price / longer validity, encoded via [Promotion.priorityWeight]) and
  * announcements lead, and finally break ties with a caller-supplied [seed] so
  * the surface feels freshly shuffled per session without ever auto-rotating.
+ *
+ * A slide is intentionally NOT hidden just because its [Promotion.linkedOfferId]
+ * is absent from the current catalogue. Admin-published (synced) billboards
+ * routinely link to a server offer id that this install's cached catalogue may
+ * not carry yet (a catalogue sync that hasn't run, or a different id scheme), so
+ * gating visibility on the linked offer silently swallowed every synced OFFER
+ * billboard — the reported "billboards never show" bug. Visibility now depends
+ * only on the active window; an unresolvable OFFER CTA degrades gracefully to
+ * "browse offers" in the action handler (see MainActivity.onPromotionAction).
+ * A blank/uncapped window (start 0, end Long.MAX_VALUE) is always active.
  */
 fun selectPromotions(
     pool: List<Promotion>,
@@ -296,11 +305,7 @@ fun selectPromotions(
     seed: Long,
     max: Int = 5
 ): List<Promotion> {
-    val offerIds = offers.map { it.id }.toSet()
-    val active = pool.filter { promo ->
-        promo.isActive(nowMillis) &&
-            (promo.kind != PromotionKind.OFFER || promo.linkedOfferId in offerIds)
-    }
+    val active = pool.filter { promo -> promo.isActive(nowMillis) }
     if (active.isEmpty()) return emptyList()
 
     // Deterministic per-slide jitter from the seed keeps ordering stable within a

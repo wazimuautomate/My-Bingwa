@@ -9,6 +9,28 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
+ * Where an available update is delivered from.
+ *
+ * - [GITHUB] the direct/sideload channel: the app downloads the signed APK named
+ *   in the manifest and launches the system package installer (see
+ *   [AppUpdateInstaller]).
+ * - [PLAY]   the Google Play channel: update actions open the Play listing so the
+ *   store performs the update natively.
+ *
+ * Read defensively from the manifest's optional `updateSource` string — anything
+ * other than "play" (missing, blank, unknown) means [GITHUB].
+ */
+enum class UpdateSource {
+    GITHUB,
+    PLAY;
+
+    companion object {
+        fun from(raw: String?): UpdateSource =
+            if (raw?.trim()?.lowercase() == "play") PLAY else GITHUB
+    }
+}
+
+/**
  * In-app update check for the DIRECT (GitHub / sideload) distribution channel.
  *
  * Google Play distribution updates itself natively, so this check only matters
@@ -16,18 +38,33 @@ import java.util.concurrent.TimeUnit
  * manifest ([BuildConfig.UPDATE_MANIFEST_URL], the repo's `update.json`) and
  * compares its `latestVersionCode` against this build's [BuildConfig.VERSION_CODE].
  *
- * It never downloads or installs anything itself — on an available update the UI
- * simply opens the published APK URL in the browser, so the user consciously
- * installs a build signed with the same permanent identity as their current one.
+ * On an available update the UI either downloads + installs the signed APK in-app
+ * (github source — [AppUpdateInstaller], same permanent signing identity so the
+ * OS performs an in-place update that preserves all local data) or opens the Play
+ * listing (play source).
  */
 sealed interface UpdateResult {
     /** A newer direct-channel build is published. */
     data class Available(
         val versionName: String,
+        /** The published build's versionCode; names the downloaded APK file. */
+        val versionCode: Int,
         val apkUrl: String,
+        /** Lower-case hex SHA-256 of the published APK, or blank when not provided. */
+        val apkSha256: String,
         val notes: String,
         val mandatory: Boolean,
-    ) : UpdateResult
+        /** Builds below this versionCode must update before continuing. */
+        val minSupportedVersionCode: Int,
+        val source: UpdateSource,
+    ) : UpdateResult {
+        /**
+         * True when the customer cannot keep using this build: the manifest marked
+         * the update [mandatory], or this build is older than [minSupportedVersionCode].
+         */
+        fun isRequired(currentVersionCode: Int = BuildConfig.VERSION_CODE): Boolean =
+            mandatory || currentVersionCode < minSupportedVersionCode
+    }
 
     /** This build is the latest published direct-channel build. */
     data object UpToDate : UpdateResult
@@ -65,9 +102,13 @@ object UpdateChecker {
                 if (latestCode > currentVersionCode) {
                     UpdateResult.Available(
                         versionName = json.optString("latestVersionName", ""),
+                        versionCode = latestCode,
                         apkUrl = json.optString("apkUrl", ""),
+                        apkSha256 = json.optString("apkSha256", ""),
                         notes = json.optString("releaseNotes", ""),
                         mandatory = json.optBoolean("mandatory", false),
+                        minSupportedVersionCode = json.optInt("minSupportedVersionCode", 0),
+                        source = UpdateSource.from(json.optString("updateSource", "github")),
                     )
                 } else {
                     UpdateResult.UpToDate

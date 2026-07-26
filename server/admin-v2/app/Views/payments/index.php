@@ -43,11 +43,11 @@ $payLabels = [
         <?php foreach ($rows as $p): $st = PaymentRepository::displayState($p['status']); ?>
           <tr>
             <td class="muted nowrap"><?= e(fmt_nairobi($p['created_at'], 'd M H:i')) ?></td>
-            <td class="mono"><?= e(str_mask_phone($p['payer'])) ?></td>
-            <td class="mono"><?= e(str_mask_phone($p['recipient'])) ?></td>
+            <td class="mono"><?= e($p['payer'] ?: '—') ?></td>
+            <td class="mono"><?= e(($p['recipient'] ?: $p['payer']) ?: '—') ?></td>
             <td><?= e($p['offer_id']) ?></td>
             <td class="nowrap"><?= e(ksh($p['amount'])) ?></td>
-            <td class="mono small"><?= e(str_mask_receipt($p['mpesa_receipt'])) ?></td>
+            <td class="mono small"><?= e($p['mpesa_receipt'] ?: '—') ?></td>
             <td><span class="status <?= $st['class'] ?>"><?= e($st['label']) ?></span></td>
             <td>
               <div class="dropdown">
@@ -55,6 +55,10 @@ $payLabels = [
                 <div class="dropdown-menu dropdown-menu--fixed" id="pay-menu-<?= (int) $p['id'] ?>">
                   <button type="button" data-modal-open="#pay-modal-<?= (int) $p['id'] ?>"><?= icon('eye', 18) ?> View details</button>
                   <a href="<?= e(url('/payments/' . (int) $p['id'])) ?>"><?= icon('external', 18) ?> Open full page</a>
+                  <?php if (!empty($canDelete)): ?>
+                    <div class="divider"></div>
+                    <form method="post" action="<?= e(url('/payments/' . (int) $p['id'] . '/delete')) ?>" data-confirm="Delete this payment record? This cannot be undone."><?= App\Core\Csrf::field() ?><button type="submit" class="danger"><?= icon('trash', 18) ?> Delete record</button></form>
+                  <?php endif; ?>
                 </div>
               </div>
             </td>

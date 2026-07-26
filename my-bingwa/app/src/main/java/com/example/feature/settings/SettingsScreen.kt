@@ -1,7 +1,6 @@
 package com.example.feature.settings
 
 import android.content.Intent
-import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,7 +38,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -65,6 +63,7 @@ import com.example.BuildConfig
 import com.example.core.model.AppThemeSetting
 import com.example.core.model.UserProfile
 import com.example.core.update.UpdateChecker
+import com.example.core.update.UpdateInstallControls
 import com.example.core.update.UpdateResult
 import com.example.core.ui.LabelledPhoneField
 import com.example.core.ui.LabelledTextField
@@ -89,7 +88,12 @@ fun SettingsScreen(
     onEnablePushNotifications: () -> Unit = {},
     // Triggered after the rationale when the customer opts into Safaricom SMS
     // bundle/balance detection. MainActivity owns the RECEIVE_SMS request.
-    onEnableSmsDetection: () -> Unit = {}
+    onEnableSmsDetection: () -> Unit = {},
+    // An update the app already discovered at start (MainActivity's check). When
+    // present the install action shows immediately, so a notification/billboard
+    // deep-link into Settings lands on a usable "Update" button without the user
+    // having to tap "Check for updates" first.
+    knownUpdate: UpdateResult.Available? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -97,9 +101,9 @@ fun SettingsScreen(
     var showClearDataDialog by remember { mutableStateOf(false) }
     var checkingUpdates by remember { mutableStateOf(false) }
     var updateMessage by remember { mutableStateOf<String?>(null) }
-    // Set when a newer direct-channel build is published, so a "Download update"
-    // action can open the published APK URL. Play users update via the store.
-    var updateApkUrl by remember { mutableStateOf<String?>(null) }
+    // Set when a manual "Check for updates" finds a newer direct-channel build.
+    // Combined with [knownUpdate] to drive the in-app install / Play redirect.
+    var manualUpdate by remember { mutableStateOf<UpdateResult.Available?>(null) }
 
     // Notification / SMS preference state (declared here so the rationale dialogs
     // near the bottom of this composable can also read and update them).
@@ -362,11 +366,11 @@ fun SettingsScreen(
                         if (checkingUpdates) return@Button
                         checkingUpdates = true
                         updateMessage = null
-                        updateApkUrl = null
+                        manualUpdate = null
                         scope.launch {
                             updateMessage = when (val result = UpdateChecker.check()) {
                                 is UpdateResult.Available -> {
-                                    updateApkUrl = result.apkUrl.takeIf { it.isNotBlank() }
+                                    manualUpdate = result
                                     val name = result.versionName.takeIf { it.isNotBlank() }
                                     if (name != null) "Version $name is available." else "A new version is available."
                                 }
@@ -396,21 +400,13 @@ fun SettingsScreen(
                     )
                 }
 
-                // Shown only for the direct (GitHub) channel when a newer build is
-                // published; opens the signed APK so the user installs it themselves.
-                updateApkUrl?.let { apkUrl ->
+                // In-app install of the signed update (no browser). Shown when either a
+                // manual check or the app-start check (knownUpdate) found a newer build.
+                // Downloads + verifies + launches the system installer (github), or opens
+                // the Play listing (play). An in-place update preserves all local data.
+                (manualUpdate ?: knownUpdate)?.let { update ->
                     Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = {
-                            runCatching {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)))
-                            }
-                        },
-                        shape = FieldButtonShape,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Download update", fontWeight = FontWeight.Bold)
-                    }
+                    UpdateInstallControls(update = update)
                 }
             }
         }

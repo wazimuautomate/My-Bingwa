@@ -22,6 +22,17 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
 
     <!--
+      REQUEST_INSTALL_PACKAGES lets the direct (GitHub/sideload) channel install a
+      newer, same-signing-identity APK in-app via the system package installer
+      (core/update/AppUpdateInstaller.kt), instead of dumping the user into a
+      browser. On Android 8+ the user still grants a per-app "install unknown apps"
+      permission first. Google Play distribution updates itself natively, so this is
+      harmless there. An in-place update preserves all local data (same applicationId
+      + signing key + higher versionCode).
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!--
       RECEIVE_SMS implies telephony hardware; declare it optional so the app
       still installs on non-telephony devices (tablets / ChromeOS) and to satisfy
       lint (PermissionImpliesUnsupportedChromeOsHardware). SMS detection simply
@@ -53,6 +64,24 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Serves the downloaded update APK to the system package installer via a
+          content:// URI (file:// URIs are blocked on Android 7+). Authority is
+          ${applicationId}.updateprovider so debug (.debug suffix) and release keep
+          distinct authorities and can coexist. Not exported; access is granted
+          per-intent with FLAG_GRANT_READ_URI_PERMISSION. @xml/file_paths exposes
+          only the private updates/ directory.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updateprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!--
           Listens for incoming Safaricom SMS to detect bundle delivery and

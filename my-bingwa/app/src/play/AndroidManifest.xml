@@ -19,6 +19,16 @@
         android:name="android.permission.RECEIVE_SMS"
         tools:node="remove" />
 
+    <!--
+      The in-app APK installer is a direct-channel (GitHub/sideload) feature only.
+      Google Play distributes updates natively (updateSource "play" opens the store
+      listing), so the Play build ships NO REQUEST_INSTALL_PACKAGES permission,
+      avoiding an unnecessary sensitive-permission declaration in the Play console.
+    -->
+    <uses-permission
+        android:name="android.permission.REQUEST_INSTALL_PACKAGES"
+        tools:node="remove" />
+
     <application>
         <receiver
             android:name=".notifications.SmsDeliveryReceiver"

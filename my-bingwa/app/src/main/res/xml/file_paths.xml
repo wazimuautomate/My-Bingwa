@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider roots for the in-app updater (core/update/AppUpdateInstaller.kt).
+  Only the private "updates/" directory is exposed, and only for the downloaded
+  APK. External-files is used when available; internal files is the fallback.
+-->
+<paths>
+    <external-files-path
+        name="update_apk_external"
+        path="updates/" />
+    <files-path
+        name="update_apk_internal"
+        path="updates/" />
+</paths>

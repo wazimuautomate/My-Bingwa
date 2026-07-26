@@ -232,11 +232,16 @@ final class PublishingService
         $r = Database::fetch(
             "SELECT * FROM " . Database::table('app_versions') . " WHERE status = 'active' ORDER BY latest_version_code DESC LIMIT 1"
         ) ?: [];
+        $source = $r['update_source'] ?? 'github';
+        if (!in_array($source, ['github', 'play'], true)) {
+            $source = 'github';
+        }
         return [
             'latestVersionCode' => (int) ($r['latest_version_code'] ?? 1),
             'latestVersionName' => $r['latest_version_name'] ?? '1.0.0',
             'minSupportedVersionCode' => (int) ($r['min_supported_version_code'] ?? 1),
             'mandatory'         => (int) ($r['mandatory'] ?? 0) === 1,
+            'updateSource'      => $source,
             'playStoreUrl'      => $r['play_store_url'] ?? '',
             'apkUrl'            => $r['apk_url'] ?? '',
             'apkSha256'         => $r['apk_sha256'] ?? '',

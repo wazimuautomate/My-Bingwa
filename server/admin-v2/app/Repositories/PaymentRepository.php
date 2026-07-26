@@ -1,10 +1,12 @@
 <?php
 /**
- * READ-ONLY access to the existing (legacy) `payments` table that the payment
- * endpoints own. Admin V2 never writes payments; it only reports on them. All customer
- * identifiers are masked at the edge. If the table does not exist yet (admin installed
- * before any payment), every method degrades to empty/zero so the UI shows "Not
- * available yet" rather than erroring.
+ * Access to the existing (legacy) `payments` table that the payment endpoints own.
+ * Admin V2 reports on payments and, for reconciliation, exposes the full customer
+ * identifiers (payer, recipient, M-Pesa receipt) unmasked to holders of the payments
+ * permission. The only write it performs is deleting a payment record — a deliberate,
+ * audited capability. If the table does not exist yet (admin installed before any
+ * payment), every read method degrades to empty/zero so the UI shows "Not available
+ * yet" rather than erroring.
  */
 
 namespace App\Repositories;
@@ -60,6 +62,19 @@ final class PaymentRepository
             return null;
         }
         return Database::fetch('SELECT * FROM payments WHERE id = ? LIMIT 1', [$id]);
+    }
+
+    /**
+     * Delete a payment record from the legacy `payments` table. This is a deliberate,
+     * audited write — Admin V2 otherwise only reads payments. No-ops when the table is
+     * absent; the caller confirms the row exists before calling.
+     */
+    public static function delete(int $id): void
+    {
+        if (!self::available()) {
+            return;
+        }
+        Database::run('DELETE FROM payments WHERE id = ?', [$id]);
     }
 
     private static function buildWhere(array $f): array

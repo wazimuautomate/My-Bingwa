@@ -111,6 +111,7 @@ $router->post('/message-templates/test',      [App\Controllers\TemplatesControll
 $router->get('/payments',            [App\Controllers\PaymentsController::class, 'index']);
 $router->get('/payments/{id}',       [App\Controllers\PaymentsController::class, 'show']);
 $router->get('/payments-export',     [App\Controllers\PaymentsController::class, 'exportCsv']);
+$router->post('/payments/{id}/delete', [App\Controllers\PaymentsController::class, 'delete']);
 
 /* --------------------------------------------------------------- support */
 $router->get('/support',      [App\Controllers\SupportController::class, 'index']);
@@ -122,6 +123,7 @@ $router->post('/app-config/save',[App\Controllers\AppConfigController::class, 's
 
 /* --------------------------------------------------------------- versions */
 $router->get('/versions',           [App\Controllers\VersionsController::class, 'index']);
+$router->get('/versions/fetch',     [App\Controllers\VersionsController::class, 'fetchLatest']);
 $router->get('/versions/new',       [App\Controllers\VersionsController::class, 'create']);
 $router->get('/versions/{id}/edit', [App\Controllers\VersionsController::class, 'edit']);
 $router->post('/versions/save',     [App\Controllers\VersionsController::class, 'save']);
@@ -141,6 +143,7 @@ $router->post('/settings/admins/save',     [App\Controllers\SettingsController::
 $router->post('/settings/admins/{id}/disable', [App\Controllers\SettingsController::class, 'disableAdmin']);
 
 /* --------------------------------------------------------------- publishing */
+$router->get('/preview',              [App\Controllers\PreviewController::class, 'index']);
 $router->get('/publish',              [App\Controllers\PublishController::class, 'review']);
 $router->post('/publish/execute',     [App\Controllers\PublishController::class, 'execute']);
 $router->get('/releases',             [App\Controllers\PublishController::class, 'releases']);
