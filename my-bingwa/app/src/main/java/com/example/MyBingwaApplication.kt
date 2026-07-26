@@ -1,6 +1,7 @@
 package com.example
 
 import android.app.Application
+import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -37,7 +38,12 @@ class MyBingwaApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        scheduleCatalogueSync()
+        // Best-effort: scheduling the periodic sync must NEVER crash startup. It can throw
+        // when WorkManager is not initialised for the process — e.g. under Robolectric unit
+        // tests (no androidx.startup initializer), or a rare OEM WorkManager fault. The app
+        // still runs and syncs on the next foreground refresh; we just skip the background job.
+        runCatching { scheduleCatalogueSync() }
+            .onFailure { Log.w("MyBingwaApplication", "Background sync scheduling skipped: ${it.message}") }
     }
 
     private fun buildRepository(): BingwaRepository {
