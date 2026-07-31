@@ -88,6 +88,9 @@ class NotificationComposerTest {
     @Test
     fun `the previous template is never chosen again immediately`() {
         for (category in NotificationCategory.values()) {
+            // AFTERNOON/LATE_NIGHT ship no copy on purpose — a bare greeting is not
+            // worth a notification — so there is nothing to rotate.
+            if (category in DefaultNotificationTemplates.SILENT_CATEGORIES) continue
             for (seed in 0L until 25L) {
                 val first = NotificationComposer.compose(
                     category, personalization(), DefaultNotificationTemplates.SEED, seed, null
@@ -244,6 +247,8 @@ class NotificationComposerTest {
     @Test
     fun `no seed template leaves a placeholder or bad spacing for any category`() {
         for (category in NotificationCategory.values()) {
+            // Silent by design; there is no copy to inspect.
+            if (category in DefaultNotificationTemplates.SILENT_CATEGORIES) continue
             for (name in listOf("James", "")) {
                 val composed = NotificationComposer.compose(
                     category,
