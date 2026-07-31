@@ -210,3 +210,125 @@ test('an untouched snapshot moves no resource version at all', function () {
         eq($row['changed'], false, "resource {$key} should not be marked changed");
     }
 });
+
+/* ---------------------------------------------------------------------------
+ * Publish -> re-read -> diff must be EMPTY.
+ *
+ * This is the regression guard for the bug the owner reported as "Preview shows
+ * 41 pending changes and I changed nothing". A publish stores the snapshot as
+ * canonical JSON and every later comparison decodes it again. If ANY value
+ * survives that round trip in a different shape - an empty map becoming an empty
+ * list, an int arriving as a string, a bool as 0/1 - the diff would report a
+ * change for ever and pressing Publish would never clear it.
+ * ------------------------------------------------------------------------- */
+
+/** A snapshot shaped exactly like PublishingService::buildWorkingSnapshot() output. */
+function richWorkingSnapshot(): array
+{
+    return [
+        'schemaVersion' => 1,
+        'offers' => [[
+            'id' => 'data_6', 'category' => 'DATA', 'name' => '2GB', 'price' => 110,
+            'validity' => '24 Hrs', 'band' => 'Daily', 'dailyRule' => 'MULTIPLE_PER_DAY',
+            'policy' => 'MULTIPLE_PER_DAY', 'maxPerDay' => null, 'commercialTag' => '',
+            'offlineEligible' => true, 'restrictions' => '',
+        ]],
+        'categories' => [[
+            'id' => 'DATA', 'label' => 'Data', 'description' => 'Data bundles.',
+            'accent' => 'info', 'sortOrder' => 10,
+        ]],
+        'billboards' => [[
+            'id' => 3, 'kind' => 'offer', 'priority' => 5, 'displayOrder' => 0,
+            'linkedOfferId' => 'data_6', 'tag' => 'BEST VALUE', 'headline' => '2GB for KSh 110',
+            'body' => 'Stay connected.', 'ctaLabel' => 'Buy now', 'ctaDestination' => '',
+            'mediaType' => 'none', 'imageUrl' => '', 'thumbUrl' => '', 'altText' => '',
+            'targetAction' => 'offer', 'clickUrl' => '', 'internalAction' => '',
+            'targetCategory' => '', 'audienceRule' => 'all', 'frequencyCap' => 0,
+            'startsAt' => null, 'endsAt' => null,
+        ]],
+        'notifications' => [[
+            'id' => 1, 'name' => 'Offline nudge', 'category' => 'OFFLINE', 'trigger' => 'offline',
+            'triggerEvent' => '', 'priority' => 'normal',
+            'variations' => [['title' => 'Offline', 'body' => 'Looks like you are offline.']],
+            'deepLink' => '', 'linkedOfferId' => null, 'startsOn' => null, 'endsOn' => null,
+            'daysOfWeek' => [], 'timeStart' => '', 'timeEnd' => '', 'cooldownMinutes' => 720,
+            'frequencyCap' => 1, 'respectQuietHours' => true, 'suppressRecentPurchase' => true,
+            'expiresAt' => null,
+        ]],
+        'smsRules' => [
+            [
+                // captures present -> a real map
+                'id' => 'saf_data', 'name' => 'Data received', 'description' => '',
+                'senderId' => 'Safaricom', 'patternType' => 'regex', 'pattern' => 'received',
+                'caseSensitive' => false, 'event' => 'DATA_RECEIVED', 'secondaryEvents' => [],
+                'category' => 'DATA', 'bundleType' => '', 'captures' => ['amount' => 1],
+                'correlationWindowMinutes' => 30, 'priority' => 220,
+            ],
+            [
+                // captures ABSENT -> stdClass, which json_decode(assoc) turns into []
+                'id' => 'saf_none', 'name' => 'No captures', 'description' => '',
+                'senderId' => '', 'patternType' => 'contains', 'pattern' => 'gift',
+                'caseSensitive' => false, 'event' => 'GIFT_RECEIVED', 'secondaryEvents' => [],
+                'category' => '', 'bundleType' => '', 'captures' => new \stdClass(),
+                'correlationWindowMinutes' => 0, 'priority' => 150,
+            ],
+        ],
+        'templates' => ['version' => 7, 'delivery' => [], 'lowBalance' => []],
+        'support' => ['tillNumber' => '4063396', 'paybillNumber' => '', 'supportNumber' => '',
+                      'supportWhatsapp' => '', 'offlineSelfInstructions' => 'Buy Goods.',
+                      'offlineOtherInstructions' => 'Pay Bill.', 'supportBanner' => '', 'workingHours' => ''],
+        'appConfig' => ['maintenanceMode' => false, 'maintenanceMessage' => '',
+                        'syncIntervalMinutes' => 360, 'generalSupportMessage' => ''],
+        'featureFlags' => ['offline_purchase' => true, 'billboards' => true, 'sms_rules' => false],
+        'version' => ['latestVersionCode' => 3, 'latestVersionName' => '1.0.2',
+                      'minSupportedVersionCode' => 1, 'mandatory' => false, 'updateSource' => 'github',
+                      'playStoreUrl' => '', 'apkUrl' => 'https://x/y.apk', 'apkSha256' => '',
+                      'rolloutPercent' => 100, 'releaseNotes' => ''],
+    ];
+}
+
+test('a published snapshot re-read from JSON diffs clean against itself', function () {
+    $working = richWorkingSnapshot();
+
+    // Exactly what publish() stores...
+    $stored = \App\Core\Snapshot::canonical($working);
+    // ...and exactly how currentSnapshot() reads it back.
+    $published = json_decode($stored, true);
+    ok(is_array($published), 'stored snapshot must decode to an array');
+
+    $items = \App\Services\PublishingService::diffSnapshots($published, $working);
+    if ($items !== []) {
+        $names = [];
+        foreach ($items as $it) {
+            $fields = [];
+            foreach (($it['fields'] ?? []) as $f) {
+                $fields[] = (string) ($f['field'] ?? '?');
+            }
+            $names[] = $it['module'] . '/' . $it['entity_id'] . ' [' . implode(',', $fields) . ']';
+        }
+        throw new Exception('publish would never clear; still pending: ' . implode('; ', $names));
+    }
+    eq($items, []);
+});
+
+test('re-publishing an unchanged snapshot moves no resource version', function () {
+    $working = richWorkingSnapshot();
+    $published = json_decode(\App\Core\Snapshot::canonical($working), true);
+    $first = \App\Services\ResourceVersions::compute($published, [], 9);
+    $second = \App\Services\ResourceVersions::compute($working, $first, 10);
+    foreach ($second as $key => $row) {
+        eq($row['changed'], false, "resource {$key} changed across a publish round trip");
+        eq($row['version'], 9, "resource {$key} version moved without content changing");
+    }
+});
+
+test('a genuinely edited price is still detected after a round trip', function () {
+    $working = richWorkingSnapshot();
+    $published = json_decode(\App\Core\Snapshot::canonical($working), true);
+    $working['offers'][0]['price'] = 120;
+    $items = \App\Services\PublishingService::diffSnapshots($published, $working);
+    eq(count($items), 1, 'exactly one entity should be reported');
+    eq($items[0]['module'], 'offers');
+    eq(count($items[0]['fields']), 1, 'exactly one field should be reported');
+    eq($items[0]['fields'][0]['field'], 'price');
+});

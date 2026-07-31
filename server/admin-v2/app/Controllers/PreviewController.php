@@ -63,9 +63,42 @@ final class PreviewController extends Controller
             'groups'       => $groups,
             'moduleFilter' => $moduleFilter,
             'resources'    => self::resourceStrip($snapshot, $summary),
+            'firstPublish' => self::firstPublishNotice($snapshot, $summary),
             'errors'       => $check['errors'],
             'warnings'     => $check['warnings'],
         ]);
+    }
+
+    /**
+     * "I changed nothing, so why are there changes?"
+     *
+     * After a server upgrade the working snapshot carries whole sections the last published
+     * release never had — SMS rules, categories, feature flags. Those are real, publishable
+     * differences, not phantom ones, but to an operator who has edited nothing they look
+     * like a fault. Detect that case so the page can say plainly what is happening and that
+     * one publish clears it.
+     *
+     * @return array{isUpgrade:bool, modules:array<int,array{key:string,label:string,count:int}>, count:int}
+     */
+    private static function firstPublishNotice(array $snapshot, array $summary): array
+    {
+        $published = PublishingService::currentSnapshot();
+        $modules = [];
+        $count = 0;
+        if (is_array($published)) {
+            foreach ($summary['byModule'] as $key => $group) {
+                // A section the live release simply does not contain yet.
+                if (!array_key_exists($key, $published)) {
+                    $modules[] = [
+                        'key'   => $key,
+                        'label' => ChangeDetector::moduleLabel($key),
+                        'count' => (int) ($group['count'] ?? 0),
+                    ];
+                    $count += (int) ($group['count'] ?? 0);
+                }
+            }
+        }
+        return ['isUpgrade' => $modules !== [], 'modules' => $modules, 'count' => $count];
     }
 
     /**
