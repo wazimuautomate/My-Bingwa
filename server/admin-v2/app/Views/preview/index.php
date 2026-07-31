@@ -53,6 +53,29 @@ foreach ($groups as $g) { $totalInView += (int) $g['count']; }
   </div>
 </div>
 
+<?php /* After a server upgrade, whole sections exist that the live release never had. Those
+         are genuine changes, but an operator who edited nothing needs telling why. */ ?>
+<?php if (!empty($firstPublish['isUpgrade'])): ?>
+  <div class="alert info mb">
+    <div>
+      <b>First publish since the server was upgraded.</b>
+      <p style="margin:6px 0 0">
+        You have not changed anything &mdash; these are new capabilities the app has never
+        received before, so they count as changes until you publish them once.
+      </p>
+      <ul style="margin:6px 0 0 16px;text-align:left">
+        <?php foreach ($firstPublish['modules'] as $m): ?>
+          <li><b><?= e($m['label']) ?></b> &mdash; <?= (int) $m['count'] ?> new
+            <?= (int) $m['count'] === 1 ? 'item' : 'items' ?></li>
+        <?php endforeach; ?>
+      </ul>
+      <p style="margin:6px 0 0">
+        Publish once and this page goes back to listing only what you actually edit.
+      </p>
+    </div>
+  </div>
+<?php endif; ?>
+
 <?php if ($hasErrors): ?>
   <div class="alert error mb"><div><b>Publishing is blocked.</b><ul style="margin:6px 0 0 16px;text-align:left">
     <?php foreach ($errors as $er): ?><li><?= e($er) ?></li><?php endforeach; ?>

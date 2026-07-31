@@ -1,8 +1,15 @@
 <?php
 /**
- * Dashboard: a small, honest overview — active offers, scheduled notifications,
- * revenue and successful payments (last 30 days), when the app data was last
- * published, and the latest payments. No charts, telemetry or draft panels.
+ * Dashboard: what the shop actually sold.
+ *
+ * Money in (today and all time), which category sold today, whether customers
+ * bought for themselves or for someone else, and how big the catalogue is —
+ * then the bundles that performed and the last two weeks of trade.
+ *
+ * Every payment figure comes from PaymentRepository, which reads the seller's
+ * own payment records and already handles the "payments table does not exist
+ * yet" case by returning zeros. Nothing here profiles a customer, and the
+ * dashboard never shows a full phone number.
  */
 
 namespace App\Controllers;
@@ -19,9 +26,14 @@ final class DashboardController extends Controller
     {
         $this->guard('dashboard.view');
 
-        $tz = new \DateTimeZone('Africa/Nairobi');
-        $to = (new \DateTimeImmutable('now', $tz))->format('Y-m-d');
-        $from = (new \DateTimeImmutable('-30 day', $tz))->format('Y-m-d');
+        // Window pairs are produced by the repository in the DATABASE clock and
+        // are only ever passed back to it. The Y-m-d dates below are Nairobi
+        // dates, used for the payments page's own from/to filters.
+        [$dayFrom, $dayTo] = PaymentRepository::dayWindow();
+        [$monthFrom, $monthTo] = PaymentRepository::daysWindow(30);
+
+        $today = new \DateTimeImmutable('today', new \DateTimeZone('Africa/Nairobi'));
+        $offersTable = Database::table('offers');
 
         $this->view('dashboard/index', [
             'activeNav'  => 'dashboard',
@@ -29,14 +41,27 @@ final class DashboardController extends Controller
             'greeting'   => $this->greeting(),
             'firstName'  => explode(' ', trim((string) (Auth::user()['name'] ?? 'there')))[0],
             'paymentsAvailable' => PaymentRepository::available(),
-            'stats' => [
-                'activeOffers' => (int) (Database::scalar("SELECT COUNT(*) FROM " . Database::table('offers') . " WHERE status='active'") ?? 0),
-                'scheduledNotifications' => (int) (Database::scalar(
-                    "SELECT COUNT(*) FROM " . Database::table('notification_campaigns') . " WHERE status='scheduled' AND (scheduled_at IS NULL OR scheduled_at >= UTC_TIMESTAMP())"
-                ) ?? 0),
-                'revenue' => PaymentRepository::revenueBetween($from, $to),
-                'confirmed' => PaymentRepository::confirmedCountBetween($from, $to),
+
+            // Dates for payments-page filters (Africa/Nairobi).
+            'today'  => $today->format('Y-m-d'),
+            'from14' => $today->modify('-13 day')->format('Y-m-d'),
+            'from30' => $today->modify('-29 day')->format('Y-m-d'),
+
+            // The four cards.
+            'revenue'       => PaymentRepository::revenueSummary(),
+            'categoryToday' => PaymentRepository::categoryPerformance(),
+            'buyerAllTime'  => PaymentRepository::buyerTrend(),
+            'buyerToday'    => PaymentRepository::buyerTrend($dayFrom, $dayTo),
+            'offerCounts'   => [
+                'active' => (int) (Database::scalar("SELECT COUNT(*) FROM {$offersTable} WHERE status='active'") ?? 0),
+                'total'  => (int) (Database::scalar("SELECT COUNT(*) FROM {$offersTable}") ?? 0),
             ],
+
+            // Performance section.
+            'topOffers' => PaymentRepository::offerPerformance($monthFrom, $monthTo, 10),
+            'status30'  => PaymentRepository::statusBreakdown($monthFrom, $monthTo),
+            'series'    => PaymentRepository::dailySeries(14),
+
             'latestPayments' => PaymentRepository::latest(6),
         ]);
     }
@@ -56,7 +81,8 @@ final class DashboardController extends Controller
         Csv::stream('mybingwa-payments-summary.csv',
             ['date', 'offer', 'amount', 'status'],
             array_map(fn($r) => [
-                fmt_nairobi($r['created_at'], 'Y-m-d H:i'),
+                // Payments carry the DATABASE clock, not UTC — see nairobiTime().
+                PaymentRepository::nairobiTime($r['created_at'], 'Y-m-d H:i'),
                 $r['offer_id'], $r['amount'],
                 PaymentRepository::displayState($r['status'])['label'],
             ], $rows)
