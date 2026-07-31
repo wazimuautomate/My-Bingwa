@@ -1,5 +1,6 @@
 package com.example.core.update
 
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -58,6 +59,40 @@ class UpdateLogicTest {
     fun `isRequired false for a normal optional update`() {
         assertFalse(available(mandatory = false, minSupported = 2).isRequired(currentVersionCode = 2))
         assertFalse(available(mandatory = false, minSupported = 2).isRequired(currentVersionCode = 10))
+    }
+
+    // --- updater gating (Feature 7) -----------------------------------------
+
+    /**
+     * With the GitHub updater compiled out (the `play` release flavour) the check
+     * must be a cheap, silent no-op: no network call at all, and the ordinary
+     * "nothing to do" result every caller already handles. The flag is injected
+     * because `BuildConfig.GITHUB_UPDATER_ENABLED` is fixed for the test variant.
+     */
+    @Test
+    fun `a disabled updater reports no update and never calls the network`() = runTest {
+        val result = UpdateChecker.check(
+            currentVersionCode = 1,
+            // Would be a certain failure if it were ever fetched.
+            manifestUrl = "https://127.0.0.1:9/never-requested.json",
+            updaterEnabled = false,
+        )
+        assertEquals(UpdateResult.UpToDate, result)
+    }
+
+    /**
+     * The GitHub implementation is only gated, never deleted: with the flag on,
+     * the check really runs (here it fails on an unusable url, which proves the
+     * network path was entered rather than short-circuited).
+     */
+    @Test
+    fun `an enabled updater still runs the github check`() = runTest {
+        val result = UpdateChecker.check(
+            currentVersionCode = 1,
+            manifestUrl = "not-a-usable-url",
+            updaterEnabled = true,
+        )
+        assertTrue(result is UpdateResult.Error)
     }
 
     // --- sha256Hex ----------------------------------------------------------

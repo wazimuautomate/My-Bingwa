@@ -11,18 +11,17 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -34,12 +33,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -47,8 +50,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.ImageLoader
+import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import com.example.core.media.BillboardImageLoader
 import com.example.core.model.Promotion
 import com.example.core.model.PromotionAccent
+import com.example.core.model.PromotionClickAction
 import com.example.core.model.PromotionKind
 import com.example.ui.theme.FieldButtonShape
 import com.example.ui.theme.InfoActionBlue
@@ -65,17 +73,31 @@ import com.example.ui.theme.TagShape
  *
  * Design rules honoured here:
  * - No gradients / Brush: every slide is a single solid brand colour
- *   ([slidePalette]). design.md §7.6 forbids gradients outright.
+ *   ([slidePalette]) or a photograph under a FLAT translucent scrim. design.md
+ *   §7.6 forbids gradients outright, including as an image scrim.
  * - No auto-rotation: swiping is manual only. design.md forbids auto-rotating
  *   carousels, so there is no timer / LaunchedEffect that changes pages.
- * - Reduced motion: the CTA "breathing" pulse is suppressed when
- *   [reducedMotion] is true; the per-selection dot transition is a short,
- *   allowed state change.
+ * - Reduced motion: the CTA "breathing" pulse and the media entrance fade are
+ *   suppressed when [reducedMotion] is true (the end state is shown
+ *   immediately); the per-selection dot transition is a short, allowed state
+ *   change.
  * - Contrast: orange slides never place white text on orange — they use navy
  *   content and a navy CTA. The media palette is intentionally constant across
  *   light and dark; a billboard is its own vivid surface.
+ * - One dominant CTA per slide. Tapping the slide body (only when the promotion
+ *   declares a click action) performs the SAME action as the CTA — it is not a
+ *   second, competing call to action.
+ *
+ * Remote artwork (still image or animated GIF) is drawn behind the text using
+ * the shared [BillboardImageLoader], whose on-disk cache means a slide fetched
+ * once keeps rendering with no internet. While the artwork loads — and forever,
+ * if it fails or the device has never been online — the slide shows its solid
+ * brand colour with the same text and CTA: never a blank space, never an error
+ * dialog, never a crash.
  *
  * If [promotions] is empty this emits nothing.
+ *
+ * @param imageLoader override for the shared billboard loader (tests only).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -83,7 +105,8 @@ fun PromotionBillboard(
     promotions: List<Promotion>,
     reducedMotion: Boolean,
     onPromotionAction: (Promotion) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    imageLoader: ImageLoader? = null
 ) {
     // Empty pool: render no layout at all.
     if (promotions.isEmpty()) return
@@ -106,7 +129,8 @@ fun PromotionBillboard(
             PromotionSlide(
                 promotion = promotions[page],
                 reducedMotion = reducedMotion,
-                onPromotionAction = onPromotionAction
+                onPromotionAction = onPromotionAction,
+                imageLoader = imageLoader
             )
         }
 
@@ -129,17 +153,65 @@ fun PromotionBillboard(
     }
 }
 
+/** What the slide's remote artwork is currently doing. */
+private enum class MediaPhase { LOADING, SHOWN, FAILED }
+
 /**
- * A single billboard slide: solid brand background (or a cropped image with a
- * dark scrim), start-aligned tag + headline + subhead, and a breathing CTA.
+ * A single billboard slide: solid brand background (optionally covered by remote
+ * artwork under a flat scrim), start-aligned tag + headline + subhead, and a
+ * breathing CTA.
  */
 @Composable
 private fun PromotionSlide(
     promotion: Promotion,
     reducedMotion: Boolean,
-    onPromotionAction: (Promotion) -> Unit
+    onPromotionAction: (Promotion) -> Unit,
+    imageLoader: ImageLoader?
 ) {
-    val palette = slidePalette(promotion.accent)
+    val context = LocalContext.current
+    val basePalette = slidePalette(promotion.accent)
+
+    // Media state is keyed to the slide identity AND its cache-busting version, so
+    // a republished image restarts cleanly instead of inheriting a stale phase.
+    var phase by remember(promotion.id, promotion.mediaUrl, promotion.mediaVersion) {
+        mutableStateOf(if (promotion.hasRemoteMedia) MediaPhase.LOADING else MediaPhase.FAILED)
+    }
+    val mediaShown = promotion.hasRemoteMedia && phase == MediaPhase.SHOWN
+
+    // Entrance for the artwork: a short fade inside design.md's 220–260ms band.
+    // Reduced motion jumps straight to the end state.
+    val animatedAlpha by animateFloatAsState(
+        targetValue = if (mediaShown) 1f else 0f,
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "billboard_media_alpha"
+    )
+    val mediaAlpha = if (reducedMotion) {
+        if (mediaShown) 1f else 0f
+    } else {
+        animatedAlpha
+    }
+
+    // Over artwork the text sits on a dark scrim, so the content switches to white
+    // for every accent — including orange, whose navy content would disappear.
+    // The CTA keeps its own guaranteed-contrast colours.
+    val palette = if (mediaShown) {
+        basePalette.copy(
+            content = Color.White,
+            chipContainer = Color.White.copy(alpha = 0.20f),
+            chipContent = Color.White
+        )
+    } else {
+        basePalette
+    }
+
+    val hasClickAction = promotion.clickActionOrNone != PromotionClickAction.NONE
+    val clickModifier = if (hasClickAction) {
+        Modifier.clickable(
+            onClickLabel = promotion.ctaLabel.takeIf { it.isNotBlank() } ?: "Open promotion"
+        ) { onPromotionAction(promotion) }
+    } else {
+        Modifier
+    }
 
     Box(
         modifier = Modifier
@@ -148,7 +220,8 @@ private fun PromotionSlide(
             // but lets the slide grow instead of clipping at large font scales.
             .heightIn(min = 190.dp)
             .clip(PromotionStatusShape)
-            .background(palette.background)
+            .background(basePalette.background)
+            .then(clickModifier)
             .testTag("promotion_slide_${promotion.id}")
     ) {
         // Optional bundled artwork sits behind the content. A solid dark scrim
@@ -158,13 +231,52 @@ private fun PromotionSlide(
                 painter = painterResource(promotion.imageRes!!),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.matchParentSize()
             )
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .matchParentSize()
                     .background(Color(0x66000000))
             )
+        }
+
+        // Remote artwork (image or animated GIF). Drawn only once decoded; a
+        // failure simply leaves the solid coloured slide in place, so the customer
+        // always sees a complete, readable billboard.
+        if (promotion.hasRemoteMedia) {
+            val loader = imageLoader ?: remember(context) { BillboardImageLoader.get(context) }
+            val request = remember(context, promotion.mediaUrl, promotion.mediaVersion) {
+                BillboardImageLoader.requestFor(context, promotion.mediaUrl, promotion.mediaVersion)
+            }
+            AsyncImage(
+                model = request,
+                // Real alternative text: the admin's alt text, else the headline.
+                contentDescription = promotion.mediaAltText.takeIf { it.isNotBlank() }
+                    ?: promotion.headline,
+                imageLoader = loader,
+                onState = { state ->
+                    phase = when (state) {
+                        is AsyncImagePainter.State.Success -> MediaPhase.SHOWN
+                        is AsyncImagePainter.State.Error -> MediaPhase.FAILED
+                        else -> MediaPhase.LOADING
+                    }
+                },
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.Center,
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = mediaAlpha }
+                    .testTag("promotion_media_${promotion.id}")
+            )
+            if (mediaShown) {
+                // FLAT translucent scrim from the theme — not a gradient (design.md).
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .graphicsLayer { alpha = mediaAlpha }
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f))
+                )
+            }
         }
 
         // The text and the CTA are real siblings in a Row, so each reserves its
@@ -185,20 +297,22 @@ private fun PromotionSlide(
                 horizontalAlignment = Alignment.Start
             ) {
                 // Tag chip.
-                Surface(
-                    color = palette.chipContainer,
-                    shape = TagShape
-                ) {
-                    Text(
-                        text = promotion.tag,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = palette.chipContent,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
+                if (promotion.tag.isNotBlank()) {
+                    Surface(
+                        color = palette.chipContainer,
+                        shape = TagShape
+                    ) {
+                        Text(
+                            text = promotion.tag,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.chipContent,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
 
                 Text(
                     text = promotion.headline,
@@ -206,7 +320,8 @@ private fun PromotionSlide(
                     fontWeight = FontWeight.Bold,
                     color = palette.content,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("promotion_headline_${promotion.id}")
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))

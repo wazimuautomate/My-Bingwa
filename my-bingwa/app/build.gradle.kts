@@ -71,6 +71,9 @@ android {
     // delivery-detection feature (RECEIVE_SMS), which Google Play restricts.
     create("direct") {
       dimension = "distribution"
+      // The direct channel IS the GitHub channel: sideloaded users have no store
+      // to update them, so the in-app GitHub updater is their only upgrade path.
+      buildConfigField("boolean", "GITHUB_UPDATER_ENABLED", "true")
     }
     // Google Play build. src/play/AndroidManifest.xml removes RECEIVE_SMS and
     // SmsDeliveryReceiver so the Play submission needs no restricted-permission
@@ -78,6 +81,12 @@ android {
     // signing identity as `direct`, so the two channels are update-compatible.
     create("play") {
       dimension = "distribution"
+      // Play distribution updates itself natively. Shipping a second, in-app
+      // update channel there is redundant and violates Play policy, so the
+      // GitHub updater is compiled out of this flavour. The implementation is
+      // retained (not deleted) behind this flag so it can be re-enabled if
+      // distribution ever changes.
+      buildConfigField("boolean", "GITHUB_UPDATER_ENABLED", "false")
     }
   }
 
@@ -107,6 +116,10 @@ android {
       applicationIdSuffix = ".debug"
       versionNameSuffix = "-debug"
       manifestPlaceholders["appLabel"] = "My Bingwa Dev"
+      // A buildType field overrides the flavour field, so debug builds always keep
+      // the GitHub updater — including the `play` debug variant, which testers
+      // install by sideloading and therefore still need an in-app upgrade path.
+      buildConfigField("boolean", "GITHUB_UPDATER_ENABLED", "true")
     }
   }
   compileOptions {
@@ -139,6 +152,12 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.core.splashscreen)
+  // Billboard media: Coil renders synced billboard images and animated GIFs from
+  // its own on-disk cache, so a slide that was fetched once keeps rendering
+  // OFFLINE. coil-gif adds the animated-GIF decoders (ImageDecoder on API 28+,
+  // Movie below it). No network is required for a cache hit.
+  implementation(libs.coil.compose)
+  implementation(libs.coil.gif)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)

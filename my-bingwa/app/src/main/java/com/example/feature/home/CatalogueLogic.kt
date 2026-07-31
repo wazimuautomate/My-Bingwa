@@ -8,6 +8,10 @@ import com.example.core.model.PaymentStatus
 import com.example.core.model.Promotion
 import com.example.core.model.PurchasePolicy
 import com.example.core.model.PurchaseRecord
+import com.example.core.personalization.BehaviourProfile
+import com.example.core.personalization.OfferRanker
+import com.example.core.personalization.PersonalBadge
+import com.example.core.personalization.isEmpty
 import com.example.data.fake.OfferFilterState
 import com.example.data.fake.SortOption
 import com.example.data.fake.ValidityFilter
@@ -275,6 +279,76 @@ fun suggestSimilar(
                 .thenByDescending { it.priceKsh }
         )
         .take(limit)
+}
+
+// ---------------------------------------------------------------------------
+// On-device personalization of the Home sections
+// ---------------------------------------------------------------------------
+
+/**
+ * Home's sections after the on-device behaviour profile has re-ordered them,
+ * plus the badge (at most one) chosen for a handful of offers, keyed by offer id
+ * so the UI can look one up without re-running any logic during composition.
+ */
+data class PersonalizedHome(
+    val sections: HomeSections,
+    val badges: Map<String, PersonalBadge> = emptyMap()
+)
+
+/**
+ * Re-order Home from what this installation actually buys, and pick the small
+ * "Buy again" / "Your usual bundle" / "Bought yesterday" labels.
+ *
+ * Everything here is derived from local purchase history only; nothing is
+ * uploaded and nothing about data usage, need or browsing is inferred
+ * (CLAUDE.md §8).
+ *
+ * **Fresh-install guarantee:** when [profile] is empty this returns [sections]
+ * unchanged with no badges, so Home's ordering and labelling are byte-identical
+ * to the behaviour before personalization existed.
+ *
+ * `boughtToday` is deliberately left alone — it is a factual record of today, so
+ * re-ranking it would only make it harder to read.
+ */
+fun personalizeHomeSections(
+    sections: HomeSections,
+    profile: BehaviourProfile,
+    nowMillis: Long
+): PersonalizedHome {
+    if (profile.isEmpty()) return PersonalizedHome(sections)
+
+    // Badges appear only on the two sections the customer reads first, and only
+    // a couple of them, so a card is never louder than the offer itself.
+    val favourites = OfferRanker.rank(sections.favourites, profile, nowMillis, maxBadges = 2)
+    val suggestions = OfferRanker.rank(sections.suggestions, profile, nowMillis, maxBadges = 1)
+
+    val badges = LinkedHashMap<String, PersonalBadge>()
+    favourites.forEach { ranked -> ranked.badge?.let { badges[ranked.offer.id] = it } }
+    suggestions.forEach { ranked -> ranked.badge?.let { badges[ranked.offer.id] = it } }
+
+    return PersonalizedHome(
+        sections = sections.copy(
+            popular = personalizeOrder(sections.popular, profile, nowMillis),
+            moreOffers = personalizeOrder(sections.moreOffers, profile, nowMillis),
+            buyAgain = personalizeOrder(sections.buyAgain, profile, nowMillis),
+            favourites = favourites.map { it.offer },
+            suggestions = suggestions.map { it.offer }
+        ),
+        badges = badges
+    )
+}
+
+/**
+ * Personalised ordering for one list of offers, with no badges. Returns the input
+ * unchanged for an empty profile.
+ */
+fun personalizeOrder(
+    offers: List<OfferItem>,
+    profile: BehaviourProfile,
+    nowMillis: Long
+): List<OfferItem> {
+    if (profile.isEmpty()) return offers
+    return OfferRanker.rank(offers, profile, nowMillis, maxBadges = 0).map { it.offer }
 }
 
 // ---------------------------------------------------------------------------
