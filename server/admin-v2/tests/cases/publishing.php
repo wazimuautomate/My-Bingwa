@@ -332,3 +332,15 @@ test('a genuinely edited price is still detected after a round trip', function (
     eq(count($items[0]['fields']), 1, 'exactly one field should be reported');
     eq($items[0]['fields'][0]['field'], 'price');
 });
+
+test('an empty map hashes the same whether it is an object or an array', function () {
+    // The exact production hazard: the working snapshot carries stdClass so the published
+    // JSON contains {}, but a decoded snapshot yields []. If those hashed differently the
+    // resource version would rise on every publish and every device would re-download.
+    $asObject = ['smsRules' => [['id' => 'r', 'captures' => new \stdClass()]]];
+    $asArray  = ['smsRules' => [['id' => 'r', 'captures' => []]]];
+    eq(
+        \App\Services\ResourceVersions::checksums($asObject)['smsRules'],
+        \App\Services\ResourceVersions::checksums($asArray)['smsRules']
+    );
+});
