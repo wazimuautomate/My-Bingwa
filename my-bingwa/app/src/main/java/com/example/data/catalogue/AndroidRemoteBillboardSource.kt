@@ -2,7 +2,9 @@ package com.example.data.catalogue
 
 import com.example.core.model.Promotion
 import com.example.core.model.PromotionAccent
+import com.example.core.model.PromotionClickAction
 import com.example.core.model.PromotionKind
+import com.example.core.model.PromotionMediaType
 import com.squareup.moshi.Json
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -20,8 +22,13 @@ import java.util.concurrent.TimeUnit
  * Retrofit implementation of [RemoteBillboardSource] backed by `get_billboards.php`.
  * Maps the admin's published billboards into [Promotion]. Any failure returns null so
  * the caller keeps the local billboards. No secrets — only the non-secret base URL +
- * app-key header. Remote images are deferred (no image-loading library), so a slide
- * renders as a coloured text slide exactly like the seeded promotions.
+ * app-key header.
+ *
+ * A slide may carry remote artwork (still image or animated GIF): the mapping only
+ * records the url, type, version and click intent, and the Home billboard renders it
+ * from Coil's on-disk cache (see `core/media/BillboardImageLoader`). A slide with no
+ * artwork — or whose artwork fails to load — renders as the coloured text slide,
+ * exactly like the seeded promotions.
  */
 class AndroidRemoteBillboardSource(
     baseUrl: String,
@@ -83,13 +90,28 @@ data class BillboardDto(
     @Json(name = "audienceRule") val audienceRule: String? = null,
     @Json(name = "frequencyCap") val frequencyCap: Int? = null,
     @Json(name = "startsAt") val startsAt: String? = null,
-    @Json(name = "endsAt") val endsAt: String? = null
+    @Json(name = "endsAt") val endsAt: String? = null,
+    // --- Billboard media (all optional; an older server simply omits them) ----
+    /** Absolute https url of the slide artwork. Falls back to [imageUrl]. */
+    @Json(name = "mediaUrl") val mediaUrl: String? = null,
+    /** "IMAGE" | "GIF" | "NONE". Inferred from the url when absent/unknown. */
+    @Json(name = "mediaType") val mediaType: String? = null,
+    /** Cache-busting token; change it when republishing artwork at the same url. */
+    @Json(name = "mediaVersion") val mediaVersion: String? = null,
+    /** "OFFER" | "CATEGORY" | "EXTERNAL_LINK" | "INTERNAL_ROUTE" | "NONE". */
+    @Json(name = "clickAction") val clickAction: String? = null,
+    /** Offer id / category / https url / in-app route, per [clickAction]. */
+    @Json(name = "clickTarget") val clickTarget: String? = null
 ) {
     /**
      * Map one published billboard row into a [Promotion]. Returns null (skipped) when the
      * core visible content is missing (no id or blank headline). The accent is derived
      * from the kind — never from the server — so a billboard can never paint
      * white-on-orange (design.md §7 reserves orange for real discounts).
+     *
+     * Every media field is optional and degrades safely: no url → text slide; an
+     * unknown media type → inferred from the file extension; an unknown or unsafe
+     * click action → no click action at all.
      */
     fun toPromotion(): Promotion? {
         val safeId = id?.toString()?.takeIf { it.isNotBlank() } ?: return null
@@ -105,6 +127,19 @@ data class BillboardDto(
             PromotionKind.ANNOUNCEMENT -> PromotionAccent.BLUE
             PromotionKind.UPDATE -> PromotionAccent.NAVY
         }
+        val safeLinkedOfferId = linkedOfferId?.takeIf { it.isNotBlank() }
+        // `imageUrl` is the legacy field the admin console already publishes; a
+        // newer server may send `mediaUrl` instead. Either is accepted.
+        val resolvedMediaUrl = resolveMediaUrl(mediaUrl ?: imageUrl)
+        val resolvedMediaType = resolveMediaType(mediaType, resolvedMediaUrl)
+        val resolvedTarget = (clickTarget ?: ctaDestination).orEmpty().trim()
+        val resolvedAction = resolveClickAction(clickAction, resolvedTarget, promoKind, safeLinkedOfferId)
+        // An OFFER action with no explicit target points at the linked offer.
+        val finalTarget = when (resolvedAction) {
+            PromotionClickAction.NONE -> ""
+            PromotionClickAction.OFFER -> resolvedTarget.ifBlank { safeLinkedOfferId.orEmpty() }
+            else -> resolvedTarget
+        }
         return Promotion(
             id = safeId,
             kind = promoKind,
@@ -113,7 +148,7 @@ data class BillboardDto(
             subhead = body.orEmpty(),
             ctaLabel = ctaLabel.orEmpty(),
             accent = promoAccent,
-            linkedOfferId = linkedOfferId?.takeIf { it.isNotBlank() },
+            linkedOfferId = safeLinkedOfferId,
             linkedCategory = null,
             imageRes = null,
             // The server orders by priority ASC (lower = shown first); the app's billboard
@@ -121,27 +156,146 @@ data class BillboardDto(
             // negate to preserve the published order.
             priorityWeight = -(priority ?: 0),
             startMillis = parseIsoMillis(startsAt, 0L),
-            endMillis = parseIsoMillis(endsAt, Long.MAX_VALUE)
+            endMillis = parseIsoMillis(endsAt, Long.MAX_VALUE),
+            mediaUrl = if (resolvedMediaType == PromotionMediaType.NONE) "" else resolvedMediaUrl,
+            mediaType = resolvedMediaType.name,
+            clickAction = resolvedAction.name,
+            clickTarget = finalTarget,
+            mediaVersion = mediaVersion.orEmpty().trim(),
+            mediaAltText = altText.orEmpty().trim()
         )
     }
 
     private companion object {
+
+        private const val NAIROBI_ZONE = "Africa/Nairobi"
+
+        /** UTC forms — the admin's ISO-8601 "…Z" timestamps. */
+        private val UTC_PATTERNS = listOf(
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+        )
+
         /**
-         * Parse the admin's UTC ISO-8601 timestamp ("yyyy-MM-dd'T'HH:mm:ss'Z'") to epoch
-         * millis. Null/blank/unparseable → [default] (0L for start, Long.MAX_VALUE for
-         * end), so a missing window means "always active". SimpleDateFormat is used (not
+         * Local forms interpreted in Africa/Nairobi — what an admin typing a
+         * wall-clock time into the console actually means.
+         */
+        private val LOCAL_PATTERNS = listOf(
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm",
+            "yyyy-MM-dd HH:mm",
+            "yyyy-MM-dd"
+        )
+
+        /**
+         * Parse an admin timestamp to epoch millis.
+         *
+         * Historically only the UTC form ("yyyy-MM-dd'T'HH:mm:ss'Z'") parsed, so a
+         * Nairobi wall-clock timestamp published by the console fell back to the
+         * permissive default and, for an end time, could hide a slide for up to
+         * three hours (Nairobi is UTC+3, no DST). Both shapes are now accepted:
+         *
+         * - a value ending in "Z" is UTC;
+         * - anything else is a local Nairobi wall-clock time.
+         *
+         * The two families are tried in separate branches on purpose:
+         * [SimpleDateFormat.parse] ignores trailing unparsed text, so trying a
+         * pattern without the literal 'Z' first would silently parse "…T00:00:00Z"
+         * as Nairobi local time and shift it by three hours.
+         *
+         * Null / blank / unparseable → [default] (0L for start, Long.MAX_VALUE for
+         * end), so a missing or malformed window still means "always active" — a
+         * slide is never lost to a bad timestamp. SimpleDateFormat is used (not
          * java.time) because minSdk 24 has no core-library desugaring.
          */
         private fun parseIsoMillis(value: String?, default: Long): Long {
             val raw = value?.trim().orEmpty()
             if (raw.isEmpty()) return default
-            return try {
-                val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-                fmt.timeZone = TimeZone.getTimeZone("UTC")
-                fmt.isLenient = false
-                fmt.parse(raw)?.time ?: default
-            } catch (t: Throwable) {
-                default
+            val isUtc = raw.endsWith("Z") || raw.endsWith("z")
+            val patterns = if (isUtc) UTC_PATTERNS else LOCAL_PATTERNS
+            val zone = if (isUtc) "UTC" else NAIROBI_ZONE
+            for (pattern in patterns) {
+                val parsed = tryParse(raw, pattern, zone)
+                if (parsed != null) return parsed
+            }
+            return default
+        }
+
+        private fun tryParse(raw: String, pattern: String, zoneId: String): Long? = try {
+            val fmt = SimpleDateFormat(pattern, Locale.US)
+            fmt.timeZone = TimeZone.getTimeZone(zoneId)
+            fmt.isLenient = false
+            fmt.parse(raw)?.time
+        } catch (t: Throwable) {
+            null
+        }
+
+        /** Only absolute http(s) media is accepted; anything else becomes "no media". */
+        private fun resolveMediaUrl(raw: String?): String {
+            val url = raw?.trim().orEmpty()
+            val lower = url.lowercase()
+            return if (lower.startsWith("https://") || lower.startsWith("http://")) url else ""
+        }
+
+        /**
+         * IMAGE / GIF / NONE. A blank url is always NONE. An explicit, known type
+         * wins; a missing or unrecognised type is inferred from the file extension
+         * (".gif" → GIF, otherwise IMAGE) so a valid picture is never dropped just
+         * because the server sent a token this build does not know.
+         */
+        private fun resolveMediaType(raw: String?, url: String): PromotionMediaType {
+            if (url.isBlank()) return PromotionMediaType.NONE
+            return when (raw?.trim()?.uppercase()) {
+                "NONE" -> PromotionMediaType.NONE
+                "GIF" -> PromotionMediaType.GIF
+                "IMAGE" -> PromotionMediaType.IMAGE
+                else -> {
+                    val path = url.substringBefore('?').substringBefore('#').lowercase()
+                    if (path.endsWith(".gif")) PromotionMediaType.GIF else PromotionMediaType.IMAGE
+                }
+            }
+        }
+
+        /**
+         * Resolve the tap intent. Unknown tokens degrade to NONE (the slide keeps
+         * its legacy kind-based behaviour). EXTERNAL_LINK is only ever produced for
+         * an absolute http(s) target — never for `intent://`, `file://` or any other
+         * scheme — so a compromised or careless admin row cannot make the app open
+         * an arbitrary component.
+         */
+        private fun resolveClickAction(
+            raw: String?,
+            target: String,
+            kind: PromotionKind,
+            linkedOfferId: String?
+        ): PromotionClickAction {
+            val declared = when (raw?.trim()?.uppercase()) {
+                "OFFER" -> PromotionClickAction.OFFER
+                "CATEGORY" -> PromotionClickAction.CATEGORY
+                "EXTERNAL_LINK", "EXTERNAL", "LINK", "URL" -> PromotionClickAction.EXTERNAL_LINK
+                "INTERNAL_ROUTE", "INTERNAL", "ROUTE" -> PromotionClickAction.INTERNAL_ROUTE
+                "NONE" -> PromotionClickAction.NONE
+                else -> null
+            }
+            val lowerTarget = target.lowercase()
+            val looksExternal = lowerTarget.startsWith("https://") || lowerTarget.startsWith("http://")
+            val resolved = declared ?: when {
+                // No declared action: infer only the two unambiguous cases.
+                looksExternal -> PromotionClickAction.EXTERNAL_LINK
+                kind == PromotionKind.OFFER && linkedOfferId != null -> PromotionClickAction.OFFER
+                else -> PromotionClickAction.NONE
+            }
+            return when {
+                // An external link must be a real web url.
+                resolved == PromotionClickAction.EXTERNAL_LINK && !looksExternal ->
+                    PromotionClickAction.NONE
+                // Every other action needs somewhere to go.
+                resolved != PromotionClickAction.NONE &&
+                    target.isBlank() &&
+                    !(resolved == PromotionClickAction.OFFER && linkedOfferId != null) ->
+                    PromotionClickAction.NONE
+                else -> resolved
             }
         }
     }

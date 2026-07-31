@@ -10,4 +10,10 @@
 
     <!-- Launch splash background — brand app canvas (light). values-night overrides. -->
     <color name="splash_background">#FFF6F9FC</color>
+
+    <!-- App-name text drawn on the animated cold-start splash overlay
+         (core/ui/BrandSplashOverlay). Deliberately the dark canvas colour on the
+         light background so the pair always meets contrast; values-night flips it.
+         Never white-on-brand-green (CLAUDE.md §6). -->
+    <color name="splash_on_background">#FF0E1512</color>
 </resources>

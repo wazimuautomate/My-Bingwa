@@ -108,11 +108,33 @@ class AppNotifier(private val context: Context) {
     )
 
     /**
+     * Posts on behalf of the assistant engine
+     * (`core/notifications/engine/NotificationEngine`).
+     *
+     * Deliberately does NOT consult [postedStableIds]. That set is a permanent
+     * per-process de-dup, which is right for the one-shot helpers above but would
+     * block every legitimate repeat of a recurring engine notification (a morning
+     * greeting, a later low-balance nudge). The engine owns rate limiting itself:
+     * per-category cooldowns, quiet hours, a daily cap and content-hash
+     * de-duplication persisted across process death (see `NotificationPolicy`).
+     *
+     * The caller supplies a stable [notificationId] so a newer message replaces
+     * the older one in the tray. Returns true only when the notification was
+     * actually handed to the system.
+     */
+    fun postEngine(
+        channelId: String,
+        notificationId: Int,
+        title: String,
+        body: String,
+        deepLinkRoute: String
+    ): Boolean = postInternal(channelId, notificationId, title, body, deepLinkRoute)
+
+    /**
      * Core builder. Returns true when a notification was handed to the system,
      * false when skipped (already posted this process, or notifications not
      * permitted). Long bodies use BigTextStyle so they expand cleanly.
      */
-    @SuppressLint("MissingPermission") // Guarded by canPost(); this class never requests the permission.
     private fun post(
         channelId: String,
         stableId: String,
@@ -121,13 +143,24 @@ class AppNotifier(private val context: Context) {
         deepLinkRoute: String
     ): Boolean {
         if (!postedStableIds.add(stableId)) return false
-        if (!canPost()) {
-            // Allow a later retry once permission is granted.
+        val posted = postInternal(channelId, stableId.hashCode(), title, body, deepLinkRoute)
+        if (!posted) {
+            // Allow a later retry once permission is granted / the error clears.
             postedStableIds.remove(stableId)
-            return false
         }
+        return posted
+    }
 
-        val notificationId = stableId.hashCode()
+    @SuppressLint("MissingPermission") // Guarded by canPost(); this class never requests the permission.
+    private fun postInternal(
+        channelId: String,
+        notificationId: Int,
+        title: String,
+        body: String,
+        deepLinkRoute: String
+    ): Boolean {
+        if (!canPost()) return false
+
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_stat_my_bingwa)
             .setColor(brandColor)
@@ -141,7 +174,6 @@ class AppNotifier(private val context: Context) {
             manager.notify(notificationId, builder.build())
             true
         } catch (e: SecurityException) {
-            postedStableIds.remove(stableId)
             false
         }
     }

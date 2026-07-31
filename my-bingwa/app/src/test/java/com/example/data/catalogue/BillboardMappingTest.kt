@@ -1,9 +1,13 @@
 package com.example.data.catalogue
 
 import com.example.core.model.PromotionAccent
+import com.example.core.model.PromotionClickAction
 import com.example.core.model.PromotionKind
+import com.example.core.model.PromotionMediaType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 
@@ -22,11 +26,22 @@ class BillboardMappingTest {
         headline: String? = "Headline",
         body: String? = "Body",
         startsAt: String? = null,
-        endsAt: String? = null
+        endsAt: String? = null,
+        imageUrl: String? = null,
+        altText: String? = null,
+        ctaDestination: String? = null,
+        mediaUrl: String? = null,
+        mediaType: String? = null,
+        mediaVersion: String? = null,
+        clickAction: String? = null,
+        clickTarget: String? = null
     ) = BillboardDto(
         id = id, kind = kind, priority = priority, linkedOfferId = linkedOfferId,
         tag = "TAG", headline = headline, body = body, ctaLabel = "Buy now",
-        startsAt = startsAt, endsAt = endsAt
+        ctaDestination = ctaDestination, imageUrl = imageUrl, altText = altText,
+        startsAt = startsAt, endsAt = endsAt,
+        mediaUrl = mediaUrl, mediaType = mediaType, mediaVersion = mediaVersion,
+        clickAction = clickAction, clickTarget = clickTarget
     )
 
     @Test
@@ -89,5 +104,144 @@ class BillboardMappingTest {
         assertEquals(Long.MAX_VALUE, dto(endsAt = null).toPromotion()!!.endMillis)
         assertEquals(0L, dto(startsAt = "  ").toPromotion()!!.startMillis)
         assertEquals(0L, dto(startsAt = "not-a-date").toPromotion()!!.startMillis)
+    }
+
+    // --- timestamp formats (Nairobi-local support) ---------------------------
+
+    @Test
+    fun parsesNairobiLocalWindow_spaceSeparated() {
+        // Africa/Nairobi is UTC+3 all year (no DST): 09:00 local == 06:00 UTC.
+        val p = dto(
+            startsAt = "2026-07-26 09:00:00",
+            endsAt = "2026-07-26 21:30:00"
+        ).toPromotion()!!
+        assertEquals(Instant.parse("2026-07-26T06:00:00Z").toEpochMilli(), p.startMillis)
+        assertEquals(Instant.parse("2026-07-26T18:30:00Z").toEpochMilli(), p.endMillis)
+    }
+
+    @Test
+    fun parsesNairobiLocalWindow_isoWithoutZone() {
+        val p = dto(startsAt = "2026-07-26T09:00:00").toPromotion()!!
+        assertEquals(Instant.parse("2026-07-26T06:00:00Z").toEpochMilli(), p.startMillis)
+    }
+
+    @Test
+    fun parsesDateOnlyAsNairobiMidnight() {
+        val p = dto(startsAt = "2026-07-26").toPromotion()!!
+        assertEquals(Instant.parse("2026-07-25T21:00:00Z").toEpochMilli(), p.startMillis)
+    }
+
+    @Test
+    fun utcAndNairobiFormsOfTheSameInstantAgree() {
+        val utc = dto(startsAt = "2026-07-26T06:00:00Z").toPromotion()!!.startMillis
+        val local = dto(startsAt = "2026-07-26 09:00:00").toPromotion()!!.startMillis
+        assertEquals(utc, local)
+    }
+
+    @Test
+    fun millisecondUtcFormIsAccepted() {
+        val p = dto(startsAt = "2026-07-26T06:00:00.000Z").toPromotion()!!
+        assertEquals(Instant.parse("2026-07-26T06:00:00Z").toEpochMilli(), p.startMillis)
+    }
+
+    // --- media ---------------------------------------------------------------
+
+    @Test
+    fun mediaDefaultsToNoneWhenNothingIsPublished() {
+        val p = dto().toPromotion()!!
+        assertEquals("", p.mediaUrl)
+        assertEquals(PromotionMediaType.NONE, p.mediaTypeOrNone)
+        assertEquals("", p.mediaVersion)
+        assertEquals("", p.mediaAltText)
+        assertFalse(p.hasRemoteMedia)
+    }
+
+    @Test
+    fun legacyImageUrlBecomesImageMedia() {
+        val p = dto(imageUrl = "https://cdn.example.com/a.png", altText = "Weekend deal").toPromotion()!!
+        assertEquals("https://cdn.example.com/a.png", p.mediaUrl)
+        assertEquals(PromotionMediaType.IMAGE, p.mediaTypeOrNone)
+        assertEquals("Weekend deal", p.mediaAltText)
+        assertTrue(p.hasRemoteMedia)
+    }
+
+    @Test
+    fun gifIsDetectedFromTypeOrExtension() {
+        assertEquals(
+            PromotionMediaType.GIF,
+            dto(mediaUrl = "https://cdn.example.com/a.png", mediaType = "gif").toPromotion()!!.mediaTypeOrNone
+        )
+        assertEquals(
+            PromotionMediaType.GIF,
+            dto(mediaUrl = "https://cdn.example.com/a.GIF?v=2").toPromotion()!!.mediaTypeOrNone
+        )
+    }
+
+    @Test
+    fun unknownMediaTypeFallsBackToImageRatherThanLosingTheArtwork() {
+        val p = dto(mediaUrl = "https://cdn.example.com/a.webp", mediaType = "lottie").toPromotion()!!
+        assertEquals(PromotionMediaType.IMAGE, p.mediaTypeOrNone)
+    }
+
+    @Test
+    fun explicitNoneOrNonHttpMediaIsDropped() {
+        assertEquals(
+            PromotionMediaType.NONE,
+            dto(mediaUrl = "https://cdn.example.com/a.png", mediaType = "none").toPromotion()!!.mediaTypeOrNone
+        )
+        val unsafe = dto(mediaUrl = "file:///sdcard/a.png").toPromotion()!!
+        assertEquals(PromotionMediaType.NONE, unsafe.mediaTypeOrNone)
+        assertEquals("", unsafe.mediaUrl)
+    }
+
+    @Test
+    fun mediaVersionIsCarriedForCacheBusting() {
+        val p = dto(mediaUrl = "https://cdn.example.com/a.png", mediaVersion = " v7 ").toPromotion()!!
+        assertEquals("v7", p.mediaVersion)
+    }
+
+    // --- click action --------------------------------------------------------
+
+    @Test
+    fun clickActionIsParsedAndUnknownDegradesToNone() {
+        assertEquals(
+            PromotionClickAction.CATEGORY,
+            dto(clickAction = "category", clickTarget = "SMS").toPromotion()!!.clickActionOrNone
+        )
+        assertEquals(
+            PromotionClickAction.INTERNAL_ROUTE,
+            dto(clickAction = "internal_route", clickTarget = "offers").toPromotion()!!.clickActionOrNone
+        )
+        // Unknown token → NONE (the slide keeps its legacy kind-based behaviour).
+        assertEquals(
+            PromotionClickAction.NONE,
+            dto(clickAction = "teleport", clickTarget = "somewhere").toPromotion()!!.clickActionOrNone
+        )
+        // A declared action with nowhere to go → NONE.
+        assertEquals(
+            PromotionClickAction.NONE,
+            dto(clickAction = "category", clickTarget = "").toPromotion()!!.clickActionOrNone
+        )
+    }
+
+    @Test
+    fun externalLinkOnlyEverPointsAtAWebUrl() {
+        val web = dto(clickAction = "external_link", clickTarget = "https://bingwa.example/promo").toPromotion()!!
+        assertEquals(PromotionClickAction.EXTERNAL_LINK, web.clickActionOrNone)
+        assertEquals("https://bingwa.example/promo", web.clickTarget)
+
+        // A non-web scheme can never become an external link.
+        val unsafe = dto(clickAction = "external_link", clickTarget = "intent://evil").toPromotion()!!
+        assertEquals(PromotionClickAction.NONE, unsafe.clickActionOrNone)
+        assertEquals("", unsafe.clickTarget)
+    }
+
+    @Test
+    fun offerSlideWithALinkedOfferGetsAnOfferAction() {
+        val p = dto(kind = "offer", linkedOfferId = "data_1").toPromotion()!!
+        assertEquals(PromotionClickAction.OFFER, p.clickActionOrNone)
+        assertEquals("data_1", p.clickTarget)
+        // No linked offer and no target → no action at all.
+        assertEquals(PromotionClickAction.NONE, dto(kind = "offer").toPromotion()!!.clickActionOrNone)
     }
 }

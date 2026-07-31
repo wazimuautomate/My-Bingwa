@@ -13,6 +13,11 @@ import com.example.core.model.OfferCategory
  * (see [SafaricomSmsParser]). Keep the lists easily extendable — add a new
  * template object rather than adding logic to the parser.
  */
+@Suppress("DEPRECATION")
+@Deprecated(
+    message = "Superseded by com.example.core.sms.DefaultSmsRules.SEED.",
+    level = DeprecationLevel.WARNING
+)
 object DefaultTemplates {
 
     val SEED: TemplateSet = TemplateSet(

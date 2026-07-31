@@ -81,9 +81,45 @@ object UpdateChecker {
             .build()
     }
 
+    /**
+     * Check the direct-channel manifest for a newer build.
+     *
+     * ## Why the gate is a flavour flag and NOT `!BuildConfig.DEBUG`
+     * My Bingwa ships two release flavours from one codebase:
+     *
+     * - **direct** — the sideloaded GitHub channel. There is no store behind it,
+     *   so this in-app updater is the user's ONLY upgrade path. It MUST stay on
+     *   in release builds of this flavour.
+     * - **play** — Google Play updates the app natively. A second in-app update
+     *   channel there is redundant and violates Play policy, so it is compiled
+     *   out.
+     *
+     * Gating on `!BuildConfig.DEBUG` would therefore silently strand every
+     * sideloaded customer on the version they first installed. Please do not
+     * "fix" this back to a debug check. The GitHub implementation below is kept
+     * intact (never deleted) so the channel can be re-enabled by flipping the
+     * flavour's `GITHUB_UPDATER_ENABLED` field.
+     *
+     * When [updaterEnabled] is false this performs NO network call and returns
+     * [UpdateResult.UpToDate] immediately and silently — the same "nothing to do"
+     * result every caller already handles.
+     *
+     * @param updaterEnabled injectable for tests; defaults to the build's
+     *   `GITHUB_UPDATER_ENABLED` flavour flag, which is fixed per test variant.
+     */
     suspend fun check(
         currentVersionCode: Int = BuildConfig.VERSION_CODE,
         manifestUrl: String = BuildConfig.UPDATE_MANIFEST_URL,
+        updaterEnabled: Boolean = BuildConfig.GITHUB_UPDATER_ENABLED,
+    ): UpdateResult {
+        // Returned before any dispatcher hop: no thread, no socket, no logging.
+        if (!updaterEnabled) return UpdateResult.UpToDate
+        return checkRemote(currentVersionCode, manifestUrl)
+    }
+
+    private suspend fun checkRemote(
+        currentVersionCode: Int,
+        manifestUrl: String,
     ): UpdateResult = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()

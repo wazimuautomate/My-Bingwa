@@ -2,4 +2,7 @@
 <resources>
     <!-- Launch splash background — brand app canvas (dark). -->
     <color name="splash_background">#FF0E1512</color>
+
+    <!-- App-name text on the cold-start splash overlay, flipped for the dark canvas. -->
+    <color name="splash_on_background">#FFF6F9FC</color>
 </resources>
