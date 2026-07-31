@@ -43,6 +43,9 @@ $excludePatterns = @(
     '*/uploads/*',
     '*/storage/*',
     '*/dist/*',
+    'server/tools/*',          # developer tooling, not server code
+    '*/.gitignore',
+    '*/composer.json',
     '*.zip', '*.pem', '*.key', '*.p12', '*.jks', '*.keystore', '*.env', '.env*'
 )
 
