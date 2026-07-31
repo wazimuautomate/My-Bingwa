@@ -83,6 +83,39 @@ verified independently.
   `sealed`; the two legacy signals are still emitted for existing reconciliation.
 - Architecture reference added at `docs/PRODUCTION_INTELLIGENCE.md`.
 
+### Server - offer performance analytics
+
+#### Added
+
+- **Dashboard rebuilt around what actually sold.** Four cards, each clicking through to the
+  page holding the detail: total revenue (today and all time), today's sales split across
+  Data / SMS / Minutes / Special, the buy-for-myself vs buy-for-another trend, and the
+  catalogue size. Below them, the best performing bundles over 30 days and a 14-day trade row.
+- **The payments page became the performance view.** Cards for money in today / all time /
+  this view / average sale / attempts completed, sales by category, who the bundle was for,
+  and payment outcomes with a success rate - every figure a link that applies that filter.
+  Plus a sortable bundle-performance table (sales, revenue, attempts, conversion), a 14-day
+  bar row, filters for category, buyer, state, date range, search and amount, and the offer
+  name, category and buyer kind on every record. CSV export honours all of it.
+- Preview explains the first publish after a server upgrade, instead of leaving the operator
+  looking at changes they did not make.
+
+#### Fixed
+
+- **Payment figures could be counted on the wrong day.** `payments.created_at` is written
+  with MySQL `NOW()` - the database server's clock, which on shared hosting may be UTC or
+  EAT - but the code assumed UTC in one place, local time in another, and every view
+  formatted the value as if it were UTC. On an EAT host that displayed payments three hours
+  late and pushed early-morning sales into the previous day. The offset is now measured at
+  runtime and applied everywhere, with no dependency on MySQL timezone tables.
+
+#### Internal
+
+- Regression tests that publish a snapshot, read it back exactly as the code does, and fail
+  the build if the pending-changes list is not empty - the standing guarantee that
+  publishing clears Preview instead of looping. A companion test proves a genuinely edited
+  price is still detected, so the guard cannot pass by detecting nothing.
+
 ### Server - production release
 
 #### Added
