@@ -32,15 +32,16 @@ final class Audit
 
         Database::run(
             'INSERT INTO ' . Database::table('audit_logs') . '
-                (actor_id, actor_name, actor_role, action, entity_type, entity_id,
+                (actor_id, actor_name, actor_role, action, module, entity_type, entity_id,
                  before_json, after_json, diff_json, reason, release_version,
                  ip, user_agent, success, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())',
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())',
             [
                 $user['id'] ?? null,
                 $user['name'] ?? 'system',
                 self::roleLabel($user),
                 substr($opts['action'], 0, 80),
+                substr((string) ($opts['module'] ?? self::moduleOf($opts['action'])), 0, 40),
                 substr((string) ($opts['entity_type'] ?? ''), 0, 60),
                 substr((string) ($opts['entity_id'] ?? ''), 0, 64),
                 $before !== null ? json_encode($before) : null,
@@ -53,6 +54,17 @@ final class Audit
                 ($opts['success'] ?? true) ? 1 : 0,
             ]
         );
+    }
+
+    /**
+     * The module an action belongs to, taken from the part before the first dot
+     * ('offer.update' -> 'offer'). Stored as a column so the audit page can offer a
+     * module filter without parsing strings in SQL.
+     */
+    public static function moduleOf(string $action): string
+    {
+        $head = explode('.', $action, 2)[0];
+        return $head !== '' ? $head : 'system';
     }
 
     private static function roleLabel(?array $user): string

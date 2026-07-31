@@ -56,6 +56,12 @@ final class Icons
         'calendar'     => '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
         'user'         => '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/>',
         'key'          => '<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2M17 6l3 3M14 9l3 3"/>',
+        'flask'        => '<path d="M9 3h6"/><path d="M10 3v6.5L4.6 18A2 2 0 0 0 6.3 21h11.4a2 2 0 0 0 1.7-3L14 9.5V3"/><path d="M7.5 15h9"/>',
+        'image'        => '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5-6 6-3-3-4 4"/>',
+        'layers'       => '<path d="M12 3 3 8l9 5 9-5z"/><path d="M3 13l9 5 9-5"/>',
+        'flag'         => '<path d="M5 21V4"/><path d="M5 5h11l-1.5 3L16 11H5z"/>',
+        'toggle'       => '<rect x="2.5" y="7" width="19" height="10" rx="5"/><circle cx="16" cy="12" r="3"/>',
+        'variations'   => '<rect x="3" y="4" width="13" height="9" rx="2"/><path d="M8 17h13M8 20h9"/>',
     ];
 
     public static function svg(string $name, int $size = 20, string $extraClass = ''): string

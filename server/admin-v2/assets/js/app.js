@@ -185,4 +185,127 @@
     rows.forEach(function (c) { c.addEventListener('change', sync); });
     sync();
   })();
+
+  /* ---- Notification wording variations: repeatable rows ----
+     Lives here, not inline in the view, because the CSP is script-src 'self'.
+     Markup: #var-rows holds .var-row entries and a <template id="var-template">;
+     #var-add appends one; [data-var-remove] removes. Inputs are name="thing[]" arrays so
+     nothing is renumbered — only the visible "Wording N" label is kept tidy. The form
+     still works without JavaScript: the view renders spare blank rows and blank ones are
+     dropped on save. */
+  (function () {
+    var rowsBox = document.getElementById('var-rows');
+    if (!rowsBox) return;
+    var tpl = document.getElementById('var-template');
+    var addBtn = document.getElementById('var-add');
+
+    function rows() {
+      return Array.prototype.slice.call(rowsBox.querySelectorAll('.var-row'));
+    }
+    function renumber() {
+      rowsBox.querySelectorAll('.var-n').forEach(function (el, i) {
+        el.textContent = String(i + 1);
+      });
+    }
+
+    if (addBtn && tpl && 'content' in tpl) {
+      addBtn.addEventListener('click', function () {
+        if (rows().length >= 20) return;
+        rowsBox.appendChild(tpl.content.cloneNode(true));
+        renumber();
+        var added = rows().pop();
+        var first = added && added.querySelector('input[type=text], textarea');
+        if (first) first.focus();
+      });
+    }
+
+    rowsBox.addEventListener('click', function (event) {
+      var btn = event.target.closest ? event.target.closest('[data-var-remove]') : null;
+      if (!btn) return;
+      var row = btn.closest('.var-row');
+      if (!row) return;
+      if (rows().length <= 1) {
+        // Never leave the operator with nothing to type into: clear instead of remove.
+        row.querySelectorAll('input, textarea').forEach(function (f) { f.value = ''; });
+        return;
+      }
+      row.parentNode.removeChild(row);
+      renumber();
+    });
+  })();
+
+  /* ---- Variable chips insert a {{token}} where you were last typing ----
+     <button data-token="{{first_name}}"> writes that text at the caret of the most
+     recently focused [data-token-target] field. The attribute carries the whole token,
+     braces included, so a view can offer any placeholder without this file knowing it. */
+  (function () {
+    if (!document.querySelector('[data-token]')) return;
+    var last = document.querySelector('[data-token-target]');
+
+    document.addEventListener('focusin', function (event) {
+      if (event.target.matches && event.target.matches('[data-token-target]')) last = event.target;
+    });
+
+    document.addEventListener('click', function (event) {
+      var btn = event.target.closest('[data-token]');
+      if (!btn) return;
+      event.preventDefault();
+      var field = last || document.querySelector('[data-token-target]');
+      if (!field) return;
+      var token = btn.getAttribute('data-token') || '';
+      var start = typeof field.selectionStart === 'number' ? field.selectionStart : field.value.length;
+      var end = typeof field.selectionEnd === 'number' ? field.selectionEnd : field.value.length;
+      field.value = field.value.slice(0, start) + token + field.value.slice(end);
+      field.focus();
+      var caret = start + token.length;
+      if (field.setSelectionRange) field.setSelectionRange(caret, caret);
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  })();
+
+  /* ---- Notifications: only ask for an SMS event when the trigger needs one ---- */
+  (function () {
+    var trigger = document.getElementById('nf-trigger');
+    if (!trigger) return;
+    var eventField = document.getElementById('nf-event-field');
+    var hint = document.getElementById('nf-trigger-hint');
+    var needs = {};
+    try { needs = JSON.parse(trigger.getAttribute('data-needs-event') || '{}'); } catch (e) { needs = {}; }
+    trigger.addEventListener('change', function () {
+      if (eventField) eventField.classList.toggle('is-hidden', !needs[trigger.value]);
+      var opt = trigger.options[trigger.selectedIndex];
+      if (hint && opt) hint.textContent = opt.getAttribute('data-desc') || '';
+    });
+  })();
+
+  /* ---- Settings: prefill the administrator form from a table row ----
+     Was an inline <script> in the view, which the CSP silently blocked, so "Edit"
+     appeared to do nothing. */
+  (function () {
+    var form = document.getElementById('admin-form');
+    if (!form) return;
+    function set(id, v) { var el = document.getElementById(id); if (el) el.value = v || ''; }
+    document.querySelectorAll('[data-edit-admin]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        set('af-id', b.dataset.id); set('af-name', b.dataset.name); set('af-email', b.dataset.email);
+        set('af-password', '');
+        var superBox = document.getElementById('af-super');
+        if (superBox) superBox.checked = b.dataset.super === '1';
+        var pages = (b.dataset.pages || '').split(',');
+        document.querySelectorAll('.af-page').forEach(function (c) {
+          c.checked = pages.indexOf(c.dataset.page) !== -1;
+        });
+        var title = document.getElementById('admin-form-title');
+        if (title) title.textContent = 'Edit administrator';
+        form.scrollIntoView({ behavior: 'smooth' });
+      });
+    });
+    var reset = document.getElementById('af-reset');
+    if (reset) reset.addEventListener('click', function () {
+      form.reset();
+      set('af-id', '');
+      var title = document.getElementById('admin-form-title');
+      if (title) title.textContent = 'Add administrator';
+    });
+  })();
 })();

@@ -1,0 +1,88 @@
+# My Bingwa server checks
+#
+# The admin panel is deployed by hand through cPanel and the development machine has no PHP
+# runtime, so this workflow is the authoritative place where the PHP actually runs. It lints
+# every file, runs the dependency-free logic test suite, and sanity-checks the SQL migrations.
+name: Server checks
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-checks.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-checks.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: server-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  php:
+    name: Lint + logic tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # cPanel hosting runs 8.1/8.2; test the lower bound so nothing 8.3-only slips in.
+          php-version: '8.1'
+          extensions: mbstring, pdo_mysql, gd, openssl, fileinfo
+          coverage: none
+
+      - name: Syntax check every PHP file
+        run: |
+          set -e
+          fail=0
+          while IFS= read -r -d '' file; do
+            if ! php -l "$file" > /dev/null; then
+              php -l "$file" || true
+              fail=1
+            fi
+          done < <(find server -name '*.php' -type f -print0)
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::PHP syntax errors found"
+            exit 1
+          fi
+          echo "All PHP files parsed cleanly."
+
+      - name: Run admin logic tests
+        working-directory: server/admin-v2
+        run: php tests/run.php
+
+      - name: Check migrations are well formed
+        run: |
+          set -e
+          for f in server/admin-v2/database/migrations/*.sql; do
+            # Every migration must use the {p} table-prefix placeholder rather than a literal
+            # mb_ prefix, or an install with a custom prefix silently breaks.
+            if grep -qE '(CREATE TABLE|ALTER TABLE|INSERT INTO|UPDATE)[[:space:]]+mb_' "$f"; then
+              echo "::error file=$f::migration hardcodes the mb_ prefix; use {p} instead"
+              exit 1
+            fi
+            # A stray "-- @@" separator with nothing after it means a lost statement.
+            if [ "$(tail -n 1 "$f" | tr -d '[:space:]')" = "--@@" ]; then
+              echo "::error file=$f::migration ends with a dangling -- @@ separator"
+              exit 1
+            fi
+          done
+          echo "Migrations look well formed."
+
+      - name: Check no secrets are committed
+        run: |
+          set -e
+          if [ -f server/admin-v2/config/config.php ]; then
+            echo "::error::server/admin-v2/config/config.php must never be committed"
+            exit 1
+          fi
+          if git ls-files | grep -E '\.(pem|key|p12|jks|keystore)$'; then
+            echo "::error::a key material file is tracked in git"
+            exit 1
+          fi
+          echo "No secret files tracked."

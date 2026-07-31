@@ -89,7 +89,13 @@ try {
         $report['skipped'][] = 'settings (legacy table not found)';
     }
 
-    /* ---- Templates -> message_templates + sender_ids ----------------------- */
+    /* ---- Templates -> message_templates + sender_ids -----------------------
+     * NOTE: message recognition now lives in mb_sms_rules (the SMS Rules page). This block
+     * still targets the v1 mb_message_templates table because it exists only to replay the
+     * one-off legacy cutover, which already happened on the live server. If you ever need
+     * to run it again, run it BEFORE applying migration 013_sms_rules.sql — that migration
+     * is what copies mb_message_templates into mb_sms_rules. Otherwise import the patterns
+     * directly on the SMS Rules page instead. */
     if (legacyExists('templates') && !isPrefixed('templates')) {
         $rows = Database::fetchAll('SELECT * FROM templates');
         foreach ($rows as $t) {

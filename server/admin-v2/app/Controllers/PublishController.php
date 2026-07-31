@@ -1,32 +1,59 @@
 <?php
 /**
- * Draft review, publish (immutable signed release) and rollback (a new later version).
- * Rollback requires a reason, the rollback.execute permission and re-authentication.
+ * Publish review, publish (immutable signed release) and rollback (a new later version).
+ *
+ * The review page is the last stop before every Android device is affected, so it states
+ * the impact in plain terms — how many values changed, which resources move, what devices
+ * will actually download — and refuses to publish without an explicit confirmation.
+ * Rollback requires a reason and the rollback.execute permission; it is unchanged.
  */
 
 namespace App\Controllers;
 
-use App\Core\Auth;
 use App\Core\Csrf;
 use App\Core\Flash;
 use App\Core\Rbac;
 use App\Core\Request;
-use App\Core\Database;
+use App\Services\ChangeDetector;
 use App\Services\PublishingService;
+use App\Services\ResourceVersions;
 
 final class PublishController extends Controller
 {
+    /** Pre-publish review: impact, validation, notes and the confirmation tick. */
     public function review(Request $request): void
     {
-        // Consolidated into the single change-focused Preview & publish page, which lists
-        // ONLY what changed (not the whole configuration).
-        $this->redirect('/preview');
+        $this->requireAuth();
+        if (!Rbac::canAny(['publish.execute', 'rollback.execute', 'offers.view'])) {
+            Rbac::require('publish.execute');
+        }
+
+        $snapshot = PublishingService::buildWorkingSnapshot();
+        $check    = PublishingService::validate($snapshot);
+        $summary  = PublishingService::publishSummary();
+
+        $this->view('publish/review', [
+            'activeNav' => 'preview',
+            'pageTitle' => 'Review & publish',
+            'summary'   => $summary,
+            'groups'    => $summary['byModule'],
+            'resources' => self::impactedResources($summary),
+            'errors'    => $check['errors'],
+            'warnings'  => $check['warnings'],
+        ]);
     }
 
     public function execute(Request $request): void
     {
         Csrf::check($request);
         $this->guard('publish.execute');
+
+        // The operator must consciously agree that this reaches real devices.
+        if ((string) $request->post('confirm', '') !== 'yes') {
+            Flash::error('Tick the confirmation box before publishing.');
+            $this->redirect('/publish');
+        }
+
         $notes = trim((string) $request->post('notes', ''));
 
         $result = PublishingService::publish($notes);
@@ -37,7 +64,13 @@ final class PublishController extends Controller
         foreach ($result['warnings'] as $wmsg) {
             Flash::warning($wmsg);
         }
-        Flash::success('Published configuration v' . $result['version'] . '. The app will pick it up on its next background sync.');
+        $release = PublishingService::release((int) $result['version']);
+        $uid = (string) ($release['release_uid'] ?? '');
+        Flash::success(
+            'Published configuration v' . $result['version']
+            . ($uid !== '' ? ' (' . $uid . ')' : '')
+            . '. The app will pick it up on its next background sync.'
+        );
         $this->redirect('/releases/' . $result['version']);
     }
 
@@ -50,6 +83,7 @@ final class PublishController extends Controller
         $this->view('publish/releases', [
             'activeNav' => 'releases', 'pageTitle' => 'Release history',
             'releases' => PublishingService::releases(100),
+            'currentVersion' => (int) (PublishingService::currentRelease()['version'] ?? 0),
         ]);
     }
 
@@ -64,14 +98,13 @@ final class PublishController extends Controller
             Flash::error('Release not found.');
             $this->redirect('/releases');
         }
-        $items = Database::fetchAll(
-            'SELECT * FROM ' . Database::table('configuration_release_items') . ' WHERE version = ? ORDER BY entity_type, change_type',
-            [(int) $version]
-        );
+        $resourceVersions = ResourceVersions::forRelease($release);
         $this->view('publish/show', [
             'activeNav' => 'releases', 'pageTitle' => 'Release v' . (int) $version,
-            'release' => $release, 'items' => $items,
-            'snapshot' => json_decode($release['snapshot_json'], true) ?: [],
+            'release'   => $release,
+            'groups'    => PublishingService::releaseChanges((int) $version),
+            'resourceVersions' => $resourceVersions,
+            'snapshot'  => json_decode($release['snapshot_json'], true) ?: [],
             'isCurrent' => (int) $version === (int) (PublishingService::currentRelease()['version'] ?? 0),
         ]);
     }
@@ -98,5 +131,32 @@ final class PublishController extends Controller
         }
         Flash::success('Rolled back. Published as new configuration v' . $result['version'] . '.');
         $this->redirect('/releases/' . $result['version']);
+    }
+
+    /**
+     * Sync impact: for each resource, the version devices hold now and the version they
+     * will move to. A resource with no changed value keeps its number and is not
+     * re-downloaded by anyone.
+     *
+     * @return array<int,array{key:string,label:string,from:int,to:int,moves:bool,count:int}>
+     */
+    private static function impactedResources(array $summary): array
+    {
+        $current = $summary['resourceVersions'];
+        $byModule = $summary['byModule'];
+        $out = [];
+        foreach (ResourceVersions::keys() as $key) {
+            $moves = isset($byModule[$key]);
+            $from = (int) ($current[$key]['version'] ?? 0);
+            $out[] = [
+                'key'   => $key,
+                'label' => ChangeDetector::moduleLabel($key),
+                'from'  => $from,
+                'to'    => $moves ? (int) $summary['draftVersion'] : $from,
+                'moves' => $moves,
+                'count' => (int) ($byModule[$key]['count'] ?? 0),
+            ];
+        }
+        return $out;
     }
 }

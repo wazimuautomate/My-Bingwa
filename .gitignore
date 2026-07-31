@@ -82,6 +82,9 @@ server/admin-v2/storage/*
 !server/admin-v2/storage/.gitkeep
 server/admin-v2/vendor/
 
+# Generated cPanel upload packages (server/tools/build-deploy-package.ps1).
+server/dist/
+
 # --- Hard secret/config guard (also enforced locally by .githooks/pre-commit) ---
 # Real runtime config holds live secrets and must NEVER be committed. Only the
 # *.sample.php templates (placeholders) are tracked. Rotate + purge if leaked.

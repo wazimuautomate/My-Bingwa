@@ -109,6 +109,8 @@ return [
         ['SAF_OfaMOTO', 'Minutes / offers delivery'],
     ],
 
+    // Kept for reference only. Message recognition now lives in mb_sms_rules, seeded by
+    // migration 013_sms_rules.sql — the seeder no longer writes mb_message_templates.
     // [template_key, purpose, sender, category, pattern, label, positive[], negative[]]
     'message_templates' => [
         [

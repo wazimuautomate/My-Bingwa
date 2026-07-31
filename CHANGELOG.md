@@ -10,7 +10,90 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ## [Unreleased]
 
-_Nothing yet. Next up: server→app notifications sync (FCM or poll+local-schedule)._
+### Added
+
+- **Admin — SMS rules.** Message recognition is now editable data instead of hardcoded
+  patterns. A rule carries a name, sender, pattern type (regular expression, contains,
+  starts with, ends with, exact match, keyword combination), event type, priority,
+  enabled flag and positive/negative samples. Event types and pattern types live in
+  catalogue tables, so a new event is a data change rather than a code change. Ships with
+  the ten Safaricom formats in use today as ordinary editable rows.
+- **Admin — SMS rule tester.** Paste a message, choose a sender, and see which rule wins,
+  the detected events, the extracted variables and a plain-English reason for every
+  candidate rule. The tested message is never stored.
+- **Admin — notification management.** A notification is now a rule the app evaluates
+  locally: category, trigger, optional date range, weekdays, time window and cooldown,
+  plus several wording variations the app picks from at random. `{{variables}}` are
+  substituted on the device. Categories, triggers and variables are catalogue tables.
+- **Admin — billboard media.** PNG, JPEG, WEBP and animated GIF uploads validated by file
+  content rather than extension, with generated still thumbnails, metadata stripping,
+  explicit display order, an enabled switch and a declared tap target (offer, category,
+  internal screen or an https URL).
+- **Admin — offer categories and feature flags.** The Home tabs and the app's capability
+  switches are published configuration now, editable on the App configuration page.
+- **Incremental synchronisation API.** `GET /api/sync/manifest` returns a small document
+  with a version and checksum per resource; `GET /api/sync/resource/{key}` and
+  `GET /api/sync/resources?keys=…` return only what actually moved. Per-resource ETags
+  mean an unchanged resource answers `304` even when the release version rose.
+- **Legacy API endpoints for the new resources** — `get_sms_rules.php`,
+  `get_app_notifications.php`, `get_notification_templates.php` and
+  `get_sync_manifest.php`, so the shipped app can consume them from the API it already
+  uses. Each returns a valid empty set rather than an error when nothing is published.
+- **Release management.** Every publish records a release identifier, a change count, a
+  per-resource version map and a field-level change breakdown. Release history shows what
+  each release contained.
+- **API documentation** (`docs/server/API.md`) and a **deployment guide**
+  (`docs/server/DEPLOYMENT.md`) with a changed-files-only cPanel package builder
+  (`server/tools/build-deploy-package.ps1`).
+- **Server CI** (`.github/workflows/server-checks.yml`): lints every PHP file, runs the
+  logic test suite, and checks migrations and committed secrets on every push.
+
+### Changed
+
+- **Preview & publish rebuilt as a release screen.** A summary card (live version, draft
+  version, pending changes, last published, published by), changes grouped by module in
+  collapsed sections, and per-item changed fields shown as `Price  KSh 19 → KSh 25`.
+  Publishing now requires an explicit confirmation and accepts optional release notes.
+- **Audit log** is filterable by module, actor, action, entity, outcome, date range and
+  free text, with the same filters applied to the CSV export, and renders before/after as
+  readable field changes with the raw JSON collapsed.
+- The published snapshot gained `categories`, `notifications`, `smsRules`, `featureFlags`
+  and `resourceVersions`. Every section the shipped app already reads keeps its exact
+  shape, so devices in the field are unaffected.
+
+### Fixed
+
+- **Unchanged items no longer appear in Preview.** Change detection compares field values
+  instead of assuming a save meant an edit, so opening an offer and pressing Save without
+  editing anything now produces no pending change. Two specific phantom sources are gone:
+  the legacy `templates.version` field (which moved on every publish) and an empty
+  capture map decoding differently from the working state.
+- The legacy `templates` resource version no longer moves on every publish, so devices
+  stop re-downloading message patterns that did not change.
+- Rolling back to a release published before SMS rules existed now restores its patterns
+  into the table that actually feeds publishing, instead of silently changing nothing.
+- The Settings "Edit administrator" button worked nowhere: its behaviour sat in an inline
+  `<script>` that the Content-Security-Policy (`script-src 'self'`) blocked. Moved into
+  `assets/js/app.js` along with the new notification form behaviour.
+- A stale unit test asserted a duplicate-price warning that was deliberately removed in
+  1.0.2, so the suite could not pass. Replaced with tests for the behaviour that is
+  actually intended.
+
+### Removed
+
+- **Admin — Message templates page.** Superseded by SMS rules, which is strictly more
+  capable. Existing templates are imported into the new table by migration, and the
+  published `templates` section is now derived from the rules so apps already installed
+  keep recognising messages. `/message-templates` redirects to the new page.
+
+### Internal
+
+- Migrations `013`–`017`: SMS rules and catalogues, notification variations and
+  scheduling, per-resource versions and field-level change records, billboard media
+  columns, offer categories and feature flags. No column or table is dropped.
+- `App\Services\ResourceVersions` derives each resource's version from its published
+  bytes, so a version only moves when the content does.
+- Test suite split so each module owns `tests/cases/<module>.php`; five new case files.
 
 ## [1.0.2] - 2026-07-26
 

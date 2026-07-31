@@ -51,6 +51,10 @@ $router = new Router();
 // offers, adverts, templates, support details, app config and update info.
 $router->get('/api/app-data', [App\Controllers\Api\SyncController::class, 'appData']);
 $router->get('/api/health',   [App\Controllers\Api\SyncController::class, 'health']);
+// Incremental sync: a cheap manifest first, then only the resources that actually moved.
+$router->get('/api/sync/manifest',  [App\Controllers\Api\SyncController::class, 'manifest']);
+$router->get('/api/sync/resources', [App\Controllers\Api\SyncController::class, 'resources']);
+$router->get('/api/sync/resource/{key}', [App\Controllers\Api\SyncController::class, 'resource']);
 
 /* --------------------------------------------------------------- auth flow */
 $router->get('/login',   [App\Controllers\AuthController::class, 'showLogin']);
@@ -95,17 +99,26 @@ $router->get('/notifications/new',       [App\Controllers\NotificationsControlle
 $router->get('/notifications/{id}/edit', [App\Controllers\NotificationsController::class, 'edit']);
 $router->post('/notifications/save',     [App\Controllers\NotificationsController::class, 'save']);
 $router->post('/notifications/{id}/cancel', [App\Controllers\NotificationsController::class, 'cancel']);
+$router->post('/notifications/{id}/toggle', [App\Controllers\NotificationsController::class, 'toggle']);
+$router->post('/notifications/{id}/duplicate', [App\Controllers\NotificationsController::class, 'duplicate']);
+$router->post('/notifications/{id}/delete', [App\Controllers\NotificationsController::class, 'delete']);
+$router->post('/notifications/preview',  [App\Controllers\NotificationsController::class, 'preview']);
 $router->post('/notifications/{id}/test',[App\Controllers\NotificationsController::class, 'testSend']);
 
-/* --------------------------------------------------------------- message templates */
-$router->get('/message-templates',            [App\Controllers\TemplatesController::class, 'index']);
-$router->get('/message-templates/new',        [App\Controllers\TemplatesController::class, 'create']);
-$router->get('/message-templates/{id}/edit',  [App\Controllers\TemplatesController::class, 'edit']);
-$router->post('/message-templates/save',      [App\Controllers\TemplatesController::class, 'save']);
-$router->post('/message-templates/{id}/status', [App\Controllers\TemplatesController::class, 'setStatus']);
-$router->post('/message-templates/{id}/duplicate', [App\Controllers\TemplatesController::class, 'duplicate']);
-$router->post('/message-templates/{id}/delete', [App\Controllers\TemplatesController::class, 'delete']);
-$router->post('/message-templates/test',      [App\Controllers\TemplatesController::class, 'testSample']);
+/* --------------------------------------------------------------- SMS rules */
+// Replaces the v1 "Message templates" page. The published snapshot still exposes the old
+// `templates` section, derived from these rules, so apps already in the field keep working.
+$router->get('/sms-rules',                [App\Controllers\SmsRulesController::class, 'index']);
+$router->get('/sms-rules/new',            [App\Controllers\SmsRulesController::class, 'create']);
+$router->get('/sms-rules/tester',         [App\Controllers\SmsRulesController::class, 'tester']);
+$router->post('/sms-rules/tester',        [App\Controllers\SmsRulesController::class, 'runTester']);
+$router->get('/sms-rules/{id}/edit',      [App\Controllers\SmsRulesController::class, 'edit']);
+$router->post('/sms-rules/save',          [App\Controllers\SmsRulesController::class, 'save']);
+$router->post('/sms-rules/{id}/toggle',   [App\Controllers\SmsRulesController::class, 'toggle']);
+$router->post('/sms-rules/{id}/duplicate',[App\Controllers\SmsRulesController::class, 'duplicate']);
+$router->post('/sms-rules/{id}/delete',   [App\Controllers\SmsRulesController::class, 'delete']);
+// Legacy path kept alive so old bookmarks land on the new page instead of a 404.
+$router->get('/message-templates',        [App\Controllers\SmsRulesController::class, 'legacyRedirect']);
 
 /* --------------------------------------------------------------- payments */
 $router->get('/payments',            [App\Controllers\PaymentsController::class, 'index']);
@@ -121,6 +134,8 @@ $router->post('/support/save',[App\Controllers\SupportController::class, 'save']
 /* --------------------------------------------------------------- app config */
 $router->get('/app-config',      [App\Controllers\AppConfigController::class, 'index']);
 $router->post('/app-config/save',[App\Controllers\AppConfigController::class, 'save']);
+$router->post('/app-config/categories/save', [App\Controllers\AppConfigController::class, 'saveCategories']);
+$router->post('/app-config/flags/save',      [App\Controllers\AppConfigController::class, 'saveFlags']);
 
 /* --------------------------------------------------------------- versions */
 $router->get('/versions',           [App\Controllers\VersionsController::class, 'index']);
@@ -145,6 +160,7 @@ $router->post('/settings/admins/{id}/disable', [App\Controllers\SettingsControll
 
 /* --------------------------------------------------------------- publishing */
 $router->get('/preview',              [App\Controllers\PreviewController::class, 'index']);
+$router->get('/preview/diff',         [App\Controllers\PreviewController::class, 'diff']);
 $router->get('/publish',              [App\Controllers\PublishController::class, 'review']);
 $router->post('/publish/execute',     [App\Controllers\PublishController::class, 'execute']);
 $router->get('/releases',             [App\Controllers\PublishController::class, 'releases']);

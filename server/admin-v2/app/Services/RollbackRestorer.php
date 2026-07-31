@@ -2,9 +2,17 @@
 /**
  * Restores a published snapshot's contents into the working tables so a rollback
  * becomes a normal draft that is then re-published as a NEW version. The old snapshot
- * is never touched. Fully restores the app-shipped singletons, offers and message
- * templates; billboards are restored best-effort by id (image assets are not part of a
- * published snapshot — see the migration/cutover guide).
+ * is never touched — nothing here writes to configuration_releases.
+ *
+ * Every section is restored only when the snapshot actually carries it. A release
+ * published before a section existed (an older schema) leaves those working tables
+ * completely alone rather than wiping them, so rolling back to an old version can never
+ * silently delete SMS rules, notifications, categories or feature flags that the old
+ * snapshot simply had no way to describe.
+ *
+ * Billboard image files are not part of a published snapshot: assets are matched back by
+ * their stored filename where they still exist on disk, otherwise the media reference is
+ * left as it is. See the migration/cutover guide.
  */
 
 namespace App\Services;
@@ -17,11 +25,41 @@ final class RollbackRestorer
     public static function apply(array $snap): void
     {
         $actor = Auth::user()['name'] ?? 'system';
+
         self::restoreOffers($snap['offers'] ?? [], $actor);
-        self::restoreTemplates(array_merge($snap['templates']['delivery'] ?? [], $snap['templates']['lowBalance'] ?? []), $actor);
         self::restoreSupport($snap['support'] ?? [], $actor);
         self::restoreAppConfig($snap['appConfig'] ?? [], $actor);
         self::restoreVersion($snap['version'] ?? [], $actor);
+
+        // Sections introduced after the first releases. Absent key => untouched table.
+        if (array_key_exists('smsRules', $snap) && is_array($snap['smsRules'])) {
+            self::restoreSmsRules($snap['smsRules'], $actor);
+        } elseif (isset($snap['templates']) && is_array($snap['templates'])) {
+            // A release published BEFORE SMS Rules existed only carries the legacy
+            // `templates` section. Message recognition now lives in mb_sms_rules and the
+            // published `templates` section is derived from it, so restoring into the old
+            // mb_message_templates table would look successful and change nothing. Convert
+            // instead, using the same mapping as migration 013_sms_rules.sql.
+            self::restoreSmsRules(
+                self::legacyTemplatesAsRules(array_merge(
+                    $snap['templates']['delivery'] ?? [],
+                    $snap['templates']['lowBalance'] ?? []
+                )),
+                $actor
+            );
+        }
+        if (array_key_exists('categories', $snap) && is_array($snap['categories'])) {
+            self::restoreCategories($snap['categories']);
+        }
+        if (array_key_exists('featureFlags', $snap) && is_array($snap['featureFlags'])) {
+            self::restoreFeatureFlags($snap['featureFlags']);
+        }
+        if (array_key_exists('notifications', $snap) && is_array($snap['notifications'])) {
+            self::restoreNotifications($snap['notifications'], $actor);
+        }
+        if (array_key_exists('billboards', $snap) && is_array($snap['billboards'])) {
+            self::restoreBillboards($snap['billboards'], $actor);
+        }
     }
 
     private static function restoreOffers(array $offers, string $actor): void
@@ -57,36 +95,342 @@ final class RollbackRestorer
         }
     }
 
-    private static function restoreTemplates(array $templates, string $actor): void
+    /**
+     * Translate v1 `templates` entries into the SMS-rule shape restoreSmsRules() expects.
+     * Pure, so the mapping is unit-testable. purpose + category decide the event, mirroring
+     * migration 013_sms_rules.sql, and the v1 ascending priority is inverted back into the
+     * descending scale the rule engine uses.
+     *
+     * @param array<int,array> $templates
+     * @return array<int,array>
+     */
+    public static function legacyTemplatesAsRules(array $templates): array
     {
-        $t = Database::table('message_templates');
-        $keep = [];
+        $out = [];
         foreach ($templates as $tpl) {
-            $keep[] = $tpl['id'];
+            if (!is_array($tpl) || (string) ($tpl['id'] ?? '') === '') {
+                continue;
+            }
+            $purpose  = (string) ($tpl['purpose'] ?? 'delivery');
+            $category = (string) ($tpl['category'] ?? 'DATA');
+            if ($purpose === 'delivery') {
+                $event = $category === 'SMS' ? 'SMS_RECEIVED'
+                    : ($category === 'MINUTES' ? 'MINUTES_RECEIVED' : 'DATA_RECEIVED');
+            } elseif ($purpose === 'very_low_balance') {
+                $event = 'VERY_LOW_DATA';
+            } else {
+                $event = $category === 'SMS' ? 'LOW_SMS'
+                    : ($category === 'MINUTES' ? 'LOW_MINUTES' : 'LOW_DATA');
+            }
+            $out[] = [
+                'id'          => (string) $tpl['id'],
+                'name'        => (string) ($tpl['description'] ?? $tpl['id']),
+                'senderId'    => (string) ($tpl['senderId'] ?? ''),
+                'patternType' => 'regex',
+                'pattern'     => (string) ($tpl['pattern'] ?? ''),
+                'caseSensitive' => false,
+                'event'       => $event,
+                'secondaryEvents' => [],
+                'category'    => $category,
+                'bundleType'  => '',
+                'captures'    => [],
+                'correlationWindowMinutes' => (int) ($tpl['correlationWindowMinutes'] ?? 30),
+                'priority'    => max(1, 1000 - (int) ($tpl['priority'] ?? 500)),
+            ];
+        }
+        return $out;
+    }
+
+    /* ------------------------------------------------------------------ SMS rules */
+
+    /**
+     * A published snapshot only carries ENABLED rules, so restoring means: upsert every
+     * rule in the snapshot as enabled, then disable any other currently enabled rule.
+     * Nothing is deleted — a disabled rule keeps its samples and history.
+     */
+    private static function restoreSmsRules(array $rules, string $actor): void
+    {
+        $t = Database::table('sms_rules');
+        $keep = [];
+        foreach ($rules as $r) {
+            if (!is_array($r) || (string) ($r['id'] ?? '') === '') {
+                continue;
+            }
+            $keep[] = (string) $r['id'];
+            $captures = $r['captures'] ?? null;
+            if (is_object($captures)) {
+                $captures = (array) $captures;
+            }
+            $capturesJson = (is_array($captures) && $captures !== []) ? json_encode($captures) : null;
+            $secondary = $r['secondaryEvents'] ?? [];
+            $secondary = is_array($secondary) ? implode(',', array_map('strval', $secondary)) : (string) $secondary;
+
             Database::run(
                 "INSERT INTO {$t}
-                    (template_key, label, sender_id, purpose, category, pattern_type, pattern,
-                     match_priority, correlation_window_min, status, row_version, created_at, updated_at, updated_by)
-                 VALUES (?, ?, ?, ?, ?, 'regex', ?, ?, ?, 'active', 1, UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?)
-                 ON DUPLICATE KEY UPDATE label=VALUES(label), sender_id=VALUES(sender_id), purpose=VALUES(purpose),
-                    category=VALUES(category), pattern=VALUES(pattern), match_priority=VALUES(match_priority),
-                    correlation_window_min=VALUES(correlation_window_min), status='active',
-                    row_version = row_version + 1, updated_at=UTC_TIMESTAMP(), updated_by=VALUES(updated_by)",
+                    (rule_key, name, description, sender_id, pattern_type, pattern, case_sensitive,
+                     event_type, secondary_events, category, bundle_type, captures_json,
+                     correlation_window_min, priority, enabled, row_version, created_at, updated_at, created_by, updated_by)
+                 VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?, ?)
+                 ON DUPLICATE KEY UPDATE name=VALUES(name), sender_id=VALUES(sender_id),
+                    pattern_type=VALUES(pattern_type), pattern=VALUES(pattern),
+                    case_sensitive=VALUES(case_sensitive), event_type=VALUES(event_type),
+                    secondary_events=VALUES(secondary_events), category=VALUES(category),
+                    bundle_type=VALUES(bundle_type), captures_json=VALUES(captures_json),
+                    correlation_window_min=VALUES(correlation_window_min), priority=VALUES(priority),
+                    enabled=1, row_version = row_version + 1, updated_at=UTC_TIMESTAMP(), updated_by=VALUES(updated_by)",
                 [
-                    $tpl['id'], $tpl['description'] ?? $tpl['id'], $tpl['senderId'] ?? '', $tpl['purpose'] ?? 'delivery',
-                    $tpl['category'] ?? 'DATA', $tpl['pattern'] ?? '', (int) ($tpl['priority'] ?? 5),
-                    (int) ($tpl['correlationWindowMinutes'] ?? 30), $actor,
+                    (string) $r['id'], (string) ($r['name'] ?? $r['id']), (string) ($r['senderId'] ?? ''),
+                    (string) ($r['patternType'] ?? 'regex'), (string) ($r['pattern'] ?? ''),
+                    !empty($r['caseSensitive']) ? 1 : 0, (string) ($r['event'] ?? 'UNKNOWN'),
+                    $secondary, (string) ($r['category'] ?? ''), (string) ($r['bundleType'] ?? ''),
+                    $capturesJson, (int) ($r['correlationWindowMinutes'] ?? 30), (int) ($r['priority'] ?? 100),
+                    $actor, $actor,
                 ]
             );
         }
         if ($keep !== []) {
             $in = implode(',', array_fill(0, count($keep), '?'));
             Database::run(
-                "UPDATE {$t} SET status='archived', updated_at=UTC_TIMESTAMP(), updated_by=? WHERE status='active' AND template_key NOT IN ({$in})",
+                "UPDATE {$t} SET enabled = 0, updated_at = UTC_TIMESTAMP(), updated_by = ?
+                  WHERE enabled = 1 AND rule_key NOT IN ({$in})",
                 array_merge([$actor], $keep)
             );
         }
     }
+
+    /* --------------------------------------------------------------- categories */
+
+    private static function restoreCategories(array $categories): void
+    {
+        $t = Database::table('offer_categories');
+        $keep = [];
+        foreach ($categories as $c) {
+            if (!is_array($c) || (string) ($c['id'] ?? '') === '') {
+                continue;
+            }
+            $keep[] = (string) $c['id'];
+            Database::run(
+                "INSERT INTO {$t} (category_key, label, description, accent, sort_order, enabled, is_system, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, 1, 0, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+                 ON DUPLICATE KEY UPDATE label=VALUES(label), description=VALUES(description),
+                    accent=VALUES(accent), sort_order=VALUES(sort_order), enabled=1, updated_at=UTC_TIMESTAMP()",
+                [
+                    (string) $c['id'], (string) ($c['label'] ?? $c['id']), (string) ($c['description'] ?? ''),
+                    (string) ($c['accent'] ?? ''), (int) ($c['sortOrder'] ?? 100),
+                ]
+            );
+        }
+        if ($keep !== []) {
+            $in = implode(',', array_fill(0, count($keep), '?'));
+            Database::run(
+                "UPDATE {$t} SET enabled = 0, updated_at = UTC_TIMESTAMP() WHERE enabled = 1 AND category_key NOT IN ({$in})",
+                $keep
+            );
+        }
+    }
+
+    /* ------------------------------------------------------------ feature flags */
+
+    /** flagKey => bool. Flags absent from the snapshot keep their current value. */
+    private static function restoreFeatureFlags(array $flags): void
+    {
+        $t = Database::table('feature_flags');
+        foreach ($flags as $key => $enabled) {
+            $key = (string) $key;
+            if ($key === '') {
+                continue;
+            }
+            Database::run(
+                "INSERT INTO {$t} (flag_key, label, description, enabled, is_system, sort_order, created_at, updated_at)
+                 VALUES (?, ?, '', ?, 0, 100, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+                 ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), updated_at = UTC_TIMESTAMP()",
+                [$key, $key, !empty($enabled) ? 1 : 0]
+            );
+        }
+    }
+
+    /* ------------------------------------------------------------ notifications */
+
+    /**
+     * Campaigns are identified by their numeric id, which is what the snapshot carries.
+     * Variations are replaced wholesale for a restored campaign (they have no stable id
+     * of their own in the snapshot), and campaigns missing from the snapshot are disabled
+     * rather than deleted.
+     */
+    private static function restoreNotifications(array $notifications, string $actor): void
+    {
+        $t = Database::table('notification_campaigns');
+        $v = Database::table('notification_variations');
+        $keep = [];
+
+        foreach ($notifications as $n) {
+            if (!is_array($n) || (int) ($n['id'] ?? 0) <= 0) {
+                continue;
+            }
+            $id = (int) $n['id'];
+            $keep[] = $id;
+            $variations = is_array($n['variations'] ?? null) ? $n['variations'] : [];
+            $first = is_array($variations[0] ?? null) ? $variations[0] : ['title' => '', 'body' => ''];
+            $days = is_array($n['daysOfWeek'] ?? null) ? implode(',', array_map('intval', $n['daysOfWeek'])) : '';
+
+            Database::run(
+                "INSERT INTO {$t}
+                    (id, name, title, body, deep_link, linked_offer_id, category, trigger_type, trigger_event,
+                     priority, starts_on, ends_on, days_of_week, allowed_time_start, allowed_time_end,
+                     cooldown_minutes, frequency_cap, respect_quiet_hours, suppress_recent_purchase,
+                     expires_at, enabled, status, row_version, created_at, updated_at, updated_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'active', 1,
+                         UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?)
+                 ON DUPLICATE KEY UPDATE name=VALUES(name), title=VALUES(title), body=VALUES(body),
+                    deep_link=VALUES(deep_link), linked_offer_id=VALUES(linked_offer_id),
+                    category=VALUES(category), trigger_type=VALUES(trigger_type), trigger_event=VALUES(trigger_event),
+                    priority=VALUES(priority), starts_on=VALUES(starts_on), ends_on=VALUES(ends_on),
+                    days_of_week=VALUES(days_of_week), allowed_time_start=VALUES(allowed_time_start),
+                    allowed_time_end=VALUES(allowed_time_end), cooldown_minutes=VALUES(cooldown_minutes),
+                    frequency_cap=VALUES(frequency_cap), respect_quiet_hours=VALUES(respect_quiet_hours),
+                    suppress_recent_purchase=VALUES(suppress_recent_purchase), expires_at=VALUES(expires_at),
+                    enabled=1, status='active', row_version = row_version + 1,
+                    updated_at=UTC_TIMESTAMP(), updated_by=VALUES(updated_by)",
+                [
+                    $id,
+                    (string) ($n['name'] ?? ('Notification #' . $id)),
+                    (string) ($first['title'] ?? ''),
+                    (string) ($first['body'] ?? ''),
+                    (string) ($n['deepLink'] ?? ''),
+                    ($n['linkedOfferId'] ?? '') !== '' ? $n['linkedOfferId'] : null,
+                    (string) ($n['category'] ?? ''),
+                    (string) ($n['trigger'] ?? 'manual'),
+                    (string) ($n['triggerEvent'] ?? ''),
+                    (string) ($n['priority'] ?? 'normal'),
+                    $n['startsOn'] ?? null,
+                    $n['endsOn'] ?? null,
+                    $days,
+                    (string) ($n['timeStart'] ?? ''),
+                    (string) ($n['timeEnd'] ?? ''),
+                    (int) ($n['cooldownMinutes'] ?? 0),
+                    (int) ($n['frequencyCap'] ?? 1),
+                    !empty($n['respectQuietHours']) ? 1 : 0,
+                    !empty($n['suppressRecentPurchase']) ? 1 : 0,
+                    self::dbDatetime($n['expiresAt'] ?? null),
+                    $actor,
+                ]
+            );
+
+            Database::run("DELETE FROM {$v} WHERE campaign_id = ?", [$id]);
+            $order = 0;
+            foreach ($variations as $variation) {
+                if (!is_array($variation)) {
+                    continue;
+                }
+                Database::run(
+                    "INSERT INTO {$v} (campaign_id, title, body, sort_order, enabled, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP())",
+                    [$id, (string) ($variation['title'] ?? ''), (string) ($variation['body'] ?? ''), $order++]
+                );
+            }
+        }
+
+        if ($keep !== []) {
+            $in = implode(',', array_fill(0, count($keep), '?'));
+            Database::run(
+                "UPDATE {$t} SET enabled = 0, updated_at = UTC_TIMESTAMP(), updated_by = ?
+                  WHERE enabled = 1 AND status = 'active' AND id NOT IN ({$in})",
+                array_merge([$actor], $keep)
+            );
+        }
+    }
+
+    /* -------------------------------------------------------------- billboards */
+
+    /**
+     * Restore the published content, media descriptors and tap target of billboards that
+     * still exist. Billboards are never re-created here (their internal name and uploaded
+     * asset are not part of a snapshot); ones absent from the snapshot are switched off so
+     * the app sees exactly the carousel that version served.
+     */
+    private static function restoreBillboards(array $billboards, string $actor): void
+    {
+        $t = Database::table('billboards');
+        $keep = [];
+        foreach ($billboards as $b) {
+            if (!is_array($b) || (int) ($b['id'] ?? 0) <= 0) {
+                continue;
+            }
+            $id = (int) $b['id'];
+            $keep[] = $id;
+            Database::run(
+                "UPDATE {$t} SET
+                    priority = ?, display_order = ?, linked_offer_id = ?, tag = ?, headline = ?, body = ?,
+                    cta_label = ?, cta_destination = ?, media_type = ?, alt_text = ?,
+                    target_action = ?, click_url = ?, internal_action = ?, target_category = ?,
+                    audience_rule = ?, frequency_cap = ?, image_asset_id = COALESCE(?, image_asset_id),
+                    thumb_asset_id = COALESCE(?, thumb_asset_id),
+                    enabled = 1, status = 'active',
+                    row_version = row_version + 1, updated_at = UTC_TIMESTAMP(), updated_by = ?
+                  WHERE id = ?",
+                [
+                    (int) ($b['priority'] ?? 5),
+                    (int) ($b['displayOrder'] ?? 0),
+                    ($b['linkedOfferId'] ?? '') !== '' ? $b['linkedOfferId'] : null,
+                    (string) ($b['tag'] ?? ''),
+                    (string) ($b['headline'] ?? ''),
+                    (string) ($b['body'] ?? ''),
+                    (string) ($b['ctaLabel'] ?? 'Buy now'),
+                    (string) ($b['ctaDestination'] ?? ''),
+                    (string) ($b['mediaType'] ?? 'none'),
+                    (string) ($b['altText'] ?? ''),
+                    (string) ($b['targetAction'] ?? 'none'),
+                    (string) ($b['clickUrl'] ?? ''),
+                    (string) ($b['internalAction'] ?? ''),
+                    (string) ($b['targetCategory'] ?? ''),
+                    (string) ($b['audienceRule'] ?? 'all'),
+                    (int) ($b['frequencyCap'] ?? 0),
+                    self::assetIdForUrl($b['imageUrl'] ?? ''),
+                    self::assetIdForUrl($b['thumbUrl'] ?? ''),
+                    $actor,
+                    $id,
+                ]
+            );
+        }
+        if ($keep !== []) {
+            $in = implode(',', array_fill(0, count($keep), '?'));
+            Database::run(
+                "UPDATE {$t} SET enabled = 0, updated_at = UTC_TIMESTAMP(), updated_by = ?
+                  WHERE enabled = 1 AND status IN ('active','scheduled') AND id NOT IN ({$in})",
+                array_merge([$actor], $keep)
+            );
+        }
+    }
+
+    /** 'uploads/abc.webp' => the asset row id, or null when the file is unknown. */
+    private static function assetIdForUrl($url): ?int
+    {
+        $name = basename((string) $url);
+        if ($name === '' || $name === '.') {
+            return null;
+        }
+        $row = Database::fetch(
+            'SELECT id FROM ' . Database::table('billboard_assets') . ' WHERE stored_name = ? LIMIT 1',
+            [$name]
+        );
+        return $row ? (int) $row['id'] : null;
+    }
+
+    /** ISO-8601 Z back to the DATETIME string MySQL stores, or null. */
+    private static function dbDatetime($iso): ?string
+    {
+        $iso = trim((string) $iso);
+        if ($iso === '') {
+            return null;
+        }
+        try {
+            return (new \DateTimeImmutable($iso, new \DateTimeZone('UTC')))->format('Y-m-d H:i:s');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /* ---------------------------------------------------------------- singletons */
 
     private static function restoreSupport(array $s, string $actor): void
     {

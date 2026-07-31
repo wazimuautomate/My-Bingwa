@@ -116,13 +116,23 @@ test('validate blocks forced update without destination', function () {
     $snap['version']['apkUrl'] = '';
     ok(count(PublishingService::validate($snap)['errors']) > 0);
 });
-test('validate warns on duplicate offline prices, still publishable', function () {
+test('two offers may share a price without any complaint', function () {
+    // Deliberate: a duplicated offer placed in another category legitimately shares its
+    // price. This used to raise a warning; the owner asked for it to stop, so the rule
+    // now is that a shared price is neither an error NOR a warning.
     $snap = baseSnapshot();
     $snap['offers'][] = ['id' => 'x', 'category' => 'DATA', 'name' => 'A', 'price' => 50, 'offlineEligible' => true, 'dailyRule' => 'MULTIPLE_PER_DAY'];
-    $snap['offers'][] = ['id' => 'y', 'category' => 'DATA', 'name' => 'B', 'price' => 50, 'offlineEligible' => true, 'dailyRule' => 'MULTIPLE_PER_DAY'];
+    $snap['offers'][] = ['id' => 'y', 'category' => 'SPECIAL', 'name' => 'B', 'price' => 50, 'offlineEligible' => true, 'dailyRule' => 'MULTIPLE_PER_DAY'];
     $r = PublishingService::validate($snap);
     eq($r['errors'], []);
-    ok(count($r['warnings']) > 0);
+    eq($r['warnings'], []);
+});
+test('validate warns when no offline payment route is configured', function () {
+    $snap = baseSnapshot();
+    $snap['support'] = ['tillNumber' => '', 'paybillNumber' => ''];
+    $r = PublishingService::validate($snap);
+    eq($r['errors'], []);
+    ok(count($r['warnings']) > 0, 'a missing Till AND Paybill must be surfaced');
 });
 test('validate blocks duplicate offer ids', function () {
     $snap = baseSnapshot();
@@ -163,12 +173,25 @@ function baseSnapshot(): array
 {
     return [
         'offers' => [['id' => 'data_1', 'category' => 'DATA', 'name' => '1GB', 'price' => 19, 'offlineEligible' => true, 'dailyRule' => 'MULTIPLE_PER_DAY']],
+        'categories' => [],
         'billboards' => [],
+        'notifications' => [],
+        'smsRules' => [],
         'templates' => ['version' => 1, 'delivery' => [], 'lowBalance' => []],
         'support' => ['tillNumber' => '111111', 'paybillNumber' => '222222'],
         'appConfig' => [],
+        'featureFlags' => [],
         'version' => ['latestVersionCode' => 1, 'latestVersionName' => '1.0.0', 'minSupportedVersionCode' => 1, 'mandatory' => false, 'playStoreUrl' => 'x', 'apkUrl' => '', 'rolloutPercent' => 100],
     ];
+}
+
+/* ------------------------------------------------------------------ modules ----
+ * Each module keeps its own cases in tests/cases/<module>.php and calls the same
+ * test()/ok()/eq() helpers. Dropping a file in is all it takes to be covered here.
+ */
+foreach (glob(__DIR__ . '/cases/*.php') ?: [] as $caseFile) {
+    echo "\n" . basename($caseFile, '.php') . "\n";
+    require $caseFile;
 }
 
 echo str_repeat('-', 44) . "\n";

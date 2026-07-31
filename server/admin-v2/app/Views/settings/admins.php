@@ -53,23 +53,5 @@
     </form>
   </div>
 </div>
-<script>
-(function () {
-  var form = document.getElementById('admin-form');
-  function set(id, v) { var el = document.getElementById(id); if (el) el.value = v; }
-  document.querySelectorAll('[data-edit-admin]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      set('af-id', b.dataset.id); set('af-name', b.dataset.name); set('af-email', b.dataset.email);
-      document.getElementById('af-password').value = '';
-      document.getElementById('af-super').checked = b.dataset.super === '1';
-      var pages = (b.dataset.pages || '').split(',');
-      document.querySelectorAll('.af-page').forEach(function (c) { c.checked = pages.indexOf(c.dataset.page) !== -1; });
-      document.getElementById('admin-form-title').textContent = 'Edit administrator';
-      form.scrollIntoView({ behavior: 'smooth' });
-    });
-  });
-  document.getElementById('af-reset').addEventListener('click', function () {
-    form.reset(); set('af-id', '0'); document.getElementById('admin-form-title').textContent = 'Add administrator';
-  });
-})();
-</script>
+<?php /* The Edit/New behaviour lives in assets/js/app.js: an inline <script> here was
+        silently blocked by the Content-Security-Policy (script-src 'self'). */ ?>

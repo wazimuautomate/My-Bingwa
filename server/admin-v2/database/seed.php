@@ -161,20 +161,10 @@ final class Seeder
             $senderStmt->execute([$sid, strtoupper(trim($sid)), $note]);
         }
 
-        $mt = Database::table('message_templates');
-        if (Database::fetch("SELECT id FROM {$mt} LIMIT 1")) {
-            return;
-        }
-        $stmt = Database::pdo()->prepare(
-            "INSERT INTO {$mt}
-             (template_key, label, sender_id, purpose, category, pattern_type, pattern,
-              positive_samples, negative_samples, status, row_version, created_at, updated_at, updated_by)
-             VALUES (?, ?, ?, ?, ?, 'regex', ?, ?, ?, 'active', 1, UTC_TIMESTAMP(), UTC_TIMESTAMP(), 'seed')"
-        );
-        foreach ($data['message_templates'] as [$key, $purpose, $sender, $cat, $pattern, $label, $pos, $neg]) {
-            $stmt->execute([$key, $label, $sender, $purpose, $cat, $pattern, json_encode($pos), json_encode($neg)]);
-        }
-        $msg[] = count($data['message_templates']) . ' message templates seeded.';
+        $msg[] = count($data['sender_ids']) . ' sender IDs ensured.';
+        // Message recognition itself is seeded by migration 013 straight into mb_sms_rules,
+        // which is the single editable source. The v1 mb_message_templates table is left
+        // untouched (an upgrading install has its rows imported by that same migration).
     }
 
     /** Create the first Super Admin. Password from config bootstrap_admin, else generated. */
