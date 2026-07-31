@@ -10,7 +10,72 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ## [Unreleased]
 
-_Nothing yet. Next up: server→app notifications sync (FCM or poll+local-schedule)._
+### Added
+
+- **Notification engine** (`core/notifications/engine/`). 54 seed templates, 3+ per
+  category across 18 categories, personalised with name, time-of-day greeting, usual
+  bundle and recent activity, chosen by weighted deterministic random and never
+  repeating back-to-back. Per-category cooldowns, Africa/Nairobi quiet hours
+  (transactional categories bypass), a 6/day cap on non-transactional messages, and
+  content-hash de-duplication. Server-published wording and admin-published messages
+  cache locally and still display offline.
+- **Dynamic SMS detection engine** (`core/sms/`). Detection rules are data — sender
+  id, pattern (REGEX/KEYWORDS/TEMPLATE), event types, priority — downloaded from the
+  server and cached. 12 seed rules cover every observed Safaricom, SAF_Balance and
+  SAF_OfaMOTO message. **A new sender id or wording now needs a server change, not an
+  app release.** Generic extractors read MB/GB, minutes, SMS counts, Sh price, bundle
+  type and both expiry formats.
+- **Incremental sync engine** (`data/sync/`, `data/remote/`). Per-resource version +
+  checksum, so only what actually changed is downloaded. Force sync polls a
+  few-hundred-byte manifest every 90s while foreground, so an admin publish (e.g. a
+  replaced Paybill or Till) reaches online customers without a store update, reinstall
+  or cache clear.
+- **On-device personalisation** (`core/personalization/`). Learns most-purchased
+  bundle and amount, favourite category, buying hour and frequency, preferred payer
+  number and top recipients, with a 30-day recency half-life. Ranks Home and adds
+  "Buy again" / "Your usual bundle" / "Bought yesterday" labels, and pre-fills the
+  M-Pesa payer number at checkout. Nothing ever leaves the device.
+- **Billboard images and animated GIFs**, with click actions (offer, category,
+  internal route, external link), a bounded 32 MB Coil disk cache so a synced slide
+  still renders offline, and `mediaVersion` cache-busting.
+- **Animated cold-start splash** (`core/ui/BrandSplashOverlay.kt`). Logo scales
+  0.72→1 with alpha 0→1 on an overshoot interpolator over 460ms; the app name fades in
+  and rises 12dp→0 over 320ms starting at 160ms; after a 900ms hold the logo scales to
+  1.08 while the overlay fades out over 280ms and detaches. Honours reduced motion;
+  cold start only.
+- Four app-key-guarded server endpoints: `get_sync_manifest.php`, `get_sms_rules.php`,
+  `get_notification_templates.php`, `get_app_notifications.php`.
+
+### Changed
+
+- **Instant offline/online switching.** Connectivity is now observed through
+  `registerDefaultNetworkCallback` plus an INTERNET-capability callback, using
+  `NET_CAPABILITY_VALIDATED` as the real-internet signal — so a captive portal
+  correctly reads as offline instead of failing a payment. Offline is reported
+  instantly; online settles for 400ms to avoid announcing a half-open network. No app
+  restart or manual refresh is needed.
+- **Notification and SMS permissions moved into onboarding**, each explaining why
+  before the system dialog, with a "Not now" escape. Declining never blocks the app.
+  The SMS step hides itself on the Play flavour.
+- **GitHub updater is now gated by flavour, not build type**
+  (`BuildConfig.GITHUB_UPDATER_ENABLED`): off for `play` (the store updates itself),
+  on for `direct` (sideloaded users have no store) and on for all debug builds.
+- `BingwaRepository` implements `SyncTargets`; `MyBingwaApplication` implements
+  `SyncOrchestratorProvider` and owns the engines.
+
+### Fixed
+
+- **Billboard scheduling in Nairobi local time.** Start/end timestamps previously
+  parsed only UTC `...Z`, so a slide published with a Nairobi-local timestamp could
+  stay hidden for up to three hours.
+
+### Internal
+
+- Seven separate DataStore files, one per engine, so no engine can reach the file
+  holding purchases, favourites and the active order.
+- `SmsSignal` gained `EventDetected` (matched rule + extracted values) and stays
+  `sealed`; the two legacy signals are still emitted for existing reconciliation.
+- Architecture reference added at `docs/PRODUCTION_INTELLIGENCE.md`.
 
 ## [1.0.2] - 2026-07-26
 
