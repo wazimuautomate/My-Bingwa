@@ -44,6 +44,9 @@ $excludePatterns = @(
     '*/storage/*',
     '*/dist/*',
     'server/tools/*',          # developer tooling, not server code
+    '*/tests/*',               # the logic suite runs in CI, never on the web server
+    '*/bin/*',                 # one-off CLI utilities
+    '*/cutover/*',             # legacy migration helpers
     '*/.gitignore',
     '*/composer.json',
     '*.zip', '*.pem', '*.key', '*.p12', '*.jks', '*.keystore', '*.env', '.env*'

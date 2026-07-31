@@ -1,0 +1,88 @@
+# Deploy the PHP server to cPanel over FTP.
+#
+# Manual only (workflow_dispatch) — nothing ever touches the live server without someone
+# on GitHub clicking "Run workflow" and choosing Deploy for real. The first run against an
+# empty target uploads everything; every run after that uploads only what changed, because
+# FTP-Deploy-Action compares against the remote instead of doing its own git diff.
+#
+# What it deliberately never touches on the server:
+#   - config/config.php (admin-v2) and config.php (mybingwa-api) — real secrets, hand-set
+#     once and never overwritten by this workflow.
+#   - uploads/ and storage/ (admin-v2) — real uploaded images and runtime files.
+#   - tests/, bin/, cutover/ — development tooling that has no place on a web server.
+#
+# Setup (one-time, in GitHub → Settings → Secrets and variables → Actions):
+#   FTP_HOST      the FTP hostname for the target account (from cPanel → FTP Accounts)
+#   FTP_USERNAME  that FTP account's username
+#   FTP_PASSWORD  that FTP account's password
+#
+# These currently point at whichever cPanel account holds the FTP_HOST secret. To deploy
+# to a different server, update the three secrets (or add a second workflow with different
+# secret names) — this file does not choose the target, the secrets do.
+
+name: Deploy to cPanel (FTP)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview only — show what would change without uploading anything"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-cpanel
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: ${{ inputs.dry_run && 'Preview deploy (dry run)' || 'Deploy' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # ---------------------------------------------------------------- mybingwa-api
+      # Lives at the FTP account's root (the document root of whatever domain/subdomain
+      # the FTP account is pointed at).
+      - name: Deploy mybingwa-api (payment API)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          dry-run: ${{ inputs.dry_run }}
+          local-dir: server/mybingwa-api/
+          server-dir: ./
+          dangerous-clean-slate: false
+          exclude: |
+            config.php
+            **/tests/**
+            **/.git*
+
+      # -------------------------------------------------------------------- admin-v2
+      # Lives in an "admin" subfolder under that same root, e.g. https://<domain>/admin/.
+      - name: Deploy admin-v2 (admin panel)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          dry-run: ${{ inputs.dry_run }}
+          local-dir: server/admin-v2/
+          server-dir: admin/
+          dangerous-clean-slate: false
+          exclude: |
+            config/config.php
+            uploads/**
+            storage/**
+            tests/**
+            bin/**
+            cutover/**
+            **/.git*
+            composer.json
