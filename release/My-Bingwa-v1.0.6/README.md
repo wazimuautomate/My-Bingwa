@@ -2,11 +2,43 @@
 
 **versionName** `1.0.6` · **versionCode** `7` · **applicationId** `com.bingwasokoni`
 
-> **Build status: artifacts not yet produced.** The signing key lives only in GitHub
-> Actions secrets — no keystore exists on any local machine — so the `.aab` and the
-> signed `.apk` for this version are produced by the "Release (signed)" workflow from
-> the `v1.0.6` tag, exactly as v1.0.3 was. This folder holds the release notes and the
-> checklist; drop the CI artifacts in beside this file when the run finishes.
+Built by GitHub Actions "Release (signed)" run `31274807752` from tag `v1.0.6`
+(commit `247b4ca` on `main`). Signed with the permanent upload key held in Actions
+secrets — no keystore exists on any local machine.
+
+## What is in this folder
+
+| File | What it is | Where it goes |
+|---|---|---|
+| `My-Bingwa-v1.0.6-play.aab` | **Google Play bundle** (13.8 MB) | Play Console → Production → Create release → upload this |
+| `My-Bingwa-v1.0.6-play.aab.sha256` | Checksum for the bundle | Verify before uploading |
+| `My-Bingwa-v1.0.6-direct.apk` | Signed APK for direct/sideload distribution (13.9 MB) | GitHub Release / direct download. **Not** for Play |
+| `My-Bingwa-v1.0.6-direct.apk.sha256` | Checksum for the direct APK | Verify before distributing |
+
+Verify either file with `sha256sum -c <file>.sha256`.
+
+```
+APK  3f42ab8cdd282ff3724550b79410b0b491bd00ee94cd9d8bef9a7ed7bf9669cb
+AAB  9abb32a0b36b263a06ff66fc12a893a896f731b276a935c4172a55374eea1428
+```
+
+### Checked on the actual artifacts, not assumed
+
+- `versionCode` **7**, `versionName` **1.0.6**, `applicationId` **com.bingwasokoni**,
+  `minSdk` 24, `targetSdk` 36 — read back out of the built APK.
+- **The signing identity is byte-identical to v1.0.3**: certificate SHA-256
+  `185d3fca540acfcf26ff49530bdb5ff491a236e8fa096493ccd86f72117837cd`,
+  `CN=My Bingwa, O=My Bingwa, L=Nairobi, C=KE`. That is what lets a customer move
+  between the Play and direct channels with updates superseding correctly — worth
+  confirming every release, because a mismatch is only discovered when an update
+  refuses to install.
+- The direct APK declares `RECEIVE_SMS` and `REQUEST_INSTALL_PACKAGES`, as the
+  sideload channel needs; the Play bundle drops `REQUEST_INSTALL_PACKAGES`.
+- The APK's direct-channel checksum matched the one CI generated.
+- Both artifacts came out of the same CI job, so they are the same source at the same
+  commit.
+
+Never distribute the `.aab` to end users — it is not installable.
 
 ## What ships in this version
 
