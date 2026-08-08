@@ -673,6 +673,12 @@ class FakeBingwaRepositoryImpl(
         // displayed Till/Paybill are the server-synced values (always available offline).
         if (configProvider.load(System.currentTimeMillis()) !is OfflineConfigResult.Valid) return null
         val cfg = _appConfig.value
+        // No seller numbers are baked into the app, so an install that has never
+        // reached the server has blank Till AND Paybill. Returning a config here would
+        // render the offline instructions with an empty number to copy. Treat it as no
+        // usable configuration instead, so the sheet shows "connect to refresh"
+        // (CLAUDE.md §7: ambiguous offline configuration disables payment).
+        if (cfg.isBlankConfig()) return null
         return OfflinePaymentConfig(
             tillNumber = cfg.tillNumber,
             paybillNumber = cfg.paybillNumber,

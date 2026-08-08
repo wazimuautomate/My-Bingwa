@@ -273,63 +273,72 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        // Bundle & balance alerts (optional Safaricom SMS reading).
+        //
+        // Only the `direct` flavour ships RECEIVE_SMS — the Play manifest overlay
+        // removes it, because Play restricts the SMS permission group and a bundle
+        // store is not an approved use case. Without the permission declared, the
+        // runtime request is denied by the OS the instant it is made, so on Play the
+        // toggle could never turn on. Hide the whole section there rather than show a
+        // control that silently snaps back off.
+        if (BuildConfig.SMS_DETECTION_AVAILABLE) {
+            Spacer(modifier = Modifier.height(24.dp))
 
-        // Bundle & balance alerts (optional Safaricom SMS reading) Section
-        SettingsGroupTitle("Bundle & balance alerts")
-        Surface(
-            shape = FieldButtonShape,
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            SettingsGroupTitle("Bundle & balance alerts")
+            Surface(
+                shape = FieldButtonShape,
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Sms,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Reads Safaricom SMS",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Sms,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
                         )
-                        Text(
-                            text = if (smsAlertsEnabled) {
-                                "Confirms delivery and suggests top-ups"
-                            } else {
-                                "Off — no SMS is read"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Reads Safaricom SMS",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (smsAlertsEnabled) {
+                                    "Confirms delivery and suggests top-ups"
+                                } else {
+                                    "Off — no SMS is read"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                }
 
-                Switch(
-                    checked = smsAlertsEnabled,
-                    onCheckedChange = { desired ->
-                        if (desired) showSmsRationale = true else smsAlertsEnabled = false
-                    },
-                    modifier = Modifier.testTag("sms_alerts_switch"),
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                        checkedTrackColor = MaterialTheme.colorScheme.primary
+                    Switch(
+                        checked = smsAlertsEnabled,
+                        onCheckedChange = { desired ->
+                            if (desired) showSmsRationale = true else smsAlertsEnabled = false
+                        },
+                        modifier = Modifier.testTag("sms_alerts_switch"),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
                     )
-                )
+                }
             }
         }
 
@@ -359,54 +368,60 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                // Self-update is a DEBUG-only development affordance. A shipped build is
+                // distributed and updated by Google Play, so it neither fetches
+                // update.json nor offers to install an APK itself — the whole control is
+                // absent rather than present-but-useless.
+                if (BuildConfig.UPDATE_CHECK_ENABLED) {
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                Button(
-                    onClick = {
-                        if (checkingUpdates) return@Button
-                        checkingUpdates = true
-                        updateMessage = null
-                        manualUpdate = null
-                        scope.launch {
-                            updateMessage = when (val result = UpdateChecker.check()) {
-                                is UpdateResult.Available -> {
-                                    manualUpdate = result
-                                    val name = result.versionName.takeIf { it.isNotBlank() }
-                                    if (name != null) "Version $name is available." else "A new version is available."
+                    Button(
+                        onClick = {
+                            if (checkingUpdates) return@Button
+                            checkingUpdates = true
+                            updateMessage = null
+                            manualUpdate = null
+                            scope.launch {
+                                updateMessage = when (val result = UpdateChecker.check()) {
+                                    is UpdateResult.Available -> {
+                                        manualUpdate = result
+                                        val name = result.versionName.takeIf { it.isNotBlank() }
+                                        if (name != null) "Version $name is available." else "A new version is available."
+                                    }
+                                    UpdateResult.UpToDate ->
+                                        "You are on the latest version of My Bingwa."
+                                    is UpdateResult.Error -> result.message
                                 }
-                                UpdateResult.UpToDate ->
-                                    "You are on the latest version of My Bingwa."
-                                is UpdateResult.Error -> result.message
+                                checkingUpdates = false
                             }
-                            checkingUpdates = false
-                        }
-                    },
-                    enabled = !checkingUpdates,
-                    shape = FieldButtonShape,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (checkingUpdates) "Checking…" else "Check for updates", fontWeight = FontWeight.Bold)
-                }
+                        },
+                        enabled = !checkingUpdates,
+                        shape = FieldButtonShape,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (checkingUpdates) "Checking…" else "Check for updates", fontWeight = FontWeight.Bold)
+                    }
 
-                if (updateMessage != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = updateMessage!!,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                    if (updateMessage != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = updateMessage!!,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
 
-                // In-app install of the signed update (no browser). Shown when either a
-                // manual check or the app-start check (knownUpdate) found a newer build.
-                // Downloads + verifies + launches the system installer (github), or opens
-                // the Play listing (play). An in-place update preserves all local data.
-                (manualUpdate ?: knownUpdate)?.let { update ->
-                    Spacer(modifier = Modifier.height(12.dp))
-                    UpdateInstallControls(update = update)
+                    // In-app install of the signed update (no browser). Shown when either a
+                    // manual check or the app-start check (knownUpdate) found a newer build.
+                    // Downloads + verifies + launches the system installer (github), or opens
+                    // the Play listing (play). An in-place update preserves all local data.
+                    (manualUpdate ?: knownUpdate)?.let { update ->
+                        Spacer(modifier = Modifier.height(12.dp))
+                        UpdateInstallControls(update = update)
+                    }
                 }
             }
         }

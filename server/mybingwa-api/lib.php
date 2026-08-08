@@ -49,6 +49,62 @@ function published_snapshot(PDO $pdo): ?array
     }
 }
 
+/**
+ * The authoritative price for an offer, in KSh, or null when the offer is not
+ * currently sellable.
+ *
+ * The SERVER decides the price — the app's amount is never trusted (CLAUDE.md §7).
+ * Resolution order, most authoritative first:
+ *
+ *   1. The published admin snapshot (`mb_configuration_releases`). This is exactly
+ *      what `get_offers.php` serves to the app, so what the customer sees on the
+ *      card is what the STK charges. An offer the owner un-published is NOT here,
+ *      so it is no longer payable.
+ *   2. The legacy unprefixed `offers` table (`active = 1`), for installs that
+ *      predate the admin panel.
+ *   3. [$fallback], the static `offers.php` map — used only when neither table can
+ *      be read (fresh install, DB hiccup), so payments never break outright.
+ *
+ * Keeping this in step with `get_offers.php` is what stops the two from drifting:
+ * before this existed, editing a price in the admin changed the displayed price but
+ * not the charged one, and the callback's amount cross-check then held the customer's
+ * real payment as an unconfirmed mismatch.
+ */
+function offer_price(PDO $pdo, string $offerId, array $fallback): ?int
+{
+    // 1. Published admin snapshot — the same source get_offers.php serves.
+    $snap = published_snapshot($pdo);
+    if ($snap !== null && !empty($snap['offers'])) {
+        foreach ($snap['offers'] as $o) {
+            if ((string) ($o['id'] ?? '') === $offerId) {
+                $price = (int) ($o['price'] ?? 0);
+                return $price > 0 ? $price : null;
+            }
+        }
+        // A published catalogue exists and does not contain this offer → not sellable.
+        return null;
+    }
+
+    // 2. Legacy active offers table.
+    try {
+        $stmt = $pdo->prepare('SELECT price FROM offers WHERE offer_id = ? AND active = 1 LIMIT 1');
+        $stmt->execute([$offerId]);
+        $row = $stmt->fetch();
+        if ($row !== false) {
+            $price = (int) $row['price'];
+            return $price > 0 ? $price : null;
+        }
+        // The table exists but has no active row for this id → not sellable.
+        return null;
+    } catch (Throwable $e) {
+        // No offers table at all → fall through to the static map.
+    }
+
+    // 3. Static offers.php map (last resort, never blocks a payment on a fresh install).
+    $price = (int) ($fallback[$offerId] ?? 0);
+    return $price > 0 ? $price : null;
+}
+
 // ---------------------------------------------------------------------------
 // Callback authenticity (Daraja cannot send custom headers, so we gate the
 // CallbackURL with a shared-secret path token + an optional source-IP allowlist).

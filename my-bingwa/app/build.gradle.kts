@@ -23,8 +23,8 @@ android {
     // GitHub and Play channels and updates supersede correctly (same signing
     // identity — see signingConfigs + docs/RELEASE_PLAYSTORE.md). Bump BOTH for
     // every release; versionCode must only ever increase.
-    versionCode = 3
-    versionName = "1.0.2"
+    versionCode = 4
+    versionName = "1.0.3"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -32,11 +32,11 @@ android {
     // install is visually distinct from and installable alongside the release app.
     manifestPlaceholders["appLabel"] = "My Bingwa"
 
-    // Where the direct-APK (GitHub) channel advertises its latest version. Play
-    // distribution updates itself natively; this drives ONLY the sideload/GitHub
-    // in-app update check. Non-secret. See update.json at the repo root and
-    // core/update/UpdateChecker.kt. Overridable via the `updateManifestUrl` Gradle
-    // property or the UPDATE_MANIFEST_URL env var.
+    // Where the DEBUG build's update check reads its manifest. Non-secret. See
+    // update.json at the repo root and core/update/UpdateChecker.kt. Only consulted
+    // when UPDATE_CHECK_ENABLED is true (debug only — see buildTypes below).
+    // Overridable via the `updateManifestUrl` Gradle property or the
+    // UPDATE_MANIFEST_URL env var.
     val updateManifestUrl = (project.findProperty("updateManifestUrl") as String?)?.takeIf { it.isNotBlank() }
       ?: System.getenv("UPDATE_MANIFEST_URL")?.takeIf { it.isNotBlank() }
       ?: "https://raw.githubusercontent.com/wazimuautomate/My-Bingwa/main/update.json"
@@ -71,13 +71,20 @@ android {
     // delivery-detection feature (RECEIVE_SMS), which Google Play restricts.
     create("direct") {
       dimension = "distribution"
+      buildConfigField("boolean", "SMS_DETECTION_AVAILABLE", "true")
     }
     // Google Play build. src/play/AndroidManifest.xml removes RECEIVE_SMS and
     // SmsDeliveryReceiver so the Play submission needs no restricted-permission
     // declaration and cannot be rejected for it. Identical applicationId and
     // signing identity as `direct`, so the two channels are update-compatible.
+    //
+    // Because the permission is genuinely absent here, the Settings entry for SMS
+    // delivery detection is hidden too (SMS_DETECTION_AVAILABLE = false): a toggle
+    // that requests an undeclared permission is denied instantly by the OS and
+    // would read as a broken control.
     create("play") {
       dimension = "distribution"
+      buildConfigField("boolean", "SMS_DETECTION_AVAILABLE", "false")
     }
   }
 
@@ -99,6 +106,14 @@ android {
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
+      // The GitHub in-app update check is a DEVELOPMENT convenience only. Shipped
+      // builds never look at update.json: Google Play distributes and updates the
+      // production app natively, and a Play build that offered to download and
+      // install an APK from GitHub would both fail (the play flavour removes
+      // REQUEST_INSTALL_PACKAGES) and breach Play's distribution policy. With this
+      // false, MainActivity skips the start-up check and Settings hides the
+      // "Check for updates" control entirely.
+      buildConfigField("boolean", "UPDATE_CHECK_ENABLED", "false")
     }
     // Debug is installable alongside release: a distinct application-id suffix and
     // the "My Bingwa Dev" launcher label. Uses AGP's auto-generated debug
@@ -107,6 +122,9 @@ android {
       applicationIdSuffix = ".debug"
       versionNameSuffix = "-debug"
       manifestPlaceholders["appLabel"] = "My Bingwa Dev"
+      // Keep the update check on the debug APK so development installs can still
+      // pull a newer test build from update.json.
+      buildConfigField("boolean", "UPDATE_CHECK_ENABLED", "true")
     }
   }
   compileOptions {

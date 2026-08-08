@@ -10,6 +10,43 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ## [Unreleased]
 
+### Changed
+
+- **The in-app GitHub update check is now a debug-build feature only.** Shipped builds
+  no longer fetch `update.json`, no longer show the "Check for updates" control, the
+  update notification, the Home "update available" billboard or the force-update gate.
+  Google Play distributes and updates the production app natively; a Play build offering
+  to download and install an APK from GitHub could not work anyway (the `play` flavour
+  removes `REQUEST_INSTALL_PACKAGES`) and would breach Play's distribution policy. The
+  debug APK keeps the whole flow for development installs.
+- **The Play build no longer shows the "Reads Safaricom SMS" setting.** The `play`
+  manifest overlay removes `RECEIVE_SMS`, so requesting it at runtime was denied by the
+  OS the instant the customer tapped Allow and the toggle snapped straight back off. The
+  section is hidden when the permission is not in the build (`SMS_DETECTION_AVAILABLE`);
+  the direct APK is unaffected.
+
+### Fixed
+
+- **The STK price is now read from the published catalogue, not a static file.**
+  `stk.php` recomputed the amount from the hardcoded `offers.php` map while
+  `get_offers.php` served the admin's published snapshot to the app. The two agreed only
+  by hand. Editing a price in the admin would have charged the old amount, and the
+  callback's amount cross-check would then have held the customer's real payment as an
+  unconfirmed mismatch; adding an offer would have failed every purchase of it with
+  `UNKNOWN_OFFER`. `offer_price()` now resolves the published snapshot first, then the
+  legacy `offers` table, and only falls back to the static map when neither can be read.
+  An un-published offer is no longer payable.
+- **Offline instructions can no longer show a blank number to pay.** An install that had
+  never reached the server has blank Till and Paybill (no seller numbers are baked into
+  the app), and the offline sheet rendered a "copy the Till number" button with nothing
+  behind it. A blank configuration — or a blank number for the chosen route — now shows
+  the "connect to refresh" state instead (CLAUDE.md §7).
+- **The admin gateway overlay was dead in production.** `config.php` looked for
+  `../admin-v2/cutover/gateway_bridge.php`, a sibling path that only exists in the
+  repository checkout; on cPanel the admin lives at `public_html/admin/`, so `@include`
+  silently returned false and the Payment-gateway page could never override `party_b`,
+  the fulfilment phone or the other routing values. Both layouts are now tried.
+
 ### Added
 
 - **Admin — SMS rules.** Message recognition is now editable data instead of hardcoded

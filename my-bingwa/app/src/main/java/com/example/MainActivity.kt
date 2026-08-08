@@ -221,12 +221,18 @@ fun MyBingwaApp(
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
 
-    // --- Direct-channel update awareness (Task 8) --------------------------------
-    // One check at start drives all three surfaces: the force-update gate, the
-    // system notification and the Home "Update available" billboard. Play users
-    // update via the store; github users install in-app (AppUpdateInstaller).
+    // --- Update awareness (DEBUG BUILDS ONLY) ------------------------------------
+    // One check at start drives all three surfaces: the force-update gate, the system
+    // notification and the Home "Update available" billboard.
+    //
+    // BuildConfig.UPDATE_CHECK_ENABLED is true only for debug builds. Shipped builds
+    // are distributed by Google Play, which updates them natively, so they never fetch
+    // update.json and never offer to install an APK themselves. With the flag false
+    // `pendingUpdate` stays null, which leaves every update surface (gate, billboard,
+    // notification) inert without any further branching below.
     var pendingUpdate by remember { mutableStateOf<UpdateResult.Available?>(null) }
     LaunchedEffect(Unit) {
+        if (!BuildConfig.UPDATE_CHECK_ENABLED) return@LaunchedEffect
         val result = UpdateChecker.check()
         if (result is UpdateResult.Available) {
             pendingUpdate = result

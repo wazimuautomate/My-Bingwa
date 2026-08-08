@@ -1251,3 +1251,93 @@ destinations.
 
 - **CI RESULT (2026-07-31, after push):** `Server checks` GREEN on `feature/server-production-release` @ 8a465ae (run 30621689932, 19s). `php -l` parsed every PHP file in `server/` on PHP 8.1; `php tests/run.php` reported **PASS: 150, FAIL: 0**; migration lint and the committed-secret check both passed. This is the first time the PHP has been executed at all in this project's history. Still unverified: SQL against MySQL, GD/finfo image handling, and browser rendering.
 - **Concurrent-session incident (recorded so it is not repeated):** a parallel session working the Android half ran `git reset` twice and switched branches while this work was being staged. My first commit (`8dacd2f`) therefore captured an EMPTY index and its parent's tree, and my four untracked `mybingwa-api/*.php` files were swept into that session's commit `95efbc3` on `feature/production-intelligence`. No work was lost: the files were recovered with `git checkout 95efbc3 -- <paths>` onto this branch as commit 8a465ae. The empty commit `8dacd2f` remains buried in `feature/production-intelligence` history with a misleading message; it was deliberately NOT rewritten, because that branch was in active use by another session. Lesson: when two sessions share a worktree, stage and commit in ONE shell invocation and verify with `git diff-tree --name-only -r HEAD` immediately afterwards.
+
+## 2026-08-08 EAT — Pre-production audit for the v1.0.3 Play release (app ↔ server ↔ admin)
+
+- **Objective (owner):** last testing day. Before producing the final production AAB, verify end
+  to end that the app, database, sync, payments, buy-for-another, offers, notifications,
+  billboards, versioning and admin/support details all work and are connected; remove the GitHub
+  in-app update from the shipped app and keep it on the debug APK; then report before merging.
+- **Branch:** `feature/server-production-release` (already checked out; the only untracked file was
+  `docs/ARCHITECTURE_FOR_REBUILD.md`, left alone).
+- **Live server verified against the real host** (`https://mybingwa.blazetechscope.com/`, app-key
+  read from the gitignored `mybingwa-api/config.php`): all nine endpoints answer `401` without the
+  key and real JSON with it. `get_config.php` → Till 4063396 / Paybill 4050595 / support 0769561452
+  / WhatsApp 254727921038. `get_offers.php` → 29 published offers. `get_billboards.php` → 3
+  billboards (all `imageUrl` empty). `get_sync_manifest.php` → publishVersion 6 with per-resource
+  versions + checksums. So the admin → DB → API → app chain is live and publishing correctly.
+- **Endpoints the app actually consumes: five.** `get_offers.php`, `get_config.php`,
+  `get_billboards.php`, `stk.php`, `status.php`. The four newer ones (`get_sms_rules.php`,
+  `get_app_notifications.php`, `get_notification_templates.php`, `get_sync_manifest.php`) are
+  served but NOT read by any shipped code — the admin's SMS-rules and notification-management
+  features therefore do not reach a device in 1.0.3. Recorded as a known gap, not a regression.
+
+### Findings fixed this session
+
+1. **STK priced from a static file while the app priced from the database (highest severity).**
+   `stk.php` recomputed the amount from the hardcoded `offers.php` map; `get_offers.php` served the
+   admin's published snapshot. They agreed only because someone kept them equal by hand — verified
+   identical today (29 ids, 29 prices, zero diff). The moment the owner edits the catalogue they
+   diverge: a changed price charges the old amount and `callback.php`'s amount cross-check then
+   holds the customer's REAL payment as `FLAGGED amount mismatch` (never confirmed, money taken);
+   a new offer fails every purchase with `UNKNOWN_OFFER`. Added `offer_price()` to `lib.php`
+   (published snapshot → legacy `offers` table → static map) and rewired `stk.php`. An un-published
+   offer is now correctly not payable. This directly de-risks the owner's plan to remove offers.
+2. **The admin's Payment-gateway overlay has never worked in production.** `config.php` did
+   `@include __DIR__ . '/../admin-v2/cutover/gateway_bridge.php'` — a SIBLING path that only exists
+   in the repo checkout. On cPanel `mybingwa-api` is `public_html/` and the admin is
+   `public_html/admin/` (a CHILD), so `@include` returned false silently and `party_b`,
+   `fulfilment_phone` etc. could never be set from the browser. Both paths are now tried, in
+   `config.sample.php` (tracked) and the local `config.php`.
+3. **GitHub in-app update removed from shipped builds.** New `BuildConfig.UPDATE_CHECK_ENABLED`,
+   true in `debug` only. `MainActivity` skips the start-up check (so the force-update gate, the
+   update notification and the Home "update available" billboard all go inert), and `SettingsScreen`
+   hides the "Check for updates" button and `UpdateInstallControls`. Note this also disables
+   self-update for the `direct` RELEASE APK, not just Play — flipping it to a flavour-scoped flag
+   would restore that if the owner wants it.
+4. **The Play build showed a dead "Reads Safaricom SMS" toggle.** `src/play/AndroidManifest.xml`
+   removes `RECEIVE_SMS`, so the runtime request was denied instantly and the switch snapped back
+   off. New flavour-scoped `BuildConfig.SMS_DETECTION_AVAILABLE` (direct true / play false) hides
+   the whole Settings section in the Play build.
+5. **Offline instructions could render a blank number to pay.** No seller numbers are baked into
+   the app, so an install that had never reached the server has blank Till AND Paybill, and
+   `offlineConfig()` still returned a non-null config — the sheet showed a "copy the Till number"
+   button with nothing behind it. It now returns null on a blank config, and
+   `OfflinePaymentInstructionsStep` also falls back to the "connect to refresh" state when the
+   number for the CHOSEN route is blank.
+- **Version:** `versionCode 3 → 4`, `versionName 1.0.2 → 1.0.3`.
+
+### Verified working, no change needed
+
+- Offer sync REPLACES the catalogue wholesale (`syncCatalogue`), preserving only local
+  favourite/bought-today flags, so removing offers in the admin does remove them on devices. A
+  failed, empty or incomplete payload keeps the last good catalogue (`isValidOffer` gate).
+- Buy-for-another is fully real, not mocked: `isForSelf=false` → `forSelf:false` → `stk.php`
+  `CustomerPayBillOnline` on `paybill_shortcode` with the RECIPIENT MSISDN as AccountReference →
+  on first confirmation `callback.php` sends the mocked M-Pesa SMS naming the recipient to the
+  fulfilment phone. `fulfilment_phone` + `sms_api_key` are both configured.
+- Payments: server recomputes the price, atomic `UNIQUE(client_request_id)` idempotency claimed
+  BEFORE Daraja, callback authenticated by Safaricom source IP + amount cross-check, duplicate
+  callbacks cannot double-fulfil (`status <> CONFIRMED` guard, rowCount==1).
+- Sync triggers: every connectivity regain (`MainActivity`) plus a 6-hourly `CatalogueSyncWorker`
+  under a CONNECTED constraint, both against the one process-wide repository.
+- Notifications are entirely LOCAL (four channels, `AppNotifier`, deep-link intents). They work
+  offline and online. There is no FCM in the project — "push" here means device-generated.
+
+### Known gaps deliberately NOT changed before this release
+
+- **Billboard images are not rendered.** `Promotion.imageRes` is a bundled drawable only;
+  `AndroidRemoteBillboardSource` drops `imageUrl` entirely, and the snapshot's value is a RELATIVE
+  path (`uploads/….webp`) that would need the `/admin/` base anyway. Adding it means a new
+  image-loading dependency, which `design.md` §11 argues against ("do not load large promotional
+  imagery"). All three published billboards have an empty `imageUrl`, so nothing is broken today.
+- `PAYMENTS_APP_KEY` ships inside the APK and the repo is public, so the key is extractable and
+  `stk.php` has no rate limiting — an abuser could trigger STK prompts. Pre-existing design.
+
+- **Verification:** live endpoint probes (above) are real. App unit tests + release compiles run
+  locally this session — see the CI/test result appended below. No physical-phone acceptance yet.
+- **Blocking pre-release check for the OWNER (cannot be verified from here):** the deployed
+  `mybingwa-api/config.php` is per-server and gitignored, so I cannot read what `party_b` is on
+  cPanel. The local copy says `4953696` (the DEV Till per the 2026-07-26 entry) while the admin
+  publishes `4063396` as the PROD offline Till. Confirm in cPanel File Manager that `party_b` is
+  the Till that should COLLECT buy-for-myself money before any more live payments.

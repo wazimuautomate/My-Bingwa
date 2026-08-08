@@ -8,7 +8,7 @@
  * and PHP never serves its source as text.)
  */
 
-return [
+$config = [
 
     // ---- Shared secret with the Android app -------------------------------
     // Any long random string. The app sends it as the "X-App-Key" header so only
@@ -109,3 +109,30 @@ return [
     'db_user' => 'PUT_DB_USER',
     'db_pass' => 'PUT_DB_PASSWORD',
 ];
+
+// ---- Optional overlay from the admin panel's "Payment gateway" page --------
+// Lets you change the routing values above from the browser instead of editing this
+// file. Both deployment layouts are tried: the cPanel one (this file in public_html/,
+// the admin in public_html/admin/) and the repository one (admin-v2/ as a sibling).
+// If neither resolves, or the admin holds no value for a key, NOTHING changes here —
+// the literal values above stand. Keys not listed can never be overridden remotely.
+$gw = false;
+foreach ([__DIR__ . '/admin/cutover/gateway_bridge.php', __DIR__ . '/../admin-v2/cutover/gateway_bridge.php'] as $bridgePath) {
+    if (is_file($bridgePath)) {
+        $gw = @include $bridgePath;
+        break;
+    }
+}
+if (is_array($gw)) {
+    foreach ([
+        'transaction_type', 'business_shortcode', 'party_b', 'paybill_shortcode',
+        'callback_url', 'fulfilment_phone', 'business_name', 'sms_api_url',
+        'sms_sender_id', 'sms_api_key', 'daraja_env',
+    ] as $k) {
+        if (isset($gw[$k]) && $gw[$k] !== '') {
+            $config[$k] = $gw[$k];
+        }
+    }
+}
+
+return $config;

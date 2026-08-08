@@ -15,12 +15,17 @@
  *   { status, orderReference, customerMessage, errorCode }
  *   status is one of: PAYMENT_REQUESTED | PAYMENT_FAILED
  *
- * The server recomputes the amount from offerId; the app's amount is ignored.
+ * The server recomputes the amount from offerId; the app's amount is ignored. The
+ * price comes from the SAME published catalogue `get_offers.php` serves the app
+ * (see `offer_price()` in lib.php), so the displayed price and the charged price
+ * can never drift apart, and an un-published offer stops being payable.
  */
 
 $config = require __DIR__ . '/config.php';
 require __DIR__ . '/lib.php';
-$prices = require __DIR__ . '/offers.php';
+// Static price map — the last-resort fallback inside offer_price() when neither the
+// published snapshot nor the legacy offers table can be read.
+$fallbackPrices = require __DIR__ . '/offers.php';
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     json_out(['status' => 'PAYMENT_FAILED', 'errorCode' => 'METHOD_NOT_ALLOWED'], 405);
@@ -41,13 +46,15 @@ if (!$forSelf && strlen($recipient) < 12) {
     // Buy-for-another needs a real bundle recipient for the Paybill account.
     json_out(['status' => 'PAYMENT_FAILED', 'errorCode' => 'RECIPIENT_REQUIRED'], 400);
 }
-if (!isset($prices[$offerId])) {
+$pdo = require __DIR__ . '/db.php';
+
+// Price from the published catalogue (falling back to the legacy table, then the
+// static map). Null = the offer is not currently published/active → not payable.
+$amount = offer_price($pdo, $offerId, $fallbackPrices);
+if ($amount === null) {
     json_out(['status' => 'PAYMENT_FAILED', 'errorCode' => 'UNKNOWN_OFFER'], 400);
 }
-$amount = (int) $prices[$offerId];
-$route  = $forSelf ? 'self' : 'another';
-
-$pdo = require __DIR__ . '/db.php';
+$route = $forSelf ? 'self' : 'another';
 
 // --- Atomic idempotency ----------------------------------------------------
 // Claim the client_request_id by INSERTing the row (status PAYMENT_REQUESTED)

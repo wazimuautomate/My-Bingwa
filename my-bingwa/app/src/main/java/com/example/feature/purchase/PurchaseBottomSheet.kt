@@ -814,9 +814,12 @@ private fun OfflinePaymentInstructionsStep(
     onSubmitOffline: (String?) -> Unit,
     onCancel: () -> Unit
 ) {
-    // Guard: if config is missing/expired at this point, do not show payable
-    // numbers — explain that internet is needed instead (Plan.md §5.8).
-    if (config == null) {
+    // Guard: if config is missing/expired at this point, do not show payable numbers —
+    // explain that internet is needed instead (Plan.md §5.8). The route-specific number
+    // is checked too: a config that carries a Till but no Paybill (or vice versa) must
+    // not render a "copy the Paybill" button with nothing behind it.
+    val routeNumber = config?.let { if (isTill) it.tillNumber else it.paybillNumber }
+    if (config == null || routeNumber.isNullOrBlank()) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
