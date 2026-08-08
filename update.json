@@ -1,10 +1,10 @@
 {
-  "latestVersionCode": 3,
-  "latestVersionName": "1.0.2",
+  "latestVersionCode": 4,
+  "latestVersionName": "1.0.3",
   "minSupportedVersionCode": 1,
   "updateSource": "github",
-  "apkUrl": "https://github.com/wazimuautomate/My-Bingwa/releases/download/v1.0.2/My-Bingwa-v1.0.2-direct.apk",
-  "apkSha256": "67b87fb6cfeba9390d13f639224fac74414e1274b2d944abc385cb7e8f168dde",
-  "releaseNotes": "In-app updates now install without leaving the app and keep all your data. Home adverts and offers sync from the server. Buy-for-myself pays the correct Till.",
+  "apkUrl": "https://github.com/wazimuautomate/My-Bingwa/releases/download/v1.0.3/My-Bingwa-v1.0.3-direct.apk",
+  "apkSha256": "ef0ba0ec1f4f4bf8e7ca5f10c3b2bd7c4b2dcc69ae96cc80804c9975d3734155",
+  "releaseNotes": "Offers and adverts now come straight from the dashboard. Daily reminders when a bundle is worth your money. Safer offline payment steps.",
   "mandatory": false
 }
