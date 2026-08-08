@@ -191,77 +191,15 @@ class FakeBingwaRepositoryImpl(
     private val _catalogueLoading = MutableStateFlow(false)
     override val catalogueLoading: StateFlow<Boolean> = _catalogueLoading.asStateFlow()
 
-    // Billboard promotions pool. In version 1 this is seeded here; Phase 6/7 syncs
-    // it from the backend into Room (Plan.md §5.13). Slides lead with the seller's
-    // biggest offers (weekly/monthly/high-value) plus announcements and app news.
-    // No gradients: each slide paints a single brand colour (see PromotionAccent).
-    private val initialPromotions = listOf(
-        Promotion(
-            id = "promo_8gb_400min",
-            kind = PromotionKind.OFFER,
-            tag = "HOT DEAL",
-            headline = "8GB + 400 Min",
-            subhead = "The monthly mega bundle · 30 days for KSh 1,005",
-            ctaLabel = "Buy now",
-            accent = PromotionAccent.GREEN,
-            linkedOfferId = "data_13",
-            priorityWeight = 100
-        ),
-        Promotion(
-            id = "promo_10gb_month",
-            kind = PromotionKind.OFFER,
-            tag = "BEST VALUE",
-            headline = "10 GB for KSh 1,000",
-            subhead = "Valid 30 days · stay online all month",
-            ctaLabel = "Buy now",
-            accent = PromotionAccent.NAVY,
-            linkedOfferId = "data_12",
-            priorityWeight = 90
-        ),
-        Promotion(
-            id = "promo_6gb_week",
-            kind = PromotionKind.OFFER,
-            tag = "POPULAR",
-            headline = "6 GB Weekly",
-            subhead = "A full week of data for KSh 700",
-            ctaLabel = "Buy now",
-            accent = PromotionAccent.BLUE,
-            linkedOfferId = "data_9",
-            priorityWeight = 70
-        ),
-        Promotion(
-            id = "promo_2gb_daily",
-            kind = PromotionKind.OFFER,
-            tag = "FAVOURITE",
-            headline = "2GB for KSh 110",
-            subhead = "24 hours of data — buy it as many times as you like",
-            ctaLabel = "Buy now",
-            accent = PromotionAccent.ORANGE,
-            linkedOfferId = "data_6",
-            priorityWeight = 60
-        ),
-        Promotion(
-            id = "promo_data_browse",
-            kind = PromotionKind.ANNOUNCEMENT,
-            tag = "BROWSE",
-            headline = "All data bundles",
-            subhead = "From hourly to monthly — find the one that fits today",
-            ctaLabel = "See offers",
-            accent = PromotionAccent.BLUE,
-            linkedCategory = OfferCategory.DATA,
-            priorityWeight = 30
-        ),
-        Promotion(
-            id = "promo_app_update",
-            kind = PromotionKind.UPDATE,
-            tag = "WHAT'S NEW",
-            headline = "Smoother My Bingwa",
-            subhead = "Faster Home, clearer offers and a fresh promotions board",
-            ctaLabel = "Got it",
-            accent = PromotionAccent.NAVY,
-            priorityWeight = 20
-        )
-    )
+    // Billboard promotions pool, synced from the admin (Plan.md §5.13). No gradients:
+    // each slide paints a single brand colour (see PromotionAccent).
+    //
+    // NO billboard is hardcoded. The Home advert surface shows exactly what the owner
+    // published in the admin and nothing else, so a slide can never advertise an offer,
+    // a price or a message the seller did not choose. A fresh install therefore starts
+    // with an empty pool until the first sync, and Home simply renders no billboard —
+    // an intended quiet empty state, not a gap to be filled with samples.
+    private val initialPromotions = emptyList<Promotion>()
 
     private val _promotions = MutableStateFlow(initialPromotions)
     override val promotions: StateFlow<List<Promotion>> = _promotions.asStateFlow()
@@ -773,11 +711,11 @@ class FakeBingwaRepositoryImpl(
             null
         } ?: return // Failure/null → keep the existing locally-stored billboards.
 
-        // Empty → treat as an incomplete/absent publish and keep the last-good billboards
-        // rather than blanking the Home promotions surface. Promotions have no per-user
-        // flags, so a non-empty response replaces the pool wholesale.
-        if (fresh.isEmpty()) return
-
+        // A successful response replaces the pool wholesale, INCLUDING an empty one:
+        // no billboard is hardcoded, so removing them all in the admin must clear the
+        // board on the device rather than leave stale adverts running forever. Only a
+        // failure to reach the server (null above) preserves what is already there.
+        // Promotions carry no per-user flags, so nothing local is lost.
         _promotions.value = fresh
         persist()
     }

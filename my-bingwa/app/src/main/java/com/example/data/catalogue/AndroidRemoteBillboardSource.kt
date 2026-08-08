@@ -48,14 +48,22 @@ class AndroidRemoteBillboardSource(
         null
     }
 
+    /**
+     * Null means "could not ask" (no client, transport failure) and the caller keeps
+     * what it already has. An EMPTY list means the owner really has published no
+     * billboards, and the caller clears the board — no billboard is hardcoded, so
+     * removing them all in the admin must remove them on the device too.
+     *
+     * The published index is passed into the mapping so consecutive slides get
+     * different colours (see [BillboardDto.toPromotion]).
+     */
     override suspend fun fetch(): List<Promotion>? {
         val response = try {
             api?.getBillboards() ?: return null
         } catch (t: Throwable) {
             return null
         }
-        val mapped = response.billboards.mapNotNull { it.toPromotion() }
-        return mapped.ifEmpty { null }
+        return response.billboards.mapIndexedNotNull { index, dto -> dto.toPromotion(index) }
     }
 }
 
@@ -87,11 +95,20 @@ data class BillboardDto(
 ) {
     /**
      * Map one published billboard row into a [Promotion]. Returns null (skipped) when the
-     * core visible content is missing (no id or blank headline). The accent is derived
-     * from the kind — never from the server — so a billboard can never paint
-     * white-on-orange (design.md §7 reserves orange for real discounts).
+     * core visible content is missing (no id or blank headline).
+     *
+     * The accent is chosen HERE, never sent by the server, so a billboard can never
+     * paint an unreadable combination — every palette in `PromotionBillboard` is
+     * contrast-checked, and the server cannot reach past that.
+     *
+     * It varies by published position rather than by kind alone. Deriving it from the
+     * kind made every offer slide green, so a board of three offers was three identical
+     * green cards; cycling by [index] gives neighbouring slides different colours while
+     * staying deterministic (the same board always paints the same way, no flicker
+     * between syncs). Orange stays on offer slides only — design.md §7 reserves it for
+     * a real promotion or discount, which is exactly what an offer billboard is.
      */
-    fun toPromotion(): Promotion? {
+    fun toPromotion(index: Int): Promotion? {
         val safeId = id?.toString()?.takeIf { it.isNotBlank() } ?: return null
         val safeHeadline = headline?.takeIf { it.isNotBlank() } ?: return null
         val promoKind = when ((kind ?: "").trim().lowercase()) {
@@ -100,11 +117,12 @@ data class BillboardDto(
             "update" -> PromotionKind.UPDATE
             else -> PromotionKind.ANNOUNCEMENT
         }
-        val promoAccent = when (promoKind) {
-            PromotionKind.OFFER -> PromotionAccent.GREEN
-            PromotionKind.ANNOUNCEMENT -> PromotionAccent.BLUE
-            PromotionKind.UPDATE -> PromotionAccent.NAVY
+        val palette = when (promoKind) {
+            PromotionKind.OFFER -> OFFER_ACCENTS
+            PromotionKind.ANNOUNCEMENT -> ANNOUNCEMENT_ACCENTS
+            PromotionKind.UPDATE -> UPDATE_ACCENTS
         }
+        val promoAccent = palette[Math.floorMod(index, palette.size)]
         return Promotion(
             id = safeId,
             kind = promoKind,
@@ -126,6 +144,21 @@ data class BillboardDto(
     }
 
     private companion object {
+        /**
+         * Accent rotations. Four distinct colours for offer slides so a board of offers
+         * never repeats until the fifth card; announcements alternate between the two
+         * informational colours; app news is always navy so it reads as a system notice
+         * rather than a sale.
+         */
+        private val OFFER_ACCENTS = listOf(
+            PromotionAccent.GREEN,
+            PromotionAccent.ORANGE,
+            PromotionAccent.NAVY,
+            PromotionAccent.BLUE,
+        )
+        private val ANNOUNCEMENT_ACCENTS = listOf(PromotionAccent.BLUE, PromotionAccent.NAVY)
+        private val UPDATE_ACCENTS = listOf(PromotionAccent.NAVY)
+
         /**
          * Parse the admin's UTC ISO-8601 timestamp ("yyyy-MM-dd'T'HH:mm:ss'Z'") to epoch
          * millis. Null/blank/unparseable → [default] (0L for start, Long.MAX_VALUE for

@@ -406,7 +406,16 @@ fun MyBingwaApp(
                             navController.navigate("home") {
                                 popUpTo("onboarding") { inclusive = true }
                             }
-                        }
+                        },
+                        // Both permissions are asked for during onboarding, not left for
+                        // the customer to discover in Settings later. The granted flags
+                        // come from the live OS state (userProfile is written back by the
+                        // permission launchers), so a tick only appears once the system
+                        // actually granted it.
+                        notificationsGranted = userProfile.notificationsEnabled,
+                        smsGranted = userProfile.smsAlertsEnabled,
+                        onRequestNotifications = requestNotificationPermission,
+                        onRequestSms = requestSmsPermission
                     )
                 }
 

@@ -2,12 +2,18 @@
 <!--
   Google Play flavor manifest overlay.
 
-  Google Play restricts the SMS permission group: an app requesting RECEIVE_SMS
-  must file a Permissions Declaration and pass a use-case review, and a data
-  bundle store is not an approved use case. The `play` flavor therefore REMOVES
-  RECEIVE_SMS and the SmsDeliveryReceiver from the merged manifest so the Play
-  build ships no restricted permission at all. The local SMS delivery-detection
-  feature stays only in the `direct` (GitHub) build.
+  RECEIVE_SMS is KEPT in this flavour, by an explicit owner decision recorded in
+  memory.md: reading Safaricom's own delivery and balance messages is core to how
+  My Bingwa confirms a bundle arrived, so the feature ships on both channels.
+
+  That has a cost the release owner has accepted: RECEIVE_SMS is a Google Play
+  restricted permission. The Play Console submission MUST include a Permissions
+  Declaration explaining the use case, and Play may still reject it — a bundle
+  store is not one of Google's pre-approved SMS use cases. If that happens, the
+  fix is one line: restore `tools:node="remove"` for RECEIVE_SMS and the receiver
+  below, and flip `SMS_DETECTION_AVAILABLE` to false for this flavour in
+  build.gradle.kts. The app degrades cleanly without it — delivery detection
+  simply stays inactive.
 
   Everything else — applicationId, signing identity, versionCode/Name — is shared
   with the `direct` flavor, so the two channels remain update-compatible.
@@ -15,24 +21,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-permission
-        android:name="android.permission.RECEIVE_SMS"
-        tools:node="remove" />
-
     <!--
       The in-app APK installer is a direct-channel (GitHub/sideload) feature only.
-      Google Play distributes updates natively (updateSource "play" opens the store
-      listing), so the Play build ships NO REQUEST_INSTALL_PACKAGES permission,
-      avoiding an unnecessary sensitive-permission declaration in the Play console.
+      Google Play distributes updates natively, so the Play build ships NO
+      REQUEST_INSTALL_PACKAGES permission, avoiding an unnecessary
+      sensitive-permission declaration in the Play console. The shipped app no
+      longer performs any self-update check at all (see UPDATE_CHECK_ENABLED).
     -->
     <uses-permission
         android:name="android.permission.REQUEST_INSTALL_PACKAGES"
         tools:node="remove" />
-
-    <application>
-        <receiver
-            android:name=".notifications.SmsDeliveryReceiver"
-            tools:node="remove" />
-    </application>
 
 </manifest>

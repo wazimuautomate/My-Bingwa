@@ -1,6 +1,10 @@
 package com.example.feature.home
 
 import com.example.core.model.OfferCategory
+import com.example.core.model.Promotion
+import com.example.core.model.PromotionAccent
+import com.example.core.model.PromotionKind
+import com.example.data.catalogue.RemoteBillboardSource
 import com.example.data.fake.FakeBingwaRepositoryImpl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -41,8 +45,24 @@ class CatalogueViewModelTest {
 
     private fun newViewModel() = CatalogueViewModel(FakeBingwaRepositoryImpl(), clock = fixedClock)
 
+    /** Billboards are never hardcoded, so a test that needs some must publish them. */
+    private class FakeBillboards(private val list: List<Promotion>?) : RemoteBillboardSource {
+        override suspend fun fetch(): List<Promotion>? = list
+    }
+
+    private fun promo(id: String, weight: Int) = Promotion(
+        id = id,
+        kind = PromotionKind.OFFER,
+        tag = "HOT",
+        headline = "Headline $id",
+        subhead = "Body $id",
+        ctaLabel = "Buy now",
+        accent = PromotionAccent.GREEN,
+        priorityWeight = weight
+    )
+
     @Test
-    fun `home state exposes favourites and a highest-weight promotion first`() = runTest(mainDispatcher) {
+    fun `home state exposes favourites`() = runTest(mainDispatcher) {
         val vm = newViewModel()
         backgroundScope.launch { vm.homeUiState.collect {} }
         backgroundScope.launch { vm.offersUiState.collect {} }
@@ -52,13 +72,34 @@ class CatalogueViewModelTest {
         vm.toggleFavourite(vm.offersUiState.value.results.first())
         runCurrent()
 
-        val state = vm.homeUiState.value
-        assertTrue(state.sections.favourites.isNotEmpty())
-        assertTrue(state.promotions.isNotEmpty())
-        assertEquals(
-            state.promotions.maxOf { it.priorityWeight },
-            state.promotions.first().priorityWeight
+        assertTrue(vm.homeUiState.value.sections.favourites.isNotEmpty())
+    }
+
+    @Test
+    fun `home shows no billboard until one is published`() = runTest(mainDispatcher) {
+        val vm = newViewModel()
+        backgroundScope.launch { vm.homeUiState.collect {} }
+        runCurrent()
+
+        assertTrue(vm.homeUiState.value.promotions.isEmpty())
+    }
+
+    @Test
+    fun `published billboards lead with the highest weight`() = runTest(mainDispatcher) {
+        val repository = FakeBingwaRepositoryImpl(
+            billboardSource = FakeBillboards(
+                listOf(promo("low", weight = 10), promo("high", weight = 90), promo("mid", weight = 50))
+            )
         )
+        repository.syncBillboards()
+        val vm = CatalogueViewModel(repository, clock = fixedClock)
+        backgroundScope.launch { vm.homeUiState.collect {} }
+        runCurrent()
+
+        val promotions = vm.homeUiState.value.promotions
+        assertTrue(promotions.isNotEmpty())
+        assertEquals(promotions.maxOf { it.priorityWeight }, promotions.first().priorityWeight)
+        assertEquals("high", promotions.first().id)
     }
 
     @Test

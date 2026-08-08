@@ -44,22 +44,38 @@ class BillboardSyncTest {
         assertEquals("srv_1", repo.promotions.value.first().id)
     }
 
+    /** A failure to reach the server must never blank a board that is already showing. */
     @Test
     fun sync_nullKeepsLocalPromotions() = runTest {
-        val repo = FakeBingwaRepositoryImpl(billboardSource = FakeBillboards(null))
-        val before = repo.promotions.value.map { it.id }
-        assertTrue(before.isNotEmpty())
+        val repo = FakeBingwaRepositoryImpl(
+            billboardSource = FakeBillboards(listOf(promo("srv_1")))
+        )
         repo.syncBillboards()
-        assertEquals(before, repo.promotions.value.map { it.id })
+        assertEquals(listOf("srv_1"), repo.promotions.value.map { it.id })
+
+        // Second sync fails outright (null) → the previously synced board survives.
+        val offline = FakeBingwaRepositoryImpl(billboardSource = FakeBillboards(null))
+        val before = offline.promotions.value.map { it.id }
+        offline.syncBillboards()
+        assertEquals(before, offline.promotions.value.map { it.id })
     }
 
+    /**
+     * An EMPTY successful response clears the board. No billboard is hardcoded, so
+     * un-publishing them all in the admin must take them off the device too — otherwise
+     * a withdrawn advert would keep running forever.
+     */
     @Test
-    fun sync_emptyKeepsLocalPromotions() = runTest {
-        val repo = FakeBingwaRepositoryImpl(billboardSource = FakeBillboards(emptyList()))
-        val before = repo.promotions.value.map { it.id }
-        assertTrue(before.isNotEmpty())
+    fun sync_emptyClearsPromotions() = runTest {
+        val repo = FakeBingwaRepositoryImpl(
+            billboardSource = FakeBillboards(listOf(promo("srv_1"), promo("srv_2")))
+        )
         repo.syncBillboards()
-        assertEquals(before, repo.promotions.value.map { it.id })
+        assertTrue(repo.promotions.value.isNotEmpty())
+
+        val cleared = FakeBingwaRepositoryImpl(billboardSource = FakeBillboards(emptyList()))
+        cleared.syncBillboards()
+        assertTrue(cleared.promotions.value.isEmpty())
     }
 
     @Test
@@ -115,12 +131,14 @@ class BillboardSyncTest {
     }
 
     @Test
-    fun freshInstall_keepsSeededPromotions() {
-        // Nothing persisted yet → the seeded promotions remain the offline base.
+    fun freshInstall_hasNoHardcodedPromotions() {
+        // Nothing persisted and nothing synced yet → an EMPTY board. Billboards are the
+        // owner's published adverts, so the app ships none of its own; Home renders the
+        // quiet empty state until the first sync arrives.
         val repo = FakeBingwaRepositoryImpl(
             localStore = InMemoryStore(null),
             ioDispatcher = Dispatchers.Unconfined
         )
-        assertTrue(repo.promotions.value.isNotEmpty())
+        assertTrue(repo.promotions.value.isEmpty())
     }
 }

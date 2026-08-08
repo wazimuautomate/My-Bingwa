@@ -18,6 +18,7 @@ import com.example.data.payment.PaymentGatewayProvider
 import com.example.data.payment.UnavailablePaymentGateway
 import com.example.data.persistence.LocalStore
 import com.example.data.sync.CatalogueSyncWorker
+import com.example.data.sync.EngagementNotificationWorker
 import java.util.concurrent.TimeUnit
 
 /**
@@ -45,6 +46,11 @@ class MyBingwaApplication : Application() {
         // still runs and syncs on the next foreground refresh; we just skip the background job.
         runCatching { scheduleCatalogueSync() }
             .onFailure { Log.w("MyBingwaApplication", "Background sync scheduling skipped: ${it.message}") }
+        // Same best-effort contract: the daily engagement notifications must never be
+        // able to crash a cold start. Re-enqueued on every start so the chain repairs
+        // itself after a reboot, a force-stop or an app update.
+        runCatching { EngagementNotificationWorker.scheduleNext(this) }
+            .onFailure { Log.w("MyBingwaApplication", "Engagement scheduling skipped: ${it.message}") }
     }
 
     private fun buildRepository(): BingwaRepository {

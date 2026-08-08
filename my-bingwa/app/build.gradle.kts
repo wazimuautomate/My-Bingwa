@@ -73,18 +73,18 @@ android {
       dimension = "distribution"
       buildConfigField("boolean", "SMS_DETECTION_AVAILABLE", "true")
     }
-    // Google Play build. src/play/AndroidManifest.xml removes RECEIVE_SMS and
-    // SmsDeliveryReceiver so the Play submission needs no restricted-permission
-    // declaration and cannot be rejected for it. Identical applicationId and
-    // signing identity as `direct`, so the two channels are update-compatible.
+    // Google Play build. Identical applicationId and signing identity as `direct`,
+    // so the two channels are update-compatible. It keeps RECEIVE_SMS by owner
+    // decision (see src/play/AndroidManifest.xml for what that costs at review
+    // time); the only thing it drops is REQUEST_INSTALL_PACKAGES, which Play
+    // builds never need.
     //
-    // Because the permission is genuinely absent here, the Settings entry for SMS
-    // delivery detection is hidden too (SMS_DETECTION_AVAILABLE = false): a toggle
-    // that requests an undeclared permission is denied instantly by the OS and
-    // would read as a broken control.
+    // This flag is the single switch for the whole SMS feature: set it false and
+    // the Settings section disappears and onboarding stops asking, which is the
+    // clean fallback if Play refuses the permission declaration.
     create("play") {
       dimension = "distribution"
-      buildConfigField("boolean", "SMS_DETECTION_AVAILABLE", "false")
+      buildConfigField("boolean", "SMS_DETECTION_AVAILABLE", "true")
     }
   }
 
