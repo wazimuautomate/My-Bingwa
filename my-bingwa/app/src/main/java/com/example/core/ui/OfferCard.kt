@@ -40,8 +40,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.outlined.Schedule
+import com.example.core.model.AvailabilityKind
 import com.example.core.model.DailyRule
 import com.example.core.model.OfferItem
+import com.example.core.model.offerAvailabilityAt
 import com.example.ui.theme.CardShape
 import com.example.ui.theme.FieldButtonShape
 import com.example.ui.theme.PrimaryActionGreen
@@ -49,14 +52,33 @@ import com.example.ui.theme.TagShape
 import com.example.ui.theme.categoryColors
 import com.example.ui.theme.TypographyOfferPrice
 
+/**
+ * One offer in a list.
+ *
+ * Two purchase-awareness facts are shown on every card, because both decide
+ * whether a tap can succeed at all:
+ *  - the offer's **time-of-day window** (Safaricom restricts some offers to a
+ *    slot). Outside it the Buy button is replaced by an "Opens 5:00 PM" chip, and
+ *    tapping the card explains the window instead of opening checkout.
+ *  - [boughtTodayNote], the "Already bought today for 0712 345 678" line for a
+ *    once-per-day offer, so the customer sees which number is already served
+ *    before they type it at checkout.
+ *
+ * [nowMillis] is passed in rather than read here so the card is deterministic
+ * under test.
+ */
 @Composable
 fun OfferCard(
     offer: OfferItem,
     isOffline: Boolean = false,
+    boughtTodayNote: String? = null,
+    nowMillis: Long = System.currentTimeMillis(),
     onCardClick: () -> Unit,
     onBuyClick: () -> Unit,
     onFavouriteToggle: () -> Unit
 ) {
+    val availability = offerAvailabilityAt(offer, nowMillis)
+    val closed = availability.kind == AvailabilityKind.CLOSED
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -139,6 +161,47 @@ fun OfferCard(
                 )
             }
 
+            // Availability line — shown on EVERY offer, restricted or not, so the
+            // customer never has to guess which offers have a selling window.
+            if (availability.restricted) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.testTag("availability_${offer.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Schedule,
+                        contentDescription = null,
+                        tint = if (closed) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = availability.listLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (closed) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // "Already bought today for 0712 345 678" — a once-per-day offer names
+            // the number it already went to (Plan.md §5.12).
+            if (!boughtTodayNote.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = boughtTodayNote,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("bought_today_note_${offer.id}")
+                )
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             // Bottom Row: Tag on bottom left, Buy Button on bottom right
@@ -155,7 +218,26 @@ fun OfferCard(
                     modifier = Modifier.weight(1f)
                 )
 
-                if (offer.isBoughtToday) {
+                if (closed) {
+                    // Outside its selling window there is nothing to buy yet, so the
+                    // Buy button is replaced by the opening time. Tapping it routes to
+                    // the same explanation the card tap gives.
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = FieldButtonShape,
+                        modifier = Modifier
+                            .clickable { onCardClick() }
+                            .testTag("closed_chip_${offer.id}")
+                    ) {
+                        Text(
+                            text = availability.chipLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
+                } else if (offer.isBoughtToday) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
                         shape = FieldButtonShape

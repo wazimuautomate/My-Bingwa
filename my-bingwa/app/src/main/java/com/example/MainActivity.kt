@@ -27,10 +27,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -41,6 +45,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.core.model.AppThemeSetting
 import com.example.core.model.OfferCategory
 import com.example.core.model.OfferItem
+import com.example.core.model.offerAvailabilityAt
 import com.example.core.model.Promotion
 import com.example.core.model.PromotionClickAction
 import com.example.core.model.PromotionKind
@@ -66,10 +71,14 @@ import com.example.core.update.UpdateSource
 import com.example.core.update.openPlayStoreListing
 import com.example.core.ui.BrandSplashOverlay
 import com.example.core.ui.MyBingwaBottomNav
+import com.example.core.ui.OfferAvailabilityDialog
+import com.example.core.ui.PermissionRequiredScreen
+import com.example.core.ui.openAppSettings
 import com.example.data.fake.BingwaRepository
 import com.example.feature.activity.ActivityScreen
 import com.example.feature.help.HelpScreen
 import com.example.feature.home.CatalogueViewModel
+import com.example.feature.home.repeatPurchaseBlockMessage
 import com.example.feature.home.HomeScreen
 import com.example.feature.notifications.NotificationsSheet
 import com.example.feature.offers.OffersScreen
@@ -311,9 +320,25 @@ fun MyBingwaApp(
         ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECEIVE_SMS) ==
             PackageManager.PERMISSION_GRANTED
 
-    LaunchedEffect(Unit) {
-        repository.setNotificationsEnabled(notificationsGranted())
-        repository.setSmsAlertsEnabled(smsGranted())
+    // Both grants are re-read on every foreground pass, not just at start: the
+    // customer may have revoked one in Android settings (or granted it there after
+    // the OS stopped showing its dialog) while the app was in the background.
+    var permissionEpoch by remember { mutableStateOf(0) }
+    val notificationsAllowed = remember(permissionEpoch) { notificationsGranted() }
+    val smsAllowed = remember(permissionEpoch) { smsGranted() }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) permissionEpoch++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(notificationsAllowed, smsAllowed) {
+        repository.setNotificationsEnabled(notificationsAllowed)
+        repository.setSmsAlertsEnabled(smsAllowed)
     }
 
     // --- On-device personalization ------------------------------------------------
@@ -358,16 +383,32 @@ fun MyBingwaApp(
         app?.syncOrchestrator?.sync(SyncTrigger.APP_START)
     }
 
+    // Tell the seller who this customer is — once per install. Re-attempted on every
+    // start and whenever onboarding completes, because the first attempt is exactly
+    // the one most likely to fail (a customer finishing setup on a weak connection).
+    // The repository returns immediately once it has succeeded.
+    LaunchedEffect(app) {
+        repository.userProfile.collect { profile ->
+            if (profile.isOnboardingCompleted) repository.registerCustomer()
+        }
+    }
+
     // Runtime permission launchers (Android 13+ POST_NOTIFICATIONS, RECEIVE_SMS).
     // Settings shows the in-app rationale first, then invokes these; the granted
     // result is written back so the toggle can never show "on" while the OS denied it.
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> repository.setNotificationsEnabled(granted) }
+    ) { granted ->
+        repository.setNotificationsEnabled(granted)
+        permissionEpoch++
+    }
 
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> repository.setSmsAlertsEnabled(granted) }
+    ) { granted ->
+        repository.setSmsAlertsEnabled(granted)
+        permissionEpoch++
+    }
 
     val requestNotificationPermission: () -> Unit = {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -462,7 +503,23 @@ fun MyBingwaApp(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: if (startOnboarding) "onboarding" else "home"
 
+    // Whether a required permission is missing right now, and how many times this
+    // session has already asked. RECEIVE_SMS is only required where the build
+    // actually ships it (the Play flavour strips it from the manifest).
+    val missingNotifications = !notificationsAllowed &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val missingSms = smsSupported && !smsAllowed
+    var permissionAsks by remember { mutableStateOf(0) }
+
+    // Closing the app is the stated consequence of refusing a required permission.
+    val activity = context as? android.app.Activity
+    val exitApp: () -> Unit = { activity?.finishAndRemoveTask() }
+
     var activeOfferForPurchase by remember { mutableStateOf<OfferItem?>(null) }
+    // An offer tapped outside its Safaricom selling window: explain the window
+    // instead of opening checkout, so no one pays for a bundle that cannot be sold
+    // to them yet.
+    var offerOutsideWindow by remember { mutableStateOf<OfferItem?>(null) }
     var prefilledReportRef by remember { mutableStateOf<String?>(null) }
     // Notification centre is an in-app slide-up overlay, not a standalone route,
     // so the bottom navigation stays visible behind it.
@@ -495,6 +552,21 @@ fun MyBingwaApp(
     // Resolve details/purchase offers against the live catalogue so favourite
     // toggles inside a sheet stay reflected.
     fun liveOffer(offer: OfferItem): OfferItem = offers.find { it.id == offer.id } ?: offer
+
+    /**
+     * The single entry point into checkout. An offer whose selling window is shut
+     * opens the explanation dialog instead; everything else opens the purchase
+     * sheet exactly as before. Every "buy"/"select" call site goes through here so
+     * the window can never be bypassed by one forgotten surface (billboard CTA
+     * included).
+     */
+    val openOffer: (OfferItem) -> Unit = { offer ->
+        if (offerAvailabilityAt(liveOffer(offer), System.currentTimeMillis()).purchasable) {
+            activeOfferForPurchase = offer
+        } else {
+            offerOutsideWindow = offer
+        }
+    }
 
     val onUndoFavourite: (String) -> Unit = { id -> repository.setFavourite(id, true) }
 
@@ -559,12 +631,12 @@ fun MyBingwaApp(
             )
             promo.clickActionOrNone == PromotionClickAction.OFFER -> {
                 val target = offers.find { it.id == promo.clickTarget || it.id == promo.linkedOfferId }
-                if (target != null) activeOfferForPurchase = target else browseOffers(promo.linkedCategory)
+                if (target != null) openOffer(target) else browseOffers(promo.linkedCategory)
             }
             promo.kind == PromotionKind.OFFER -> {
                 val target = promo.linkedOfferId?.let { id -> offers.find { it.id == id } }
                 if (target != null) {
-                    activeOfferForPurchase = target
+                    openOffer(target)
                 } else {
                     // Synced billboard whose linked offer isn't in this catalogue: don't
                     // dead-end the CTA — browse offers (optionally by linked category).
@@ -633,10 +705,16 @@ fun MyBingwaApp(
                         onRequestSmsPermission = requestSmsPermission,
                         // Below API 33 notifications are granted at install time, so show
                         // the step as already satisfied rather than asking for nothing.
-                        notificationsGranted = userProfile.notificationsEnabled ||
+                        // Read from the live OS grant, not the stored profile: the
+                        // required steps must never let someone through on a stale
+                        // "enabled" flag. Below API 33 POST_NOTIFICATIONS is granted
+                        // at install, so that step passes straight through.
+                        notificationsGranted = notificationsAllowed ||
                             Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU,
-                        smsGranted = userProfile.smsAlertsEnabled,
-                        smsSupported = smsSupported
+                        smsGranted = smsAllowed,
+                        smsSupported = smsSupported,
+                        onOpenAppSettings = { openAppSettings(context) },
+                        onExitApp = exitApp
                     )
                 }
 
@@ -654,8 +732,8 @@ fun MyBingwaApp(
                                 restoreState = true
                             }
                         },
-                        onOfferSelect = { offer -> activeOfferForPurchase = offer },
-                        onOfferBuy = { offer -> activeOfferForPurchase = offer },
+                        onOfferSelect = openOffer,
+                        onOfferBuy = openOffer,
                         onFavouriteToggle = { offer -> repository.setFavourite(offer.id, !offer.isFavourite) },
                         onUndoFavourite = onUndoFavourite,
                         onPromotionAction = onPromotionAction,
@@ -678,8 +756,8 @@ fun MyBingwaApp(
                         onCategorySelect = { repository.setCategoryFilter(it) },
                         onFilterStateChange = { repository.setFilterState(it) },
                         onClearFilters = { repository.clearFilters() },
-                        onOfferSelect = { offer -> activeOfferForPurchase = offer },
-                        onOfferBuy = { offer -> activeOfferForPurchase = offer },
+                        onOfferSelect = openOffer,
+                        onOfferBuy = openOffer,
                         onFavouriteToggle = { offer -> repository.setFavourite(offer.id, !offer.isFavourite) },
                         onUndoFavourite = onUndoFavourite
                     )
@@ -726,8 +804,6 @@ fun MyBingwaApp(
                                 popUpTo(0) { inclusive = true }
                             }
                         },
-                        onEnablePushNotifications = requestNotificationPermission,
-                        onEnableSmsDetection = requestSmsPermission,
                         knownUpdate = pendingUpdate
                     )
                 }
@@ -742,6 +818,13 @@ fun MyBingwaApp(
                     recentRecipients = recentRecipients,
                     preferredPayerNumber = behaviourProfile.value.suggestedPayerNumber(),
                     isOffline = isOffline,
+                    // Once-per-day-per-number awareness, recomputed from Activity as
+                    // the customer types. The Nairobi day boundary lives in
+                    // repeatPurchaseBlockMessage, so a purchase at 23:58 stops
+                    // blocking by itself at 00:00 — nothing is scheduled or reset.
+                    recipientBlockMessage = { recipient ->
+                        repeatPurchaseBlockMessage(offer, purchases, recipient, System.currentTimeMillis())
+                    },
                     onExecuteStkPush = { off, rec, pay, crid, self -> repository.executeMpesaStkPush(off, rec, pay, crid, self) },
                     onExecuteOfflinePayment = { off, rec, pay, till, receipt -> repository.executeOfflinePayment(off, rec, pay, till, receipt) },
                     offlineEligibility = { off, self -> repository.offlineEligibility(off, self) },
@@ -758,6 +841,17 @@ fun MyBingwaApp(
                             restoreState = true
                         }
                     }
+                )
+            }
+
+            // "Not on sale right now" explanation for an offer tapped outside its
+            // Safaricom selling window. Purely informational — it starts nothing.
+            offerOutsideWindow?.let { snapshot ->
+                val offer = liveOffer(snapshot)
+                OfferAvailabilityDialog(
+                    offer = offer,
+                    availability = offerAvailabilityAt(offer, System.currentTimeMillis()),
+                    onDismiss = { offerOutsideWindow = null }
                 )
             }
 
@@ -780,6 +874,28 @@ fun MyBingwaApp(
                         }
                     },
                     onDismiss = { showNotifications = false }
+                )
+            }
+
+            // Blocking gate for a REQUIRED permission that is no longer granted —
+            // normally revoked in Android settings after onboarding. Notifications
+            // and Safaricom bundle messages are mandatory (owner decision), so the
+            // app does not carry on without them: the only ways out are granting the
+            // permission or closing the app. Never shown during onboarding, which
+            // asks for them itself.
+            if (!startOnboarding && (missingNotifications || missingSms)) {
+                PermissionRequiredScreen(
+                    missingNotifications = missingNotifications,
+                    missingSms = missingSms,
+                    // Two refusals and Android stops showing its dialog; from then on
+                    // only the app's settings page can grant it.
+                    canAskAgain = permissionAsks < 2,
+                    onAllow = {
+                        permissionAsks++
+                        if (missingNotifications) requestNotificationPermission() else requestSmsPermission()
+                    },
+                    onOpenAppSettings = { openAppSettings(context) },
+                    onExitApp = exitApp
                 )
             }
 

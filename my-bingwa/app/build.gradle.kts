@@ -23,8 +23,8 @@ android {
     // GitHub and Play channels and updates supersede correctly (same signing
     // identity — see signingConfigs + docs/RELEASE_PLAYSTORE.md). Bump BOTH for
     // every release; versionCode must only ever increase.
-    versionCode = 4
-    versionName = "1.0.3"
+    versionCode = 6
+    versionName = "1.0.5"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -62,6 +62,45 @@ android {
       ?: System.getenv("PAYMENTS_APP_KEY")
       ?: ""
     buildConfigField("String", "PAYMENTS_APP_KEY", "\"$paymentsAppKey\"")
+
+    // ---- Seller numbers bundled into the APK ---------------------------------
+    // These are the CURRENT PRODUCTION values, shipped inside the app so a fresh
+    // install has usable Till / Paybill / support numbers from the very first
+    // launch, before any sync has succeeded.
+    //
+    // Why they are baked in at all: they used to default to blank, on the reasoning
+    // that the owner sets them in the admin and the app syncs them. In the field
+    // that meant a customer on a weak connection saw an empty Support page and
+    // offline instructions that refused to show a number to pay — and the values
+    // appeared, or appeared and vanished, depending purely on whether a sync had
+    // landed. These are not secrets (they are printed on the seller's own posters),
+    // so shipping them is the honest fix.
+    //
+    // They remain the FLOOR, never the truth: a successful sync overwrites them, and
+    // the admin stays the place to change a number. Override per build with the
+    // Gradle properties below (or the matching env vars) when a number changes
+    // before the next release.
+    fun sellerValue(propertyName: String, envName: String, fallback: String): String =
+      (project.findProperty(propertyName) as String?)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(envName)?.takeIf { it.isNotBlank() }
+        ?: fallback
+
+    buildConfigField(
+      "String", "SEED_TILL_NUMBER",
+      "\"${sellerValue("sellerTillNumber", "SELLER_TILL_NUMBER", "4063396")}\""
+    )
+    buildConfigField(
+      "String", "SEED_PAYBILL_NUMBER",
+      "\"${sellerValue("sellerPaybillNumber", "SELLER_PAYBILL_NUMBER", "4008239")}\""
+    )
+    buildConfigField(
+      "String", "SEED_SUPPORT_NUMBER",
+      "\"${sellerValue("sellerSupportNumber", "SELLER_SUPPORT_NUMBER", "0110092715")}\""
+    )
+    buildConfigField(
+      "String", "SEED_SUPPORT_WHATSAPP",
+      "\"${sellerValue("sellerSupportWhatsapp", "SELLER_SUPPORT_WHATSAPP", "0717444266")}\""
+    )
   }
 
   // Two distribution channels from one codebase and one signing identity.

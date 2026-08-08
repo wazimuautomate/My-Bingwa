@@ -10,8 +10,66 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-08-08
+
+### Added
+
+- **Offers carry the hours Safaricom sells them, end to end.** Safaricom restricts
+  several bundles to a window of the day, and buying one outside its window fails at the
+  carrier *after* the customer has paid. The window is now set in Admin → Offers
+  (**Sells from** / **Sells until**, Nairobi wall clock, both blank = sold all day, and a
+  window may cross midnight), published in the snapshot as `availableFrom` /
+  `availableTo`, and served by `get_offers.php`. **Every** offer card shows it
+  ("Available now · 5:00 PM – 11:00 PM", or "Available from 5:00 PM to 11:00 PM" when
+  shut); outside the window the Buy button becomes an "Opens 5:00 PM" chip and tapping
+  the card explains the window instead of opening checkout. The review step restates it,
+  and offline purchase of a shut offer is withheld with the same explanation.
+  `stk.php` refuses it server-side (`OFFER_NOT_AVAILABLE_NOW`) *before* the payment row
+  is claimed and before Daraja is called, so a refusal costs nothing — no STK prompt, no
+  charge, no order to reconcile. Existing offers are unaffected: both columns default to
+  NULL, which means "sold all day".
+- **A once-a-day bundle now names the number that already had one.** Offer lists show
+  "Already bought today for 0712 345 678" instead of a bare "bought today", and typing a
+  number that already received the bundle today blocks checkout with an explanation that
+  says both what the rule is and what to do — buy it for that number again after
+  midnight, or use a different number right now, without leaving the sheet. The rule is
+  enforced again in `stk.php` (`ALREADY_BOUGHT_TODAY`), counting confirmed payments plus
+  requests started in the last ten minutes so a prompt still on the customer's screen
+  cannot be duplicated. **The reset is the Nairobi day boundary itself, not a stored flag
+  or a scheduled job**: a purchase at 23:58 stops blocking at 00:00 because the day
+  comparison decides, never a written marker. Server-side the offset between the MySQL
+  clock and Nairobi is *measured* rather than assumed, so the reset lands on midnight
+  whatever timezone the host runs in.
+- **Both numbers on the review step are tappable.** Seeing a wrong digit at the moment of
+  paying is exactly when it needs fixing; hunting for "Change details" below the fold was
+  a step too many.
+- **A customer register, and a Customers page in the admin.** The app sends the name and
+  Safaricom number typed at onboarding to the seller's backend **once** per install
+  (`register_user.php`), so the owner knows who their customers are. It is the only
+  customer detail that ever leaves the device — purchases, favourites and behaviour stay
+  on the phone (CLAUDE.md §10). The call is retried on a later launch if it fails (a
+  customer finishing setup on a weak connection is exactly the likely failure), and the
+  endpoint is idempotent on the number, so a retry or a reinstall updates that customer
+  rather than duplicating them. Admin → **Customers** shows total / new today / new this
+  week, searches by name or number, filters by date, removes customers singly or by
+  select-all, and exports the current selection to CSV.
+
 ### Changed
 
+- **Notifications and Safaricom bundle messages are now required to use the app** (owner
+  decision — both are the product, not extras). Onboarding is reordered to
+  Welcome → What you gain → **Name & number** → Notifications → Safaricom messages: the
+  permission steps come last, immediately after the personal details, and cannot be
+  skipped. The "Skip" shortcut and the "Not now" escape are gone; the only alternative
+  offered is **Close My Bingwa**. After two refusals Android stops showing its dialog, so
+  the button becomes "Open settings and allow" rather than a control that appears to do
+  nothing. If a permission is later revoked in Android's own settings, the app shows a
+  blocking screen on next foreground with the same two outcomes. The Play flavour is
+  unchanged: it strips `RECEIVE_SMS` from the manifest, so that step does not exist there
+  and nothing is required that cannot be granted.
+- **Settings no longer offers the "Push Notifications" or "Reads Safaricom SMS"
+  toggles.** With both permissions required and granted during onboarding, a switch the
+  app would immediately override is worse than no switch at all.
 - **The in-app GitHub update check is now a debug-build feature only.** Shipped builds
   no longer fetch `update.json`, no longer show the "Check for updates" control, the
   update notification, the Home "update available" billboard or the force-update gate.
@@ -25,7 +83,25 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
   section is hidden when the permission is not in the build (`SMS_DETECTION_AVAILABLE`);
   the direct APK is unaffected.
 
+
 ### Fixed
+
+- **The Support page no longer starts blank on a fresh install.** The Till, Paybill and
+  support numbers defaulted to empty on the reasoning that the owner sets them in the
+  admin and the app syncs them — so a customer whose first sync had not landed (weak
+  connection, slow first launch) saw an empty Support page and offline instructions that
+  refused to show a number to pay, and the numbers appeared, or appeared and vanished,
+  purely according to whether a sync had succeeded. Reported by 4 of 20 test users, with
+  exactly that inconsistency. The current production numbers are now **bundled in the
+  APK** (`SEED_*` in `build.gradle.kts`, overridable per build via Gradle properties or
+  env vars). They are a floor, never the truth: the first successful sync replaces them,
+  the synced copy is cached and preferred from then on, and the admin remains the only
+  place a number is changed. A stale bundled number is corrected by the next sync; a
+  blank one could never be corrected offline at all.
+- **The same phone number written three ways is now one number in the daily ledger.**
+  Numbers were compared by stripping non-digits only, so `0712345678` and `254712345678`
+  looked like different lines — which would have let the same once-a-day bundle be bought
+  twice in a day for one number. They are now matched on their last nine digits.
 
 - **The STK price is now read from the published catalogue, not a static file.**
   `stk.php` recomputed the amount from the hardcoded `offers.php` map while

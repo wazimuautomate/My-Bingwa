@@ -46,20 +46,32 @@ class RemoteConfigTest {
     }
 
     /**
-     * This test used to assert that the baked-in defaults were "always available
-     * offline". That made sense while [AppConfig.DEFAULT] still carried real seller
-     * numbers; once those were blanked (no Till/Paybill is hardcoded in the app any
-     * more) the same assertion only proved that a BLANK config was handed to the
-     * checkout, which rendered offline instructions with an empty number to copy.
-     * The intended behaviour is the opposite: nothing synced yet means no offline
-     * instructions, so the sheet asks the customer to connect and refresh
-     * (CLAUDE.md §7 — ambiguous offline configuration disables payment).
+     * An install that has never reached the server still has the seller numbers the
+     * APK was built with ([AppConfig.DEFAULT], from the SEED_* build fields), so the
+     * Support page and the offline instructions are usable from the very first
+     * launch. This is the fix for testers seeing a blank Till/Paybill/support number
+     * on a weak connection.
+     *
+     * The one case that stays unusable is a build with no seed values configured at
+     * all: rendering offline instructions with an empty number to copy is worse than
+     * asking the customer to connect and refresh (CLAUDE.md §7 — ambiguous offline
+     * configuration disables payment).
      */
     @Test
-    fun noConfigSource_yieldsBlankConfigAndNoOfflineInstructions() {
+    fun noConfigSource_stillYieldsTheBundledSellerNumbers() {
         val repo = FakeBingwaRepositoryImpl()
         assertEquals(AppConfig.DEFAULT, repo.appConfig.value)
-        assertNull(repo.offlineConfig())
+
+        if (AppConfig.DEFAULT.tillNumber.isBlank() && AppConfig.DEFAULT.paybillNumber.isBlank() &&
+            AppConfig.DEFAULT.supportNumber.isBlank() && AppConfig.DEFAULT.supportWhatsapp.isBlank()
+        ) {
+            // Unconfigured build: no numbers to show, so no offline instructions.
+            assertNull(repo.offlineConfig())
+        } else {
+            val cfg = repo.offlineConfig()
+            assertEquals(AppConfig.DEFAULT.tillNumber, cfg?.tillNumber)
+            assertEquals(AppConfig.DEFAULT.paybillNumber, cfg?.paybillNumber)
+        }
     }
 
     /** A single synced number is enough to offer instructions; the sheet then guards the route. */

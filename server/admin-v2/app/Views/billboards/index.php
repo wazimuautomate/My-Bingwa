@@ -26,6 +26,7 @@ $states = [
   </div>
   <div class="page-head__actions">
     <a class="btn btn--secondary" href="<?= e(url('/billboards/calendar')) ?>"><?= icon('calendar', 18) ?> Schedule</a>
+    <a class="btn btn--secondary" href="<?= e(url('/billboards/import')) ?>"><?= icon('upload', 18) ?> Import JSON</a>
     <a class="btn" href="<?= e(url('/billboards/new')) ?>"><?= icon('plus', 18) ?> New billboard</a>
   </div>
 </div>

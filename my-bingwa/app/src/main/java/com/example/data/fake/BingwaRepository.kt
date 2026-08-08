@@ -95,6 +95,14 @@ interface BingwaRepository : SyncTargets {
 
     fun updateProfile(name: String, primaryNumber: String)
     fun setOnboardingCompleted(completed: Boolean)
+
+    /**
+     * Tell the seller's backend who this customer is — name and Safaricom number —
+     * exactly once per install. Safe to call on every launch: it returns immediately
+     * once it has succeeded, and it is the ONLY thing about a customer that leaves
+     * the device (CLAUDE.md §10). A failure is silent and retried on a later launch.
+     */
+    suspend fun registerCustomer()
     /** Reflect the real OS notification-permission state into the profile (persisted). */
     fun setNotificationsEnabled(enabled: Boolean)
     /** Reflect the real OS RECEIVE_SMS grant into the profile (persisted). */

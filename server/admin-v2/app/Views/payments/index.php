@@ -324,6 +324,115 @@ $payLabels = [
   <?php endif; ?>
 </div>
 
+<!-- ------------------------------------------------- when people buy (hourly) -->
+<div class="card mt">
+  <div class="card__head">
+    <div>
+      <h3>When people buy</h3>
+      <div class="sub">
+        Confirmed sales by hour of the Nairobi day, <?= e(strtolower($windowLabel)) ?>.
+        <?php if ($hourly['peakHour'] !== null && (int) $hourly['peakSales'] > 0): ?>
+          Busiest hour: <b><?= e($hourly['labels'][$hourly['peakHour']]) ?></b>
+          (<?= (int) $hourly['peakSales'] ?> sale<?= (int) $hourly['peakSales'] === 1 ? '' : 's' ?>).
+        <?php endif; ?>
+      </div>
+    </div>
+  </div>
+  <?php $maxHour = max(1, max($hourly['sales'])); ?>
+  <div class="row" style="align-items:flex-end;gap:4px;height:150px;margin-top:8px">
+    <?php foreach ($hourly['labels'] as $h => $label): ?>
+      <?php
+        $count = (int) $hourly['sales'][$h];
+        $height = (int) round(($count / $maxHour) * 120);
+      ?>
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px"
+           title="<?= e($label) ?> — <?= $count ?> sale<?= $count === 1 ? '' : 's' ?>, <?= e(ksh((int) $hourly['revenue'][$h])) ?>">
+        <span class="small muted" style="font-size:10px"><?= $count > 0 ? $count : '' ?></span>
+        <span style="width:100%;height:<?= max($count > 0 ? 3 : 1, $height) ?>px;border-radius:3px 3px 0 0;background:<?= $count > 0 ? 'var(--brand)' : 'var(--divider)' ?>"></span>
+        <span class="small muted" style="font-size:9px"><?= $h % 3 === 0 ? (int) $h : '' ?></span>
+      </div>
+    <?php endforeach; ?>
+  </div>
+  <p class="muted small mt">
+    Hours are Nairobi time, worked out from the measured database clock — not the server's
+    own hour, which on this kind of host is often UTC and would read three hours early.
+  </p>
+</div>
+
+<!-- --------------------------------------- once-a-day vs repeatable, regulars -->
+<div class="grid halves mt">
+  <div class="card">
+    <div class="card__head"><h3>Once a day vs repeatable</h3></div>
+    <?php
+      $policyTotal = (int) $policy['once']['sales'] + (int) $policy['repeatable']['sales'] + (int) $policy['unknown']['sales'];
+      $policyRows = [
+        ['once', 'Once-a-day bundles', 'Limited to one purchase per number per day'],
+        ['repeatable', 'Repeatable bundles', 'Can be bought again the same day'],
+        ['unknown', 'Offer no longer in the catalogue', 'Sold before the offer was removed'],
+      ];
+    ?>
+    <?php if ($policyTotal === 0): ?>
+      <p class="muted small">No confirmed sales in this period yet.</p>
+    <?php else: ?>
+      <div class="stack" style="gap:12px">
+        <?php foreach ($policyRows as [$key, $label, $note]): ?>
+          <?php
+            $sales = (int) $policy[$key]['sales'];
+            if ($key === 'unknown' && $sales === 0) { continue; }
+            $share = $policyTotal > 0 ? (int) round($sales * 100 / $policyTotal) : 0;
+          ?>
+          <div>
+            <div class="between">
+              <span><b><?= e($label) ?></b> <span class="muted small"><?= e($note) ?></span></span>
+              <span class="nowrap"><?= $sales ?> · <?= e(ksh((int) $policy[$key]['revenue'])) ?></span>
+            </div>
+            <div class="bar mt" style="height:8px;background:var(--grouped);border-radius:4px;overflow:hidden">
+              <span style="display:block;height:8px;width:<?= $share ?>%;background:var(--brand)"></span>
+            </div>
+            <span class="muted small"><?= $share ?>% of confirmed sales</span>
+          </div>
+        <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <h3>Bundles with regulars</h3>
+      <span class="spacer"></span>
+      <span class="small muted">sales per line</span>
+    </div>
+    <p class="muted small">
+      How many different numbers bought each bundle, and how many sales that produced.
+      Well above 1.0 means the same people keep coming back for it.
+    </p>
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Bundle</th><th>Sales</th><th>Numbers</th><th>Per line</th><th>Revenue</th></tr></thead>
+        <tbody>
+          <?php foreach ($regulars as $r): ?>
+            <tr>
+              <td>
+                <?= e($r['name'] !== '' ? $r['name'] : $r['offer_id']) ?>
+                <?php if ($r['category'] !== ''): ?>
+                  <span class="tag <?= e($tagClass($r['category'])) ?>"><?= e($catLabel[strtoupper($r['category'])] ?? $r['category']) ?></span>
+                <?php endif; ?>
+              </td>
+              <td class="nowrap"><?= (int) $r['sales'] ?></td>
+              <td class="nowrap"><?= (int) $r['lines'] ?></td>
+              <td class="nowrap"><b><?= e(number_format((float) $r['perLine'], 1)) ?></b></td>
+              <td class="nowrap"><?= e(ksh((int) $r['revenue'])) ?></td>
+            </tr>
+          <?php endforeach; ?>
+          <?php if (!$regulars): ?>
+            <tr><td colspan="5"><span class="muted small">No confirmed sales in this period yet.</span></td></tr>
+          <?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- ------------------------------------------------------------ records + filters -->
 <div class="card">
   <div class="card__head">

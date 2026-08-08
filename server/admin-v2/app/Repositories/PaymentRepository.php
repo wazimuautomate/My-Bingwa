@@ -503,6 +503,171 @@ final class PaymentRepository
     }
 
     /**
+     * When people actually buy: confirmed sales bucketed by hour of the Nairobi day.
+     *
+     * Bucketing happens in PHP using the measured database offset rather than in SQL,
+     * for the same reason dailySeries() does: HOUR(created_at) reports the DATABASE
+     * server's hour, and on a host running UTC that shows every purchase three hours
+     * early — which would point the owner's advertising at the wrong part of the evening.
+     *
+     * @return array{labels:string[], sales:int[], revenue:int[], peakHour:?int, peakSales:int}
+     */
+    public static function hourlyDistribution(?string $from = null, ?string $to = null): array
+    {
+        $labels = [];
+        for ($h = 0; $h < 24; $h++) {
+            $labels[] = str_pad((string) $h, 2, '0', STR_PAD_LEFT) . ':00';
+        }
+        $sales = array_fill(0, 24, 0);
+        $revenue = array_fill(0, 24, 0);
+
+        if (!self::available()) {
+            return ['labels' => $labels, 'sales' => $sales, 'revenue' => $revenue, 'peakHour' => null, 'peakSales' => 0];
+        }
+        $where = 'WHERE status = ?';
+        $params = [self::SUCCESS_STATE];
+        if ($from !== null && $to !== null) {
+            $where .= ' AND created_at >= ? AND created_at < ?';
+            $params[] = $from;
+            $params[] = $to;
+        }
+        $rows = Database::fetchAll("SELECT created_at, amount FROM payments {$where}", $params);
+        $shift = -self::dbOffsetSeconds();
+        $tz = new \DateTimeZone('Africa/Nairobi');
+        foreach ($rows as $r) {
+            try {
+                $at = (new \DateTimeImmutable((string) $r['created_at'], new \DateTimeZone('UTC')))
+                    ->modify($shift . ' seconds')
+                    ->setTimezone($tz);
+            } catch (\Throwable $e) {
+                continue;
+            }
+            $h = (int) $at->format('G');
+            $sales[$h]++;
+            $revenue[$h] += (int) $r['amount'];
+        }
+
+        $peakHour = null;
+        $peakSales = 0;
+        foreach ($sales as $h => $count) {
+            if ($count > $peakSales) {
+                $peakSales = $count;
+                $peakHour = $h;
+            }
+        }
+        return [
+            'labels' => $labels, 'sales' => $sales, 'revenue' => $revenue,
+            'peakHour' => $peakHour, 'peakSales' => $peakSales,
+        ];
+    }
+
+    /**
+     * Once-a-day bundles against repeatable ones: which kind of offer the business
+     * actually runs on. The split comes from the offer catalogue's daily_rule, so a
+     * payment whose offer has since been deleted is counted as 'unknown' rather than
+     * silently attributed to either side.
+     *
+     * @return array<string, array{sales:int, revenue:int}> keys: once, repeatable, unknown
+     */
+    public static function policyTrend(?string $from = null, ?string $to = null): array
+    {
+        $out = [
+            'once' => ['sales' => 0, 'revenue' => 0],
+            'repeatable' => ['sales' => 0, 'revenue' => 0],
+            'unknown' => ['sales' => 0, 'revenue' => 0],
+        ];
+        if (!self::available()) {
+            return $out;
+        }
+        $params = [self::SUCCESS_STATE];
+        $where = 'WHERE p.status = ?';
+        if ($from !== null && $to !== null) {
+            $where .= ' AND p.created_at >= ? AND p.created_at < ?';
+            $params[] = $from;
+            $params[] = $to;
+        }
+        $offers = Database::table('offers');
+        $rows = Database::fetchAll(
+            "SELECT COALESCE(o.daily_rule, '') AS rule, COUNT(*) AS sales, COALESCE(SUM(p.amount),0) AS revenue
+               FROM payments p
+               LEFT JOIN {$offers} o ON o.offer_id = p.offer_id
+               {$where}
+              GROUP BY rule",
+            $params
+        );
+        foreach ($rows as $r) {
+            $rule = strtoupper((string) $r['rule']);
+            if ($rule === 'ONCE_PER_RECIPIENT_PER_DAY' || $rule === 'ONCE_PER_DAY') {
+                $key = 'once';
+            } elseif ($rule === 'MULTIPLE_PER_DAY' || $rule === 'MAX_PER_RECIPIENT_PER_DAY') {
+                $key = 'repeatable';
+            } else {
+                $key = 'unknown';
+            }
+            $out[$key]['sales'] += (int) $r['sales'];
+            $out[$key]['revenue'] += (int) $r['revenue'];
+        }
+        return $out;
+    }
+
+    /**
+     * The bundles people come back for: how many DIFFERENT lines bought each offer and
+     * how many sales that produced. Sales well above lines on a repeatable bundle is
+     * the clearest "this one has regulars" signal in the data.
+     *
+     * @return array<int, array{offer_id:string, name:string, category:string, sales:int,
+     *                          lines:int, revenue:int, perLine:float}>
+     */
+    public static function repeatBuyers(?string $from = null, ?string $to = null, int $limit = 10): array
+    {
+        if (!self::available()) {
+            return [];
+        }
+        $params = [self::SUCCESS_STATE];
+        $where = 'WHERE p.status = ?';
+        if ($from !== null && $to !== null) {
+            $where .= ' AND p.created_at >= ? AND p.created_at < ?';
+            $params[] = $from;
+            $params[] = $to;
+        }
+        $offers = Database::table('offers');
+        // The line that received the bundle: the recipient when there is one, else the
+        // payer (buy-for-myself leaves recipient blank). Compared on the last 9 digits
+        // so 07..., 2547... and +2547... are one line.
+        $line = "RIGHT(REPLACE(REPLACE(COALESCE(NULLIF(p.recipient,''), p.payer), '+', ''), ' ', ''), 9)";
+        $rows = Database::fetchAll(
+            "SELECT p.offer_id,
+                    COALESCE(o.name, '')      AS name,
+                    COALESCE(o.category, '')  AS category,
+                    COUNT(*)                  AS sales,
+                    COUNT(DISTINCT {$line})   AS lines_count,
+                    COALESCE(SUM(p.amount),0) AS revenue
+               FROM payments p
+               LEFT JOIN {$offers} o ON o.offer_id = p.offer_id
+               {$where}
+              GROUP BY p.offer_id, o.name, o.category
+              ORDER BY sales DESC
+              LIMIT " . (int) $limit,
+            $params
+        );
+        $out = [];
+        foreach ($rows as $r) {
+            $sales = (int) $r['sales'];
+            $lines = (int) $r['lines_count'];
+            $out[] = [
+                'offer_id' => (string) $r['offer_id'],
+                'name' => (string) $r['name'],
+                'category' => (string) $r['category'],
+                'sales' => $sales,
+                'lines' => $lines,
+                'revenue' => (int) $r['revenue'],
+                'perLine' => $lines > 0 ? round($sales / $lines, 1) : 0.0,
+            ];
+        }
+        return $out;
+    }
+
+    /**
      * Confirmed sales and revenue per Nairobi day, for a trend line.
      * @return array{labels:string[], sales:int[], revenue:int[]}
      */

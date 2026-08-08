@@ -2,6 +2,7 @@ package com.example.data.payment
 
 import com.example.core.model.OfferItem
 import com.example.core.model.PurchasePolicy
+import com.example.core.model.offerAvailabilityAt
 
 /**
  * Whether a given offer may be purchased offline right now, and why not when it
@@ -28,6 +29,13 @@ sealed interface OfflineEligibility {
      * fulfilment could not tell which offer was paid for (Plan.md §5.8).
      */
     data object AmbiguousAmount : OfflineEligibility
+
+    /**
+     * The offer is outside the time-of-day window Safaricom sells it in. Paying
+     * offline now would take the customer's money for a bundle that cannot be
+     * fulfilled, so the manual steps are withheld until the window opens.
+     */
+    data class OutsideSellingWindow(val windowLabel: String) : OfflineEligibility
 
     val isEligible: Boolean get() = this is Eligible
 }
@@ -62,7 +70,13 @@ object OfflineEligibilityChecker {
         // 3. Hard once-per-recipient-per-day offers are offline-disabled by default.
         if (isHardLimited(offer)) return OfflineEligibility.HardLimitBlocked
 
-        // 4. Amount must uniquely identify the offer among other offline-payable
+        // 4. Outside its selling window nothing can be fulfilled, online or off.
+        val availability = offerAvailabilityAt(offer, nowMillis)
+        if (!availability.purchasable) {
+            return OfflineEligibility.OutsideSellingWindow(availability.windowLabel)
+        }
+
+        // 5. Amount must uniquely identify the offer among other offline-payable
         //    offers on the same route. Since the payable amount is identical on
         //    either route, a shared price with any other offline-payable offer is
         //    ambiguous.

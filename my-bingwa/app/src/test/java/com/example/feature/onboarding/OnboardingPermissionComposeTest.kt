@@ -3,7 +3,9 @@ package com.example.feature.onboarding
 import android.provider.Settings
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import com.example.ui.theme.MyBingwaTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -16,7 +18,9 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 /**
- * Compose behaviour for the onboarding permission steps (Feature 8).
+ * Compose behaviour for the onboarding permission steps, which are **required**:
+ * they come after the name and number, cannot be skipped, and the only
+ * alternative to granting them is closing the app.
  *
  * Two deliberate testing choices:
  *
@@ -60,128 +64,205 @@ class OnboardingPermissionComposeTest {
         settle()
     }
 
+    private fun fillSetup(name: String = "Asha", phone: String = "0712345678") {
+        composeRule.onNodeWithText("Your name").performTextInput(name)
+        composeRule.onNodeWithText("Safaricom number").performTextInput(phone)
+        settle()
+    }
+
     @Test
-    fun `permission steps sit between the value screens and the personal setup`() {
+    fun `the personal setup comes before the permissions`() {
         composeRule.setContent {
             MyBingwaTheme {
                 OnboardingScreen(onCompleteOnboarding = { _, _ -> })
             }
         }
-        // Promise → Gains → Notifications.
-        tapCta()
-        tapCta()
-        composeRule.onNodeWithTag("onboarding_step_notifications", useUnmergedTree = true)
-            .assertExists()
+        tapCta() // promise
+        tapCta() // gains
+        composeRule.onNodeWithTag("onboarding_step_setup", useUnmergedTree = true).assertExists()
     }
 
     @Test
-    fun `the notification cta asks once and the step still continues`() {
-        var notificationRequests = 0
+    fun `the setup step will not advance without a name and number`() {
         composeRule.setContent {
             MyBingwaTheme {
-                OnboardingScreen(
-                    onCompleteOnboarding = { _, _ -> },
-                    onRequestNotificationPermission = { notificationRequests++ }
-                )
+                OnboardingScreen(onCompleteOnboarding = { _, _ -> })
             }
         }
         tapCta()
         tapCta()
+        // Tapping Continue with empty fields keeps the customer on the setup step.
+        tapCta()
+        composeRule.onNodeWithTag("onboarding_step_setup", useUnmergedTree = true).assertExists()
         composeRule.onNodeWithTag("onboarding_step_notifications", useUnmergedTree = true)
-            .assertExists()
-
-        // First tap on the permission step asks the OS...
-        tapCta()
-        assertEquals(1, notificationRequests)
-
-        // ...and the following tap moves on regardless of the OS answer, so a
-        // customer whose dialog no longer appears can never be trapped.
-        tapCta()
-        assertEquals(1, notificationRequests)
-        composeRule.onNodeWithTag("onboarding_step_sms", useUnmergedTree = true).assertExists()
+            .assertDoesNotExist()
     }
 
     @Test
-    fun `declining with Not now continues the flow without asking`() {
+    fun `a refused notification permission cannot be skipped past`() {
         var notificationRequests = 0
-        var smsRequests = 0
         composeRule.setContent {
             MyBingwaTheme {
                 OnboardingScreen(
                     onCompleteOnboarding = { _, _ -> },
                     onRequestNotificationPermission = { notificationRequests++ },
-                    onRequestSmsPermission = { smsRequests++ }
+                    // notificationsGranted stays false: the customer refuses.
+                    notificationsGranted = false
                 )
             }
         }
         tapCta()
         tapCta()
+        fillSetup()
+        tapCta() // setup → notifications
+        composeRule.onNodeWithTag("onboarding_step_notifications", useUnmergedTree = true)
+            .assertExists()
 
-        // Skip notifications, then skip SMS: onboarding continues to the setup step.
-        composeRule.onNodeWithTag("onboarding_permission_skip").performClick()
-        settle()
-        composeRule.onNodeWithTag("onboarding_step_sms", useUnmergedTree = true).assertExists()
+        // Ask, refuse, ask again — and never leave the step.
+        tapCta()
+        assertEquals(1, notificationRequests)
+        composeRule.onNodeWithTag("onboarding_step_notifications", useUnmergedTree = true)
+            .assertExists()
 
-        composeRule.onNodeWithTag("onboarding_permission_skip").performClick()
-        settle()
-        composeRule.onNodeWithTag("onboarding_step_setup", useUnmergedTree = true).assertExists()
-
-        assertEquals(0, notificationRequests)
-        assertEquals(0, smsRequests)
+        tapCta()
+        assertEquals(2, notificationRequests)
+        composeRule.onNodeWithTag("onboarding_step_notifications", useUnmergedTree = true)
+            .assertExists()
+        composeRule.onNodeWithTag("onboarding_step_sms", useUnmergedTree = true).assertDoesNotExist()
     }
 
     @Test
-    fun `the sms cta invokes the sms request callback`() {
-        var smsRequests = 0
+    fun `after two refusals the cta opens the app settings instead of asking again`() {
+        var notificationRequests = 0
+        var settingsOpened = 0
         composeRule.setContent {
             MyBingwaTheme {
                 OnboardingScreen(
                     onCompleteOnboarding = { _, _ -> },
-                    onRequestSmsPermission = { smsRequests++ }
+                    onRequestNotificationPermission = { notificationRequests++ },
+                    onOpenAppSettings = { settingsOpened++ }
                 )
             }
         }
-        tapCta() // gains
-        tapCta() // notifications
-        composeRule.onNodeWithTag("onboarding_permission_skip").performClick()
-        settle()
-        composeRule.onNodeWithTag("onboarding_step_sms", useUnmergedTree = true).assertExists()
-
         tapCta()
-        assertTrue(smsRequests == 1)
+        tapCta()
+        fillSetup()
+        tapCta()
+
+        tapCta() // ask 1
+        tapCta() // ask 2
+        assertEquals(2, notificationRequests)
+
+        // Android no longer shows its dialog, so the third tap must route to the
+        // one place the permission can still be granted.
+        tapCta()
+        assertEquals(2, notificationRequests)
+        assertEquals(1, settingsOpened)
     }
 
     @Test
-    fun `the sms step is hidden entirely when sms is not supported`() {
+    fun `refusing offers closing the app, not skipping the step`() {
+        var exits = 0
         composeRule.setContent {
             MyBingwaTheme {
                 OnboardingScreen(
                     onCompleteOnboarding = { _, _ -> },
+                    onExitApp = { exits++ }
+                )
+            }
+        }
+        tapCta()
+        tapCta()
+        fillSetup()
+        tapCta()
+
+        composeRule.onNodeWithTag("onboarding_permission_exit").performClick()
+        settle()
+        assertEquals(1, exits)
+        // The step is still the one it was: exiting is the caller's job, not a skip.
+        composeRule.onNodeWithTag("onboarding_step_notifications", useUnmergedTree = true)
+            .assertExists()
+    }
+
+    @Test
+    fun `a granted notification permission carries straight on to the sms step`() {
+        composeRule.setContent {
+            MyBingwaTheme {
+                OnboardingScreen(
+                    onCompleteOnboarding = { _, _ -> },
+                    notificationsGranted = true
+                )
+            }
+        }
+        tapCta()
+        tapCta()
+        fillSetup()
+        tapCta() // setup → notifications, which is already satisfied
+        settle()
+
+        composeRule.onNodeWithTag("onboarding_step_sms", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun `granting both permissions completes onboarding with the entered details`() {
+        var completedName: String? = null
+        var completedPhone: String? = null
+        composeRule.setContent {
+            MyBingwaTheme {
+                OnboardingScreen(
+                    onCompleteOnboarding = { name, phone ->
+                        completedName = name
+                        completedPhone = phone
+                    },
+                    notificationsGranted = true,
+                    smsGranted = true
+                )
+            }
+        }
+        tapCta()
+        tapCta()
+        fillSetup(name = "Asha", phone = "0712345678")
+        tapCta() // setup → both permission steps auto-continue → finish
+        composeRule.mainClock.advanceTimeBy(2_000L)
+
+        assertEquals("Asha", completedName)
+        assertEquals("0712345678", completedPhone)
+    }
+
+    @Test
+    fun `the sms step is absent where the build does not ship the permission`() {
+        var completed = false
+        composeRule.setContent {
+            MyBingwaTheme {
+                OnboardingScreen(
+                    onCompleteOnboarding = { _, _ -> completed = true },
+                    notificationsGranted = true,
                     smsSupported = false
                 )
             }
         }
         tapCta()
         tapCta()
-        composeRule.onNodeWithTag("onboarding_step_notifications", useUnmergedTree = true)
-            .assertExists()
+        fillSetup()
+        tapCta()
+        composeRule.mainClock.advanceTimeBy(2_000L)
 
-        composeRule.onNodeWithTag("onboarding_permission_skip").performClick()
-        settle()
-        composeRule.onNodeWithTag("onboarding_step_setup", useUnmergedTree = true).assertExists()
-        composeRule.onNodeWithTag("onboarding_step_sms", useUnmergedTree = true)
-            .assertDoesNotExist()
+        composeRule.onNodeWithTag("onboarding_step_sms", useUnmergedTree = true).assertDoesNotExist()
+        assertTrue(completed)
     }
 
     @Test
-    fun `the top skip jumps straight to the personal setup`() {
+    fun `there is no skip shortcut anywhere in the flow`() {
         composeRule.setContent {
             MyBingwaTheme {
                 OnboardingScreen(onCompleteOnboarding = { _, _ -> })
             }
         }
-        composeRule.onNodeWithTag("onboarding_skip_to_setup").performClick()
-        settle()
-        composeRule.onNodeWithTag("onboarding_step_setup", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithTag("onboarding_skip_to_setup").assertDoesNotExist()
+        tapCta()
+        tapCta()
+        fillSetup()
+        tapCta()
+        composeRule.onNodeWithTag("onboarding_permission_skip").assertDoesNotExist()
     }
 }

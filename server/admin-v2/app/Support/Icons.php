@@ -41,6 +41,7 @@ final class Icons
         'chevron'      => '<path d="M9 18l6-6-6-6"/>',
         'chevron-down' => '<path d="M6 9l6 6 6-6"/>',
         'external'     => '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/>',
+        'upload'       => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 8l5-5 5 5"/><path d="M12 3v12"/>',
         'download'     => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
         'publish'      => '<path d="M4.5 16.5 3 21l4.5-1.5"/><path d="M14 4c3 0 6 3 6 6l-8 8-4-4 8-8"/><path d="M14 4l-2 2"/><circle cx="15" cy="9" r="1.2"/>',
         'rollback'     => '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',

@@ -27,6 +27,7 @@ final class SettingsController extends Controller
         'notifications' => 'Notifications',
         'templates'     => 'SMS rules',
         'payments'      => 'Payments',
+        'customers'     => 'Customers',
         'support'       => 'Support details',
         'config'        => 'App configuration',
         'versions'      => 'Updates & versions',

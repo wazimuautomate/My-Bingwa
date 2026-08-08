@@ -173,7 +173,104 @@ fun isBoughtTodayByInstall(offer: OfferItem, purchases: List<PurchaseRecord>, no
             isSameNairobiDay(it.timestampMillis, nowMillis)
     }
 
-private fun normaliseNumber(number: String): String = number.filter { it.isDigit() }
+/**
+ * The numbers that already received this offer today, newest first, de-duplicated
+ * (Plan.md §5.12). This is what lets a list say "Already bought today for
+ * 0712 345 678" instead of a bare "Bought today", and it resets by itself at
+ * Nairobi midnight because the day comparison — not a stored flag — decides.
+ *
+ * A purchase still waiting to be verified counts: the customer has paid, and
+ * asking them to pay again for the same number the same day is the exact mistake
+ * this is here to prevent.
+ */
+fun boughtTodayRecipients(
+    offer: OfferItem,
+    purchases: List<PurchaseRecord>,
+    nowMillis: Long
+): List<String> = purchases
+    .asSequence()
+    .filter {
+        it.offerId == offer.id &&
+            (it.status == PaymentStatus.RECEIVED || it.status == PaymentStatus.WAITING_VERIFY) &&
+            isSameNairobiDay(it.timestampMillis, nowMillis)
+    }
+    .sortedByDescending { it.timestampMillis }
+    .map { it.recipientNumber }
+    .filter { it.isNotBlank() }
+    .distinctBy { normaliseNumber(it) }
+    .toList()
+
+/**
+ * The short note an offer list shows under a once-per-day offer that has already
+ * been used today, or null when there is nothing to say. Names the number the
+ * bundle went to, because "bought today" without a number is what makes a
+ * customer buy the same restricted bundle twice.
+ */
+fun boughtTodayNote(
+    offer: OfferItem,
+    purchases: List<PurchaseRecord>,
+    nowMillis: Long
+): String? {
+    if (offer.purchasePolicy == PurchasePolicy.MULTIPLE_PER_DAY) return null
+    val numbers = boughtTodayRecipients(offer, purchases, nowMillis)
+    return when {
+        numbers.isEmpty() -> null
+        numbers.size == 1 -> "Already bought today for ${displayNumber(numbers[0])}"
+        else -> "Already bought today for ${displayNumber(numbers[0])} +${numbers.size - 1} more"
+    }
+}
+
+/**
+ * The sentence shown at checkout when the number typed in has already had this
+ * once-per-day offer today, or null when the purchase may proceed. The customer
+ * is told what to do next — use another number, or come back after midnight —
+ * rather than only being blocked.
+ */
+fun repeatPurchaseBlockMessage(
+    offer: OfferItem,
+    purchases: List<PurchaseRecord>,
+    recipientNumber: String,
+    nowMillis: Long
+): String? {
+    if (recipientNumber.isBlank()) return null
+    val state = dailyStateFor(offer, purchases, recipientNumber, nowMillis)
+    if (state.purchasable) return null
+    val number = displayNumber(recipientNumber)
+    return when (state.kind) {
+        DailyStateKind.WAITING_VERIFY ->
+            "A ${offer.name} purchase for $number today is still being verified. Wait for that one " +
+                "to finish before buying it again for this number."
+        else ->
+            "$number already got ${offer.name} today. Safaricom allows this bundle once a day per " +
+                "number — it can be bought for this number again after midnight. You can enter a " +
+                "different number to buy it now."
+    }
+}
+
+/**
+ * Two phone numbers are the same line when their last nine digits match, so
+ * 0712345678, 254712345678 and +254 712 345 678 all compare equal. Stripping
+ * non-digits alone was not enough: the once-per-day ledger would then treat a
+ * number saved in international form as a different line and let the same bundle
+ * be bought for it twice in a day.
+ */
+private fun normaliseNumber(number: String): String =
+    number.filter { it.isDigit() }.takeLast(9)
+
+/** 254712345678 / 0712345678 → "0712 345 678", without depending on the payment layer. */
+private fun displayNumber(number: String): String {
+    val digits = normaliseNumber(number)
+    val local = when {
+        digits.length == 12 && digits.startsWith("254") -> "0" + digits.substring(3)
+        digits.length == 9 -> "0$digits"
+        else -> digits
+    }
+    return if (local.length == 10) {
+        "${local.substring(0, 4)} ${local.substring(4, 7)} ${local.substring(7)}"
+    } else {
+        number
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Home sections (Plan.md §5.2 content order)

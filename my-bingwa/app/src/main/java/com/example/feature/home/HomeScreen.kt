@@ -186,6 +186,8 @@ fun HomeScreen(
                             offer = offer,
                             badge = state.personalBadges[offer.id],
                             isOffline = state.isOffline,
+                            boughtTodayNote = boughtTodayNote(offer, state.purchases, state.nowMillis),
+                            nowMillis = state.nowMillis,
                             onCardClick = { onOfferSelect(offer) },
                             onBuyClick = { onOfferBuy(offer) },
                             onFavouriteToggle = { favouriteToggle(offer) }
@@ -210,6 +212,8 @@ fun HomeScreen(
                                         offer = offer,
                                         badge = state.personalBadges[offer.id],
                                         isOffline = state.isOffline,
+                                        boughtTodayNote = boughtTodayNote(offer, state.purchases, state.nowMillis),
+                                        nowMillis = state.nowMillis,
                                         onCardClick = { onOfferSelect(offer) },
                                         onBuyClick = { onOfferBuy(offer) },
                                         onFavouriteToggle = { favouriteToggle(offer) }
@@ -251,6 +255,8 @@ private fun PersonalOfferCard(
     offer: OfferItem,
     badge: PersonalBadge?,
     isOffline: Boolean,
+    boughtTodayNote: String? = null,
+    nowMillis: Long = System.currentTimeMillis(),
     onCardClick: () -> Unit,
     onBuyClick: () -> Unit,
     onFavouriteToggle: () -> Unit
@@ -259,6 +265,8 @@ private fun PersonalOfferCard(
         OfferCard(
             offer = offer,
             isOffline = isOffline,
+            boughtTodayNote = boughtTodayNote,
+            nowMillis = nowMillis,
             onCardClick = onCardClick,
             onBuyClick = onBuyClick,
             onFavouriteToggle = onFavouriteToggle
@@ -286,6 +294,8 @@ private fun PersonalOfferCard(
         OfferCard(
             offer = offer,
             isOffline = isOffline,
+            boughtTodayNote = boughtTodayNote,
+            nowMillis = nowMillis,
             onCardClick = onCardClick,
             onBuyClick = onBuyClick,
             onFavouriteToggle = onFavouriteToggle

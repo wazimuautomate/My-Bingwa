@@ -7,6 +7,7 @@ $nav = [
     ['notifications', 'Notifications',     '/notifications',    'notifications.create','notifications'],
     ['templates',     'SMS rules',         '/sms-rules',        'templates.manage',    'templates'],
     ['payments',      'Payments',          '/payments',         'payments.view',       'payments'],
+    ['user',          'Customers',         '/customers',        'customers.view',      'customers'],
     ['support',       'Support details',   '/support',          'support.edit',        'support'],
     ['config',        'App configuration', '/app-config',       'config.edit',         'config'],
     ['versions',      'Updates & versions','/versions',         'releases.manage',     'versions'],

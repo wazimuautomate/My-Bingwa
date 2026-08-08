@@ -29,7 +29,7 @@ $qs = http_build_query(array_filter($filters));
   <div class="table-wrap">
     <table class="data">
       <thead><tr>
-        <th>ID</th><th>Category</th><th>Name</th><th>Price</th><th>Validity</th><th>Rule</th><th>Status</th><th></th>
+        <th>ID</th><th>Category</th><th>Name</th><th>Price</th><th>Validity</th><th>Rule</th><th>Sells</th><th>Status</th><th></th>
       </tr></thead>
       <tbody>
         <?php foreach ($offers as $o): ?>
@@ -40,6 +40,13 @@ $qs = http_build_query(array_filter($filters));
             <td class="nowrap"><?= e(ksh($o['price'])) ?></td>
             <td class="muted"><?= e($o['validity']) ?></td>
             <td class="muted small"><?= e(OfferRepository::RULES[$o['daily_rule']] ?? $o['daily_rule']) ?></td>
+            <?php
+              // The time-of-day window Safaricom sells this offer in. Blank ends
+              // mean "all day", which is what the app shows too.
+              $wFrom = OfferRepository::hhmm($o['available_from'] ?? null);
+              $wTo   = OfferRepository::hhmm($o['available_to'] ?? null);
+            ?>
+            <td class="muted small nowrap"><?= ($wFrom !== '' && $wTo !== '') ? e($wFrom . ' – ' . $wTo) : 'All day' ?></td>
             <td><span class="status <?= e($o['status']) ?>"><?= ucfirst($o['status']) ?></span></td>
             <td>
               <div class="dropdown">
@@ -73,7 +80,7 @@ $qs = http_build_query(array_filter($filters));
           </tr>
         <?php endforeach; ?>
         <?php if (!$offers): ?>
-          <tr><td colspan="8"><div class="empty"><?= icon('offers', 32) ?><h3>No offers match</h3><p>Adjust the filters or add a new offer.</p></div></td></tr>
+          <tr><td colspan="9"><div class="empty"><?= icon('offers', 32) ?><h3>No offers match</h3><p>Adjust the filters or add a new offer.</p></div></td></tr>
         <?php endif; ?>
       </tbody>
     </table>
@@ -90,11 +97,13 @@ $qs = http_build_query(array_filter($filters));
           <div class="between"><span class="muted small">Validity</span><span><?= e($o['validity']) ?> <span class="muted small">(<?= e($o['band']) ?>)</span></span></div>
           <div class="between"><span class="muted small">Daily rule</span><span class="small"><?= e(OfferRepository::RULES[$o['daily_rule']] ?? $o['daily_rule']) ?></span></div>
           <?php if (!empty($o['max_per_day'])): ?><div class="between"><span class="muted small">Max per day</span><span><?= (int) $o['max_per_day'] ?></span></div><?php endif; ?>
+          <?php $mFrom = OfferRepository::hhmm($o['available_from'] ?? null); $mTo = OfferRepository::hhmm($o['available_to'] ?? null); ?>
+          <div class="between"><span class="muted small">Sells between</span><span class="small"><?= ($mFrom !== '' && $mTo !== '') ? e($mFrom . ' – ' . $mTo) . ' <span class="muted">Nairobi</span>' : 'Any time' ?></span></div>
           <div class="between"><span class="muted small">Commercial tag</span><span><?= e($o['commercial_tag'] ?: '—') ?></span></div>
           <div class="between"><span class="muted small">Offline eligible</span><span><?= ((int) $o['offline_eligible'] === 1) ? 'Yes' : 'No' ?></span></div>
           <div class="between"><span class="muted small">Restrictions</span><span class="small"><?= e($o['restrictions'] ?: '—') ?></span></div>
-          <div class="between"><span class="muted small">Available from</span><span class="small"><?= e($o['starts_at'] ? fmt_nairobi($o['starts_at']) : '—') ?></span></div>
-          <div class="between"><span class="muted small">Available until</span><span class="small"><?= e($o['ends_at'] ? fmt_nairobi($o['ends_at']) : '—') ?></span></div>
+          <div class="between"><span class="muted small">Campaign starts</span><span class="small"><?= e($o['starts_at'] ? fmt_nairobi($o['starts_at']) : '—') ?></span></div>
+          <div class="between"><span class="muted small">Campaign ends</span><span class="small"><?= e($o['ends_at'] ? fmt_nairobi($o['ends_at']) : '—') ?></span></div>
           <div class="between"><span class="muted small">Sort hint</span><span><?= (int) ($o['sort_hint'] ?? 0) ?></span></div>
           <div class="between"><span class="muted small">Last updated</span><span class="small"><?= e(fmt_nairobi($o['updated_at'] ?? null)) ?><?= !empty($o['updated_by']) ? ' · ' . e($o['updated_by']) : '' ?></span></div>
         </div>

@@ -27,6 +27,7 @@ import com.example.data.fake.FakeBingwaRepositoryImpl
 import com.example.data.payment.PaymentGatewayProvider
 import com.example.data.payment.UnavailablePaymentGateway
 import com.example.data.persistence.LocalStore
+import com.example.data.remote.AndroidRemoteCustomerSource
 import com.example.data.remote.AndroidRemoteNotificationSource
 import com.example.data.remote.AndroidRemoteNotificationTemplateSource
 import com.example.data.remote.AndroidRemoteSmsRuleSource
@@ -191,6 +192,18 @@ class MyBingwaApplication : Application(), SyncOrchestratorProvider {
             // the guaranteed offline base (server is only for syncing).
             catalogueSource = if (hasBaseUrl) {
                 AndroidRemoteCatalogueSource(
+                    baseUrl = baseUrl,
+                    appKey = appKey,
+                    enableLogging = BuildConfig.DEBUG
+                )
+            } else {
+                null
+            },
+            // The seller's own record of who is using the app: name + number, sent
+            // ONCE at the end of onboarding. No base URL → nobody is registered, and
+            // the app is otherwise unaffected.
+            customerSource = if (hasBaseUrl) {
+                AndroidRemoteCustomerSource(
                     baseUrl = baseUrl,
                     appKey = appKey,
                     enableLogging = BuildConfig.DEBUG

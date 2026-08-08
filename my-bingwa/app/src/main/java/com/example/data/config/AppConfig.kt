@@ -1,5 +1,7 @@
 package com.example.data.config
 
+import com.example.BuildConfig
+
 /**
  * Seller details that can change over time and are therefore synced from the
  * server (Till, Paybill, support contacts). They are FETCHED when online but always
@@ -14,16 +16,28 @@ data class AppConfig(
 ) {
     companion object {
         /**
-         * Blank defaults — NO seller numbers are baked into the app. The real Till,
-         * Paybill and support numbers are set by the owner in the admin and synced from
-         * the server; until the first sync completes a fresh install simply has no
-         * numbers to show (screens treat blanks as "not available yet").
+         * The seller numbers bundled in the APK at build time
+         * (`SEED_*` in build.gradle.kts) — the values that were current when this
+         * version was built.
+         *
+         * These used to be blank, on the reasoning that the owner sets them in the
+         * admin and the app syncs them. In the field that meant a customer whose
+         * first sync had not landed — a weak connection, a slow first launch — saw an
+         * empty Support page and offline instructions that refused to show a number
+         * to pay, and the numbers appeared or vanished depending purely on whether a
+         * sync had succeeded. A store that sells things has to be able to tell you
+         * where to pay before it has talked to anything.
+         *
+         * This is a FLOOR, not the truth: the first successful sync replaces it, the
+         * synced copy is cached and preferred forever after, and the admin remains
+         * the only place a number is changed. A stale bundled number is corrected by
+         * the next sync; a blank one could never be corrected offline at all.
          */
         val DEFAULT = AppConfig(
-            tillNumber = "",
-            paybillNumber = "",
-            supportNumber = "",
-            supportWhatsapp = ""
+            tillNumber = BuildConfig.SEED_TILL_NUMBER,
+            paybillNumber = BuildConfig.SEED_PAYBILL_NUMBER,
+            supportNumber = BuildConfig.SEED_SUPPORT_NUMBER,
+            supportWhatsapp = BuildConfig.SEED_SUPPORT_WHATSAPP
         )
     }
 }

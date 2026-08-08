@@ -66,6 +66,7 @@ import com.example.core.model.OfferCategory
 import com.example.core.model.OfferItem
 import com.example.core.ui.EmptyStateView
 import com.example.core.ui.OfferCard
+import com.example.feature.home.boughtTodayNote
 import com.example.core.ui.OfferCardSkeleton
 import com.example.data.fake.MAX_OFFER_PRICE_KSH
 import com.example.data.fake.OfferFilterState
@@ -277,6 +278,8 @@ fun OffersScreen(
                         OfferCard(
                             offer = offer,
                             isOffline = state.isOffline,
+                            boughtTodayNote = boughtTodayNote(offer, state.purchases, state.nowMillis),
+                            nowMillis = state.nowMillis,
                             onCardClick = { onOfferSelect(offer) },
                             onBuyClick = { onOfferBuy(offer) },
                             onFavouriteToggle = { favouriteToggle(offer) }

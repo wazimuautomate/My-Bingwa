@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS offers (
     validity   VARCHAR(32) NOT NULL,
     band       VARCHAR(16) NOT NULL,
     daily_rule VARCHAR(20) NOT NULL DEFAULT 'BUY_AGAIN_TODAY',
+    -- Safaricom's time-of-day selling window, Nairobi wall clock. NULL = all day.
+    available_from TIME NULL DEFAULT NULL,
+    available_to   TIME NULL DEFAULT NULL,
     active     TINYINT NOT NULL DEFAULT 1,
     sort_order INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

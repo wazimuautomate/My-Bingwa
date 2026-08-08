@@ -3,6 +3,7 @@ package com.example.data.catalogue
 import com.example.core.model.DailyRule
 import com.example.core.model.OfferCategory
 import com.example.core.model.OfferItem
+import com.example.core.model.parseTimeOfDayMinutes
 import com.squareup.moshi.Json
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -70,7 +71,12 @@ data class OfferDto(
     @Json(name = "price") val price: Int? = null,
     @Json(name = "validity") val validity: String? = null,
     @Json(name = "band") val band: String? = null,
-    @Json(name = "dailyRule") val dailyRule: String? = null
+    @Json(name = "dailyRule") val dailyRule: String? = null,
+    // Safaricom's time-of-day selling window for this offer, "HH:MM" in Nairobi
+    // time. Absent/blank on an offer with no restriction, and on any server that
+    // predates the field — both read as "buyable any time".
+    @Json(name = "availableFrom") val availableFrom: String? = null,
+    @Json(name = "availableTo") val availableTo: String? = null
 ) {
     fun toOfferItem(): OfferItem? {
         val safeId = id?.takeIf { it.isNotBlank() } ?: return null
@@ -91,6 +97,8 @@ data class OfferDto(
             validityBand = band ?: "",
             category = cat,
             dailyRule = rule,
+            availableFromMinutes = parseTimeOfDayMinutes(availableFrom),
+            availableToMinutes = parseTimeOfDayMinutes(availableTo),
             description = "$safeName of ${cat.label.lowercase()} valid ${validity ?: ""}."
         )
     }

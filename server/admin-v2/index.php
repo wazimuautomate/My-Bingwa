@@ -91,6 +91,8 @@ $router->get('/billboards/{id}/edit',  [App\Controllers\BillboardsController::cl
 $router->post('/billboards/save',      [App\Controllers\BillboardsController::class, 'save']);
 $router->post('/billboards/{id}/status', [App\Controllers\BillboardsController::class, 'setStatus']);
 $router->post('/billboards/{id}/delete', [App\Controllers\BillboardsController::class, 'delete']);
+$router->get('/billboards/import',     [App\Controllers\ImportController::class, 'billboardsForm']);
+$router->post('/billboards/import',    [App\Controllers\ImportController::class, 'importBillboards']);
 
 /* --------------------------------------------------------------- notifications */
 $router->get('/notifications',           [App\Controllers\NotificationsController::class, 'index']);
@@ -104,6 +106,8 @@ $router->post('/notifications/{id}/duplicate', [App\Controllers\NotificationsCon
 $router->post('/notifications/{id}/delete', [App\Controllers\NotificationsController::class, 'delete']);
 $router->post('/notifications/preview',  [App\Controllers\NotificationsController::class, 'preview']);
 $router->post('/notifications/{id}/test',[App\Controllers\NotificationsController::class, 'testSend']);
+$router->get('/notifications/import',    [App\Controllers\ImportController::class, 'notificationsForm']);
+$router->post('/notifications/import',   [App\Controllers\ImportController::class, 'importNotifications']);
 
 /* --------------------------------------------------------------- SMS rules */
 // Replaces the v1 "Message templates" page. The published snapshot still exposes the old
@@ -119,6 +123,12 @@ $router->post('/sms-rules/{id}/duplicate',[App\Controllers\SmsRulesController::c
 $router->post('/sms-rules/{id}/delete',   [App\Controllers\SmsRulesController::class, 'delete']);
 // Legacy path kept alive so old bookmarks land on the new page instead of a 404.
 $router->get('/message-templates',        [App\Controllers\SmsRulesController::class, 'legacyRedirect']);
+
+/* ------------------------------------------------------------- customers */
+$router->get('/customers',                  [App\Controllers\CustomersController::class, 'index']);
+$router->get('/customers-export',           [App\Controllers\CustomersController::class, 'exportCsv']);
+$router->post('/customers/delete-bulk',     [App\Controllers\CustomersController::class, 'deleteBulk']);
+$router->post('/customers/{id}/delete',     [App\Controllers\CustomersController::class, 'delete']);
 
 /* --------------------------------------------------------------- payments */
 $router->get('/payments',            [App\Controllers\PaymentsController::class, 'index']);

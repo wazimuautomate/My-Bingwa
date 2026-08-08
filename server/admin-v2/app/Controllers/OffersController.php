@@ -76,6 +76,10 @@ final class OffersController extends Controller
             'band' => (string) $request->post('band', 'Daily'),
             'daily_rule' => (string) $request->post('daily_rule', 'MULTIPLE_PER_DAY'),
             'max_per_day' => $request->post('max_per_day', '') === '' ? null : (int) $request->post('max_per_day'),
+            // Safaricom's time-of-day selling window, kept as Nairobi wall-clock
+            // "HH:MM:00" (never UTC — see migration 018). Blank = no restriction.
+            'available_from' => $this->toTime($request->post('available_from')),
+            'available_to' => $this->toTime($request->post('available_to')),
             'commercial_tag' => trim((string) $request->post('commercial_tag', '')),
             'offline_eligible' => $request->post('offline_eligible') ? 1 : 0,
             'restrictions' => trim((string) $request->post('restrictions', '')),
@@ -96,6 +100,14 @@ final class OffersController extends Controller
         $v->validate($rules);
         if ($input['daily_rule'] === 'MAX_PER_RECIPIENT_PER_DAY' && ($input['max_per_day'] === null || $input['max_per_day'] < 1)) {
             $v->add('max_per_day', 'Set a maximum count for this rule.');
+        }
+        // A window needs both ends: one end alone is ambiguous to the customer
+        // ("from 5pm" until when?) and the app would have to guess a closing time.
+        if (($input['available_from'] === null) !== ($input['available_to'] === null)) {
+            $v->add('available_from', 'Set both the opening and the closing time, or leave both blank.');
+        }
+        if ($input['available_from'] !== null && $input['available_from'] === $input['available_to']) {
+            $v->add('available_from', 'The opening and closing times cannot be the same.');
         }
         if (!$isNew && !OfferRepository::exists($input['offer_id'])) {
             $v->add('offer_id', 'Offer not found.');
@@ -142,7 +154,9 @@ final class OffersController extends Controller
         OfferRepository::save([
             'offer_id' => $newId, 'category' => $src['category'], 'name' => $src['name'], 'price' => $src['price'],
             'validity' => $src['validity'], 'band' => $src['band'], 'daily_rule' => $src['daily_rule'],
-            'max_per_day' => $src['max_per_day'], 'commercial_tag' => $src['commercial_tag'],
+            'max_per_day' => $src['max_per_day'],
+            'available_from' => $src['available_from'] ?? null, 'available_to' => $src['available_to'] ?? null,
+            'commercial_tag' => $src['commercial_tag'],
             'offline_eligible' => $src['offline_eligible'], 'restrictions' => $src['restrictions'],
             'status' => 'draft', 'starts_at' => $src['starts_at'], 'ends_at' => $src['ends_at'],
             'sort_hint' => (int) $src['sort_hint'] + 1,
@@ -206,15 +220,42 @@ final class OffersController extends Controller
             'status' => (string) $request->get('status', ''),
         ]);
         Csv::stream('mybingwa-offers.csv',
-            ['offer_id', 'category', 'name', 'price', 'validity', 'band', 'daily_rule', 'offline_eligible', 'status'],
+            ['offer_id', 'category', 'name', 'price', 'validity', 'band', 'daily_rule',
+             'available_from', 'available_to', 'offline_eligible', 'status'],
             array_map(fn($o) => [
                 $o['offer_id'], $o['category'], $o['name'], $o['price'], $o['validity'],
-                $o['band'], $o['daily_rule'], $o['offline_eligible'] ? 'yes' : 'no', $o['status'],
+                $o['band'], $o['daily_rule'],
+                OfferRepository::hhmm($o['available_from'] ?? null),
+                OfferRepository::hhmm($o['available_to'] ?? null),
+                $o['offline_eligible'] ? 'yes' : 'no', $o['status'],
             ], $offers)
         );
     }
 
     /* helpers */
+
+    /**
+     * A "HH:MM" from the time input as the "HH:MM:00" stored in the TIME column,
+     * or null for "no restriction on this end". Deliberately NOT converted to UTC:
+     * a selling window is a Nairobi wall-clock fact the customer reads back.
+     */
+    private function toTime($value): ?string
+    {
+        $text = trim((string) $value);
+        if ($text === '') {
+            return null;
+        }
+        if (!preg_match('/^(\d{1,2}):(\d{2})/', $text, $m)) {
+            return null;
+        }
+        $h = (int) $m[1];
+        $min = (int) $m[2];
+        if ($h < 0 || $h > 23 || $min < 0 || $min > 59) {
+            return null;
+        }
+        return sprintf('%02d:%02d:00', $h, $min);
+    }
+
     private function toUtc($local): ?string
     {
         $local = trim((string) $local);

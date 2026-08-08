@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Info
@@ -71,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.core.model.OfferItem
+import com.example.core.model.offerAvailabilityAt
 import com.example.core.model.PaymentStatus
 import com.example.core.model.PurchaseRecord
 import com.example.core.payment.KenyanPhone
@@ -110,6 +112,16 @@ fun PurchaseBottomSheet(
     // falls back to the primary number exactly as before.
     preferredPayerNumber: String = "",
     isOffline: Boolean,
+    /**
+     * Why the bundle cannot be bought for this recipient number right now, or null
+     * when it can. Today this is the once-per-day-per-number rule
+     * ([com.example.feature.home.repeatPurchaseBlockMessage]) — the sheet only
+     * renders what it is told, so the rule stays testable outside Compose.
+     *
+     * It is re-evaluated as the customer types, which is the whole point: they can
+     * see the block, change to another number, and continue without leaving.
+     */
+    recipientBlockMessage: (String) -> String? = { null },
     onExecuteStkPush: suspend (OfferItem, String, String, String, Boolean) -> PurchaseRecord,
     onExecuteOfflinePayment: suspend (OfferItem, String, String, Boolean, String?) -> PurchaseRecord,
     offlineEligibility: (OfferItem, Boolean) -> OfflineEligibility,
@@ -173,6 +185,7 @@ fun PurchaseBottomSheet(
                         payerNumber = payerNumber,
                         userPrimaryNumber = userPrimaryNumber,
                         recentRecipients = recentRecipients,
+                        blockMessage = recipientBlockMessage(recipientNumber),
                         onOptionSelect = { selfSelected ->
                             isForSelf = selfSelected
                             if (selfSelected) {
@@ -249,6 +262,7 @@ private fun RecipientSelectionStep(
     payerNumber: String,
     userPrimaryNumber: String,
     recentRecipients: List<String>,
+    blockMessage: String?,
     onOptionSelect: (Boolean) -> Unit,
     onRecipientChange: (String) -> Unit,
     onPayerChange: (String) -> Unit,
@@ -331,6 +345,44 @@ private fun RecipientSelectionStep(
             )
         }
 
+        // The once-per-day-per-number block. It appears the moment a blocked number
+        // is typed, names that number, and leaves the field editable so another
+        // number can be used straight away — never a dead end (design.md §14.9).
+        if (!blockMessage.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(FieldButtonShape)
+                    .background(MaterialTheme.colorScheme.tertiaryContainer)
+                    .padding(14.dp)
+                    .testTag("recipient_blocked_notice"),
+                verticalAlignment = Alignment.Top
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Already bought today",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = blockMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(28.dp))
 
         val recipientValid = KenyanPhone.isValid(recipientNumber)
@@ -338,7 +390,7 @@ private fun RecipientSelectionStep(
         PrimaryButton(
             text = "Confirm",
             onClick = onNext,
-            enabled = recipientValid && payerValid,
+            enabled = recipientValid && payerValid && blockMessage.isNullOrBlank(),
             testTag = "review_purchase_button"
         )
     }
@@ -452,9 +504,29 @@ private fun ReviewPurchaseStep(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            SummaryRow(label = "Bundle recipient", value = KenyanPhone.toDisplay(recipientNumber))
-            SummaryRow(label = "M-Pesa payment number", value = KenyanPhone.toDisplay(payerNumber))
+            // Both numbers are tappable: seeing a wrong digit at the moment of
+            // paying is exactly when it needs fixing, and hunting for "Change
+            // details" below the fold is a step too many. Tapping either one goes
+            // straight back to the field that owns it.
+            SummaryRow(
+                label = "Bundle recipient",
+                value = KenyanPhone.toDisplay(recipientNumber),
+                onEdit = onChangeDetails,
+                testTag = "review_recipient_row"
+            )
+            SummaryRow(
+                label = "M-Pesa payment number",
+                value = KenyanPhone.toDisplay(payerNumber),
+                onEdit = onChangeDetails,
+                testTag = "review_payer_row"
+            )
             SummaryRow(label = "Daily rule", value = offer.dailyRule.displayText)
+            // Restate the selling window at the point of paying, so a customer who
+            // opened the sheet just before it closed is not surprised.
+            val availability = offerAvailabilityAt(offer, System.currentTimeMillis())
+            if (availability.restricted) {
+                SummaryRow(label = "Sold between", value = availability.windowLabel)
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -500,6 +572,14 @@ private fun ReviewPurchaseStep(
             onClick = onChangeDetails,
             testTag = "change_details_button"
         )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = "Tap a number above to correct it.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -515,6 +595,8 @@ private fun OfflineNotice(eligibility: OfflineEligibility) {
             "This offer is limited to once per day and cannot be paid offline. Connect to the internet to buy it."
         is OfflineEligibility.AmbiguousAmount ->
             "This offer shares its price with another, so it cannot be safely identified offline. Connect to the internet to buy it."
+        is OfflineEligibility.OutsideSellingWindow ->
+            "Safaricom only sells this offer between ${eligibility.windowLabel}. Come back inside that window — paying now would not deliver the bundle."
         is OfflineEligibility.Eligible -> return
     }
     Row(
@@ -540,23 +622,50 @@ private fun OfflineNotice(eligibility: OfflineEligibility) {
     }
 }
 
+/**
+ * One label/value line in a summary block. Passing [onEdit] makes the value
+ * tappable and marks it with a pencil, so a number that is wrong can be corrected
+ * from the place where the customer notices it.
+ */
 @Composable
-private fun SummaryRow(label: String, value: String) {
+private fun SummaryRow(
+    label: String,
+    value: String,
+    onEdit: (() -> Unit)? = null,
+    testTag: String? = null
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onEdit != null) Modifier.clickable { onEdit() } else Modifier)
+            .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
+            .padding(vertical = if (onEdit != null) 2.dp else 0.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (onEdit != null) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface
+            )
+            if (onEdit != null) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    imageVector = Icons.Outlined.Edit,
+                    contentDescription = "Edit $label",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
     }
 }
 

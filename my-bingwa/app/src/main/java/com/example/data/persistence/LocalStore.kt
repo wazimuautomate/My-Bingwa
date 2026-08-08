@@ -63,6 +63,15 @@ data class PersistedState(
     val offers: List<OfferItem> = emptyList(),
     val catalogueVersion: Long = 0L,
     val promotions: List<Promotion> = emptyList(),
+    /**
+     * True once this install has successfully told the seller's backend who its
+     * customer is (name + number, sent once at the end of onboarding). It exists so
+     * the call is made exactly ONCE: a failure (offline, weak signal) leaves it
+     * false and the next launch retries, and a success means it is never sent again.
+     * A new field with a default, so snapshots saved before it existed still
+     * deserialise — they simply retry the registration once.
+     */
+    val customerRegistered: Boolean = false,
     val initialized: Boolean = false
 )
 

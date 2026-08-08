@@ -93,12 +93,15 @@ final class OfferRepository
             Database::run(
                 "INSERT INTO {$t}
                     (offer_id, category, name, price, validity, band, daily_rule, max_per_day,
+                     available_from, available_to,
                      commercial_tag, offline_eligible, restrictions, status, starts_at, ends_at, sort_hint,
                      row_version, created_at, updated_at, updated_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?)",
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?)",
                 [
                     $data['offer_id'], $data['category'], $data['name'], (int) $data['price'], $data['validity'],
-                    $data['band'], $data['daily_rule'], $data['max_per_day'], $data['commercial_tag'],
+                    $data['band'], $data['daily_rule'], $data['max_per_day'],
+                    $data['available_from'] ?? null, $data['available_to'] ?? null,
+                    $data['commercial_tag'],
                     $data['offline_eligible'], $data['restrictions'], $data['status'], $data['starts_at'],
                     $data['ends_at'], (int) $data['sort_hint'], $actor,
                 ]
@@ -111,12 +114,15 @@ final class OfferRepository
         $stmt = Database::run(
             "UPDATE {$t} SET
                 category=?, name=?, price=?, validity=?, band=?, daily_rule=?, max_per_day=?,
+                available_from=?, available_to=?,
                 commercial_tag=?, offline_eligible=?, restrictions=?, status=?, starts_at=?, ends_at=?, sort_hint=?,
                 row_version = row_version + 1, updated_at = UTC_TIMESTAMP(), updated_by = ?
              WHERE offer_id = ? AND row_version = ?",
             [
                 $data['category'], $data['name'], (int) $data['price'], $data['validity'], $data['band'],
-                $data['daily_rule'], $data['max_per_day'], $data['commercial_tag'], $data['offline_eligible'],
+                $data['daily_rule'], $data['max_per_day'],
+                $data['available_from'] ?? null, $data['available_to'] ?? null,
+                $data['commercial_tag'], $data['offline_eligible'],
                 $data['restrictions'], $data['status'], $data['starts_at'], $data['ends_at'], (int) $data['sort_hint'],
                 $actor, $data['offer_id'], $expectedVersion,
             ]
@@ -189,6 +195,28 @@ final class OfferRepository
             || $pub['category'] !== $offerRow['category']
             || $pub['validity'] !== $offerRow['validity']
             || ($pub['policy'] ?? '') !== $offerRow['daily_rule']
+            || (string) ($pub['availableFrom'] ?? '') !== self::hhmm($offerRow['available_from'] ?? null)
+            || (string) ($pub['availableTo'] ?? '') !== self::hhmm($offerRow['available_to'] ?? null)
             || (bool) $pub['offlineEligible'] !== ((int) $offerRow['offline_eligible'] === 1);
+    }
+
+    /**
+     * A stored TIME ("17:00:00", "17:00") as the "HH:MM" the app and the snapshot
+     * use, or '' when there is no window on that end. One helper so the form, the
+     * snapshot and the change detector can never disagree about the format.
+     */
+    public static function hhmm($time): string
+    {
+        $text = trim((string) ($time ?? ''));
+        if ($text === '') {
+            return '';
+        }
+        $parts = explode(':', $text);
+        $h = isset($parts[0]) ? (int) $parts[0] : -1;
+        $m = isset($parts[1]) ? (int) $parts[1] : 0;
+        if ($h < 0 || $h > 24 || $m < 0 || $m > 59) {
+            return '';
+        }
+        return sprintf('%02d:%02d', $h, $m);
     }
 }

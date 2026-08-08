@@ -54,6 +54,46 @@ $amount = offer_price($pdo, $offerId, $fallbackPrices);
 if ($amount === null) {
     json_out(['status' => 'PAYMENT_FAILED', 'errorCode' => 'UNKNOWN_OFFER'], 400);
 }
+
+// --- Safaricom's own selling rules -----------------------------------------
+// Refused BEFORE the payments row is claimed and before Daraja is called, so a
+// refusal costs the customer nothing: no STK prompt, no charge, no order to
+// reconcile. Both rules come from the same published catalogue the app was shown
+// (offer_rules()), so the app and the server can never disagree about them.
+$rules = offer_rules($pdo, $offerId);
+
+// 1. Time-of-day window. Outside it Safaricom will not deliver the bundle, so
+//    taking the money would create a refund, not a sale.
+if (!offer_window_open($rules)) {
+    $window = offer_window_label($rules);
+    json_out([
+        'status'          => 'PAYMENT_FAILED',
+        'errorCode'       => 'OFFER_NOT_AVAILABLE_NOW',
+        'customerMessage' => $window === ''
+            ? 'This offer is not on sale right now.'
+            : "This offer is only sold between {$window}.",
+    ], 409);
+}
+
+// 2. Once-per-recipient-per-day (and max-per-day). The number that receives the
+//    bundle is the one that is limited — buying the same bundle for a DIFFERENT
+//    number is always allowed. Resets at Nairobi midnight by itself.
+$allowance = offer_daily_allowance($rules);
+if ($allowance !== null) {
+    $limitedNumber = $recipient !== '' ? $recipient : $payer;
+    $alreadyToday = recipient_purchases_today($pdo, $offerId, $limitedNumber);
+    if ($alreadyToday >= $allowance) {
+        json_out([
+            'status'          => 'PAYMENT_FAILED',
+            'errorCode'       => 'ALREADY_BOUGHT_TODAY',
+            'customerMessage' => $allowance === 1
+                ? 'This bundle can only be bought once a day for each number. '
+                    . 'It can be bought for this number again after midnight, or for a different number now.'
+                : "This bundle can only be bought {$allowance} times a day for each number.",
+        ], 409);
+    }
+}
+
 $route = $forSelf ? 'self' : 'another';
 
 // --- Atomic idempotency ----------------------------------------------------

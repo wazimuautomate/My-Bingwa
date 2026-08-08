@@ -26,6 +26,7 @@ $trigLabel = static function (string $key) use ($triggers): string {
   </div>
   <div class="page-head__actions">
     <a class="btn btn--secondary" href="<?= e(url('/notifications/calendar')) ?>"><?= icon('calendar', 18) ?> Schedule</a>
+    <a class="btn btn--secondary" href="<?= e(url('/notifications/import')) ?>"><?= icon('upload', 18) ?> Import JSON</a>
     <a class="btn" href="<?= e(url('/notifications/new')) ?>"><?= icon('plus', 18) ?> New notification</a>
   </div>
 </div>

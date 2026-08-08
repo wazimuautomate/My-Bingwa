@@ -115,13 +115,19 @@ private val AccentMinutes = Color(0xFF18C964)
 private val AccentSpecial = Color(0xFFFF8A00)
 
 /**
- * The ordered first-run steps. Permission asks sit AFTER the value is clear
- * (promise + gains) and BEFORE the personal setup, so the customer already knows
- * what My Bingwa does when it explains why it wants a permission. [SMS] is
- * dropped entirely on the Play flavour, where the SMS receiver is stripped from
- * the manifest and the permission does not exist.
+ * The ordered first-run steps.
+ *
+ * The permission asks come LAST, immediately after the name and number, and they
+ * are **required**: My Bingwa's payment updates and bundle tracking are the
+ * product, not an extra, so the owner's decision is that a customer who refuses
+ * them cannot use the app. There is no skip past them and no way back — the only
+ * two outcomes are "granted, continue" and "close the app".
+ *
+ * [SMS] is dropped entirely on the Play flavour, where the SMS receiver is
+ * stripped from the manifest and the permission does not exist, so there is
+ * nothing to require there.
  */
-private enum class OnboardingStep { PROMISE, GAINS, NOTIFICATIONS, SMS, SETUP }
+private enum class OnboardingStep { PROMISE, GAINS, SETUP, NOTIFICATIONS, SMS }
 
 /**
  * First-run onboarding.
@@ -131,9 +137,11 @@ private enum class OnboardingStep { PROMISE, GAINS, NOTIFICATIONS, SMS, SETUP }
  * explanation of what the permission buys the customer, shown before the system
  * dialog appears (CLAUDE.md §9 — never ask cold).
  *
- * Declining is a first-class outcome: the step can always be skipped, the flow
- * always continues, only that one feature is disabled, and the customer is never
- * scolded or asked twice in the same session.
+ * The permission steps are REQUIRED (owner decision): they run after the personal
+ * setup, cannot be skipped, and a customer who will not grant them is offered the
+ * only remaining option — closing the app. When the OS has stopped showing its
+ * dialog (two refusals), the CTA opens the app's system settings instead, so
+ * "required" never becomes "impossible".
  *
  * The Activity owns the `rememberLauncherForActivityResult` launchers; this
  * screen only calls back and renders the granted state it is given. Every new
@@ -144,6 +152,9 @@ private enum class OnboardingStep { PROMISE, GAINS, NOTIFICATIONS, SMS, SETUP }
  * @param notificationsGranted live grant state, for the confirmation UI.
  * @param smsGranted live grant state, for the confirmation UI.
  * @param smsSupported false on the Play flavour — hides the SMS step entirely.
+ * @param onOpenAppSettings opens this app's system settings page, for the case
+ *        where Android will no longer show the permission dialog.
+ * @param onExitApp closes My Bingwa — the outcome of refusing a required permission.
  */
 @Composable
 fun OnboardingScreen(
@@ -152,7 +163,9 @@ fun OnboardingScreen(
     onRequestSmsPermission: () -> Unit = {},
     notificationsGranted: Boolean = false,
     smsGranted: Boolean = false,
-    smsSupported: Boolean = true
+    smsSupported: Boolean = true,
+    onOpenAppSettings: () -> Unit = {},
+    onExitApp: () -> Unit = {}
 ) {
     val reducedMotion = rememberReducedMotion()
     val scope = rememberCoroutineScope()
@@ -161,9 +174,9 @@ fun OnboardingScreen(
         buildList {
             add(OnboardingStep.PROMISE)
             add(OnboardingStep.GAINS)
+            add(OnboardingStep.SETUP)
             add(OnboardingStep.NOTIFICATIONS)
             if (smsSupported) add(OnboardingStep.SMS)
-            add(OnboardingStep.SETUP)
         }
     }
     var stepIndex by remember { mutableIntStateOf(0) }
@@ -171,11 +184,12 @@ fun OnboardingScreen(
     val safeIndex = stepIndex.coerceIn(0, steps.lastIndex)
     val currentStep = steps[safeIndex]
 
-    // "Asked once" flags. After one ask the CTA becomes a plain Continue, so a
-    // customer whose OS no longer shows the dialog can never be trapped on the
-    // step by tapping a button that appears to do nothing.
-    var askedNotifications by remember { mutableStateOf(false) }
-    var askedSms by remember { mutableStateOf(false) }
+    // How many times each required permission has been asked for. Android stops
+    // showing its dialog after the second refusal, so from the second ask onwards
+    // the CTA sends the customer to the app's system settings instead of tapping a
+    // button that appears to do nothing.
+    var notificationAsks by remember { mutableIntStateOf(0) }
+    var smsAsks by remember { mutableIntStateOf(0) }
 
     var nameInput by remember { mutableStateOf("") }
     var phoneInput by remember { mutableStateOf("") }
@@ -187,21 +201,63 @@ fun OnboardingScreen(
         if (safeIndex < steps.lastIndex) stepIndex = safeIndex + 1
     }
 
+    /**
+     * Finishes onboarding with the details captured at the SETUP step. Only ever
+     * called once every required permission has actually been granted, so the app
+     * can never open with one of them missing.
+     */
     fun finish() {
+        val trimmedName = nameInput.trim()
+        val normalized = normalizeKenyanPhone(phoneInput)
+        if (trimmedName.length < 2 || normalized == null) {
+            // Should be unreachable (SETUP validates before advancing), but never
+            // complete onboarding with details that would not round-trip.
+            stepIndex = steps.indexOf(OnboardingStep.SETUP).coerceAtLeast(0)
+            nameError = if (trimmedName.length < 2) "Enter your name" else null
+            phoneError = if (normalized == null) "Enter a valid Safaricom number" else null
+            return
+        }
+
+        if (reducedMotion) {
+            onCompleteOnboarding(trimmedName, normalized)
+        } else {
+            launching = true
+            scope.launch {
+                delay(1150)
+                onCompleteOnboarding(trimmedName, normalized)
+            }
+        }
+    }
+
+    /** Validates the name/number step and moves on to the required permissions. */
+    fun submitSetup() {
         val trimmedName = nameInput.trim()
         val normalized = normalizeKenyanPhone(phoneInput)
         nameError = if (trimmedName.length < 2) "Enter your name" else null
         phoneError = if (normalized == null) "Enter a valid Safaricom number" else null
         if (nameError != null || phoneError != null) return
+        advance()
+    }
 
-        if (reducedMotion) {
-            onCompleteOnboarding(trimmedName, normalized!!)
-        } else {
-            launching = true
-            scope.launch {
-                delay(1150)
-                onCompleteOnboarding(trimmedName, normalized!!)
-            }
+    /**
+     * Called when a required permission has just been granted: move to the next
+     * step, or complete onboarding if this was the last one. Also covers the case
+     * where a permission is already granted when its step opens (e.g.
+     * POST_NOTIFICATIONS below Android 13, which is granted at install).
+     */
+    fun continueFromPermission() {
+        if (safeIndex < steps.lastIndex) advance() else finish()
+    }
+
+    // The grant arrives asynchronously from the system dialog, so move on the
+    // moment it does rather than making the customer tap the same button twice.
+    // This also carries the step that is already satisfied — POST_NOTIFICATIONS is
+    // granted at install below Android 13 — straight through.
+    LaunchedEffect(currentStep, notificationsGranted, smsGranted) {
+        when (currentStep) {
+            OnboardingStep.NOTIFICATIONS -> if (notificationsGranted) continueFromPermission()
+            OnboardingStep.SMS -> if (smsGranted) continueFromPermission()
+            else -> Unit
         }
     }
 
@@ -219,27 +275,16 @@ fun OnboardingScreen(
                 .imePadding()
                 .padding(horizontal = 24.dp, vertical = 12.dp)
         ) {
-            // Top: filling progress track + skip to setup.
+            // Top: filling progress track. There is no "Skip" any more: the last
+            // steps are required permissions, so skipping ahead would only skip the
+            // name and number that come before them.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 StepProgress(step = safeIndex + 1, total = steps.size)
-                if (safeIndex < steps.lastIndex) {
-                    TextButton(
-                        onClick = { stepIndex = steps.lastIndex },
-                        modifier = Modifier.testTag("onboarding_skip_to_setup")
-                    ) {
-                        Text(
-                            text = "Skip",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    Spacer(Modifier.height(40.dp))
-                }
+                Spacer(Modifier.height(40.dp))
             }
 
             AnimatedContent(
@@ -258,12 +303,12 @@ fun OnboardingScreen(
                     OnboardingStep.GAINS -> StepGains(reducedMotion = reducedMotion)
                     OnboardingStep.NOTIFICATIONS -> StepNotifications(
                         granted = notificationsGranted,
-                        asked = askedNotifications,
+                        refused = notificationAsks > 0 && !notificationsGranted,
                         reducedMotion = reducedMotion
                     )
                     OnboardingStep.SMS -> StepSms(
                         granted = smsGranted,
-                        asked = askedSms,
+                        refused = smsAsks > 0 && !smsGranted,
                         reducedMotion = reducedMotion
                     )
                     OnboardingStep.SETUP -> StepSetup(
@@ -280,56 +325,73 @@ fun OnboardingScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // One dominant CTA per step. On a permission step the first tap opens
-            // the system dialog; afterwards — granted or denied — it simply moves
-            // on, so the customer is never stuck behind an OS decision.
+            // One dominant CTA per step. On a REQUIRED permission step it only ever
+            // asks (or, once Android has stopped showing its dialog, opens the app's
+            // system settings) — it never advances without the grant.
+            val lastStep = safeIndex == steps.lastIndex
             PrimaryCtaButton(
                 text = when (currentStep) {
                     OnboardingStep.PROMISE -> "Get started"
                     OnboardingStep.GAINS -> "I love it! Continue."
-                    OnboardingStep.NOTIFICATIONS ->
-                        if (notificationsGranted || askedNotifications) "Continue" else "Turn on updates"
-                    OnboardingStep.SMS ->
-                        if (smsGranted || askedSms) "Continue" else "Allow bundle messages"
-                    OnboardingStep.SETUP -> "Start using My Bingwa"
+                    OnboardingStep.SETUP -> "Continue"
+                    OnboardingStep.NOTIFICATIONS -> when {
+                        notificationsGranted -> if (lastStep) "Start using My Bingwa" else "Continue"
+                        notificationAsks >= 2 -> "Open settings and allow"
+                        notificationAsks == 1 -> "Try again"
+                        else -> "Turn on updates"
+                    }
+                    OnboardingStep.SMS -> when {
+                        smsGranted -> if (lastStep) "Start using My Bingwa" else "Continue"
+                        smsAsks >= 2 -> "Open settings and allow"
+                        smsAsks == 1 -> "Try again"
+                        else -> "Allow bundle messages"
+                    }
                 },
                 enabled = !launching,
                 modifier = Modifier.testTag("onboarding_primary_cta"),
                 onClick = {
                     when (currentStep) {
-                        OnboardingStep.NOTIFICATIONS ->
-                            if (notificationsGranted || askedNotifications) {
-                                advance()
-                            } else {
-                                askedNotifications = true
+                        OnboardingStep.NOTIFICATIONS -> when {
+                            notificationsGranted -> continueFromPermission()
+                            // Android stops showing its dialog after two refusals;
+                            // from then on only the system settings page can grant it.
+                            notificationAsks >= 2 -> onOpenAppSettings()
+                            else -> {
+                                notificationAsks++
                                 onRequestNotificationPermission()
                             }
-                        OnboardingStep.SMS ->
-                            if (smsGranted || askedSms) {
-                                advance()
-                            } else {
-                                askedSms = true
+                        }
+                        OnboardingStep.SMS -> when {
+                            smsGranted -> continueFromPermission()
+                            smsAsks >= 2 -> onOpenAppSettings()
+                            else -> {
+                                smsAsks++
                                 onRequestSmsPermission()
                             }
-                        OnboardingStep.SETUP -> finish()
+                        }
+                        OnboardingStep.SETUP -> submitSetup()
                         else -> advance()
                     }
                 }
             )
 
-            // Always-available escape hatch on a permission step. No nagging, no
-            // second ask, no scolding — the feature is simply left off.
-            if (currentStep == OnboardingStep.NOTIFICATIONS || currentStep == OnboardingStep.SMS) {
+            // The only alternative to granting a required permission. It is stated
+            // plainly rather than hidden, so nobody is left tapping a button that
+            // cannot work — but it closes the app, it does not skip the step.
+            val onRequiredStep = currentStep == OnboardingStep.NOTIFICATIONS ||
+                currentStep == OnboardingStep.SMS
+            val stepGranted = if (currentStep == OnboardingStep.SMS) smsGranted else notificationsGranted
+            if (onRequiredStep && !stepGranted) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center
                 ) {
                     TextButton(
-                        onClick = { advance() },
-                        modifier = Modifier.testTag("onboarding_permission_skip")
+                        onClick = onExitApp,
+                        modifier = Modifier.testTag("onboarding_permission_exit")
                     ) {
                         Text(
-                            text = "Not now",
+                            text = "Close My Bingwa",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -725,50 +787,52 @@ private fun BenefitGlassCard(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun StepNotifications(granted: Boolean, asked: Boolean, reducedMotion: Boolean) {
+private fun StepNotifications(granted: Boolean, refused: Boolean, reducedMotion: Boolean) {
     PermissionStep(
         icon = Icons.Rounded.NotificationsActive,
         accent = AccentData,
         stepTag = "onboarding_step_notifications",
         title = "Know the moment it lands",
-        lead = "Allow notifications and My Bingwa will tell you when your M-Pesa " +
-            "payment is received and when a bundle you buy often is back in stock.",
+        lead = "My Bingwa tells you when your M-Pesa payment is received and when a " +
+            "bundle you buy often is back on sale. This is how the app keeps you " +
+            "informed, so it has to be on to continue.",
         bullets = listOf(
             "Payment updates for the purchases you make.",
             "Quiet hours are respected — nothing wakes you at night.",
-            "Offers are a separate, optional channel you control in Settings."
+            "Nothing is sold, shared or uploaded to show you these."
         ),
-        privacyNote = "You can change this any time in Settings.",
+        privacyNote = "Required to use My Bingwa.",
         granted = granted,
         grantedText = "Notifications are on. We will keep them useful, not noisy.",
-        deniedText = "No problem. My Bingwa still works — you can turn notifications " +
-            "on later in Settings.",
-        asked = asked,
+        deniedText = "My Bingwa cannot continue without notifications. Allow them to " +
+            "carry on, or close the app.",
+        refused = refused,
         reducedMotion = reducedMotion
     )
 }
 
 @Composable
-private fun StepSms(granted: Boolean, asked: Boolean, reducedMotion: Boolean) {
+private fun StepSms(granted: Boolean, refused: Boolean, reducedMotion: Boolean) {
     PermissionStep(
         icon = Icons.Rounded.Sms,
         accent = AccentSms,
         stepTag = "onboarding_step_sms",
         title = "Keep track of your bundles",
-        lead = "My Bingwa reads only Safaricom bundle messages so it can notify you " +
-            "when your bundles are running low and automatically update your bundle " +
-            "status. We never upload or store your SMS. Everything stays on your phone.",
+        lead = "My Bingwa reads only Safaricom bundle messages, so it can confirm a " +
+            "bundle arrived and tell you when you are running low. This is what keeps " +
+            "your purchases accurate, so it has to be on to continue. Nothing is ever " +
+            "uploaded — everything stays on your phone.",
         bullets = listOf(
             "Only Safaricom bundle and balance messages are read.",
             "Personal messages are ignored and never opened.",
             "Nothing is uploaded — no server ever sees your SMS."
         ),
-        privacyNote = "You can change this any time in Settings.",
+        privacyNote = "Required to use My Bingwa.",
         granted = granted,
         grantedText = "Bundle tracking is on. Everything stays on this phone.",
-        deniedText = "No problem. My Bingwa still works — bundle tracking simply " +
-            "stays off until you turn it on in Settings.",
-        asked = asked,
+        deniedText = "My Bingwa cannot continue without this. Allow it to carry on, " +
+            "or close the app.",
+        refused = refused,
         reducedMotion = reducedMotion
     )
 }
@@ -785,7 +849,7 @@ private fun PermissionStep(
     granted: Boolean,
     grantedText: String,
     deniedText: String,
-    asked: Boolean,
+    refused: Boolean,
     reducedMotion: Boolean
 ) {
     val intro = remember { Animatable(if (reducedMotion) 1f else 0f) }
@@ -878,9 +942,10 @@ private fun PermissionStep(
             }
         }
 
-        // Outcome line. Granted is confirmed; a decline is acknowledged calmly and
-        // is never repeated or judged.
-        if (granted || asked) {
+        // Outcome line. A grant is confirmed; a refusal states — without scolding —
+        // that the app cannot continue, which is the honest consequence now that the
+        // permission is required.
+        if (granted || refused) {
             Spacer(Modifier.height(14.dp))
             Row(
                 modifier = Modifier
@@ -891,14 +956,14 @@ private fun PermissionStep(
                 Icon(
                     imageVector = if (granted) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
                     contentDescription = null,
-                    tint = if (granted) BrandDeepGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = if (granted) BrandDeepGreen else MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = if (granted) grantedText else deniedText,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (granted) BrandDeepGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (granted) BrandDeepGreen else MaterialTheme.colorScheme.error
                 )
             }
         }

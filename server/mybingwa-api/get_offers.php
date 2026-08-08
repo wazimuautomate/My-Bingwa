@@ -3,7 +3,12 @@
  * GET get_offers.php — the catalogue the app syncs when online and caches offline.
  *   Header: X-App-Key: <shared secret>
  *
- * Response (JSON): { offers: [ { id, category, name, price, validity, band, dailyRule } ] }
+ * Response (JSON): { offers: [ { id, category, name, price, validity, band, dailyRule,
+ *                                  availableFrom, availableTo } ] }
+ *
+ * availableFrom/availableTo are the time-of-day window Safaricom sells the offer in,
+ * "HH:MM" in Nairobi time. Both empty = sold at any hour. The app shows the window on
+ * every offer card and refuses checkout outside it; stk.php refuses it server-side.
  * Only active offers are returned. Managed from the admin panel.
  */
 
@@ -27,14 +32,26 @@ try {
                 'validity'  => $o['validity'] ?? '',
                 'band'      => $o['band'] ?? '',
                 'dailyRule' => $o['dailyRule'] ?? '',
+                'availableFrom' => hhmm_or_empty($o['availableFrom'] ?? null),
+                'availableTo'   => hhmm_or_empty($o['availableTo'] ?? null),
             ];
         }
     } else {
         // Legacy fallback: the unprefixed offers table.
-        $rows = $pdo->query(
-            'SELECT offer_id, category, name, price, validity, band, daily_rule
-               FROM offers WHERE active = 1 ORDER BY sort_order, category, price'
-        )->fetchAll();
+        // available_from/available_to are optional on the legacy table (older
+        // installs never had them), so a missing column must not blank the list.
+        try {
+            $rows = $pdo->query(
+                'SELECT offer_id, category, name, price, validity, band, daily_rule,
+                        available_from, available_to
+                   FROM offers WHERE active = 1 ORDER BY sort_order, category, price'
+            )->fetchAll();
+        } catch (Throwable $legacy) {
+            $rows = $pdo->query(
+                'SELECT offer_id, category, name, price, validity, band, daily_rule
+                   FROM offers WHERE active = 1 ORDER BY sort_order, category, price'
+            )->fetchAll();
+        }
         foreach ($rows as $r) {
             $offers[] = [
                 'id'        => $r['offer_id'],
@@ -44,6 +61,8 @@ try {
                 'validity'  => $r['validity'],
                 'band'      => $r['band'],
                 'dailyRule' => $r['daily_rule'],
+                'availableFrom' => hhmm_or_empty($r['available_from'] ?? null),
+                'availableTo'   => hhmm_or_empty($r['available_to'] ?? null),
             ];
         }
     }

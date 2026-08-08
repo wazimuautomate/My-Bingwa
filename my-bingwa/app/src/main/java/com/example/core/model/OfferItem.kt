@@ -42,6 +42,15 @@ data class OfferItem(
     },
     val maxPurchasesPerDay: Int? = null,
     val commercialLabel: String? = null, // e.g. "Best value", "Popular", "Limited offer"
+    /**
+     * Time-of-day purchase window, as minutes past midnight in Africa/Nairobi
+     * (Safaricom restricts some offers to a slot, e.g. 17:00–23:00). Both null
+     * means "buyable any time"; see [OfferAvailability] for the semantics and the
+     * labels shown on every offer list. Nullable with defaults, so a catalogue
+     * cached before this field existed still deserialises.
+     */
+    val availableFromMinutes: Int? = null,
+    val availableToMinutes: Int? = null,
     val isPopular: Boolean = false,
     val isFavourite: Boolean = false,
     val isBoughtToday: Boolean = false,

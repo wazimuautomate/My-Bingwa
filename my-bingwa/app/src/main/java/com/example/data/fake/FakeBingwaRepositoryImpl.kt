@@ -1,5 +1,6 @@
 package com.example.data.fake
 
+import com.example.BuildConfig
 import com.example.core.model.AppThemeSetting
 import com.example.core.model.DailyRule
 import com.example.core.model.NotificationItem
@@ -33,6 +34,7 @@ import com.example.data.payment.SimulatedPaymentGateway
 import com.example.data.payment.StkPushRequest
 import com.example.data.payment.StkStatusQuery
 import com.example.data.persistence.PersistedState
+import com.example.data.remote.RemoteCustomerSource
 import com.example.data.persistence.SnapshotStore
 import com.example.data.sync.ContentSyncers
 import kotlinx.coroutines.CompletableDeferred
@@ -72,6 +74,10 @@ class FakeBingwaRepositoryImpl(
     // default) means those resources simply are not synced — the app runs on its
     // in-APK seed, which is exactly what an unconfigured build and every unit test want.
     private val contentSyncers: ContentSyncers? = null,
+    // Sends the customer's name + number to the seller's backend once per install.
+    // Null (the default) means the build simply does not register anyone, which is
+    // what an unconfigured build and every unit test want.
+    private val customerSource: RemoteCustomerSource? = null,
     private val localStore: SnapshotStore? = null,
     // The dispatcher persistence/restore run on. The app uses IO; tests can inject a
     // deterministic dispatcher so a restore is observable synchronously.
@@ -231,6 +237,10 @@ class FakeBingwaRepositoryImpl(
     private val _activeOrder = MutableStateFlow<ActiveOrder?>(null)
     override val activeOrder: StateFlow<ActiveOrder?> = _activeOrder.asStateFlow()
 
+    // True once the seller's backend has confirmed who this customer is. Held in
+    // memory and persisted, so the registration happens exactly once per install.
+    private val _customerRegistered = MutableStateFlow(false)
+
     private val _connectionState = MutableStateFlow(ConnectionState.NONE)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
@@ -280,6 +290,7 @@ class FakeBingwaRepositoryImpl(
         _notifications.value = s.notifications
         _recentRecipients.value = s.recentRecipients
         _catalogueVersion.value = s.catalogueVersion
+        _customerRegistered.value = s.customerRegistered
         // Previously synced billboards are the offline source of truth; fall back to the
         // seeded promotions only when nothing has been synced yet. No per-user flags to
         // merge (unlike offers), so this is a plain restore.
@@ -340,6 +351,7 @@ class FakeBingwaRepositoryImpl(
         // Persist the synced billboards so the Home promotions surface stays populated
         // offline and across process death (no per-user flags to strip).
         promotions = _promotions.value,
+        customerRegistered = _customerRegistered.value,
         initialized = true
     )
 
@@ -616,11 +628,12 @@ class FakeBingwaRepositoryImpl(
         // displayed Till/Paybill are the server-synced values (always available offline).
         if (configProvider.load(System.currentTimeMillis()) !is OfflineConfigResult.Valid) return null
         val cfg = _appConfig.value
-        // No seller numbers are baked into the app, so an install that has never
-        // reached the server has blank Till AND Paybill. Returning a config here would
-        // render the offline instructions with an empty number to copy. Treat it as no
-        // usable configuration instead, so the sheet shows "connect to refresh"
-        // (CLAUDE.md §7: ambiguous offline configuration disables payment).
+        // The APK ships the seller's current Till/Paybill (AppConfig.DEFAULT), so an
+        // install that has never reached the server still has a number to pay. This
+        // guard remains for the one case that is genuinely unusable: a build with no
+        // seed values configured AND no successful sync — rendering offline
+        // instructions with an empty number to copy is worse than saying "connect to
+        // refresh" (CLAUDE.md §7: ambiguous offline configuration disables payment).
         if (cfg.isBlankConfig()) return null
         return OfflinePaymentConfig(
             tillNumber = cfg.tillNumber,
@@ -656,6 +669,46 @@ class FakeBingwaRepositoryImpl(
         // Real connectivity is now the source of truth for the offline flag: no
         // transport at all = offline. Any Wi-Fi/cellular link = online (Phase 6).
         _isOffline.value = (state == ConnectionState.NONE)
+    }
+
+    /**
+     * Tell the seller's backend who this customer is, once per install.
+     *
+     * Called after onboarding completes and again on every app start, because the
+     * first attempt is exactly the one most likely to fail: a customer finishing
+     * onboarding on a weak connection. Each of the three guards below is a real case:
+     *
+     *  - already registered  → the whole point; the name/number are sent ONCE.
+     *  - onboarding unfinished, or no name/number yet → nothing worth sending.
+     *  - the backend refused → leave the flag false and try again next launch. The
+     *    endpoint is idempotent on the number, so a retry that turns out to have
+     *    already landed updates that customer rather than duplicating them.
+     *
+     * This is the only customer detail that ever leaves the device. Purchases,
+     * favourites and behaviour stay on the phone (CLAUDE.md §10).
+     */
+    override suspend fun registerCustomer() {
+        val source = customerSource ?: return
+        // Never race the restore: registering before the on-disk snapshot has loaded
+        // would read customerRegistered = false on every single launch and re-send.
+        restoreComplete.await()
+        if (_customerRegistered.value) return
+
+        val profile = _userProfile.value
+        if (!profile.isOnboardingCompleted) return
+        val name = profile.name.trim()
+        val number = profile.primaryNumber.filter { it.isDigit() }
+        if (name.isEmpty() || number.length < 9) return
+
+        val ok = try {
+            source.register(name = name, msisdn = number, appVersion = BuildConfig.VERSION_NAME)
+        } catch (t: Throwable) {
+            false
+        }
+        if (ok) {
+            _customerRegistered.value = true
+            persist()
+        }
     }
 
     override suspend fun syncRemoteConfig() {
@@ -860,6 +913,8 @@ class FakeBingwaRepositoryImpl(
         _userProfile.value = UserProfile()
         _purchases.value = emptyList()
         _offers.update { list -> list.map { it.copy(isFavourite = false, isBoughtToday = false) } }
+        // Clearing local data resets the install, so the next onboarding registers again.
+        _customerRegistered.value = false
         _notifications.value = emptyList()
         _recentRecipients.value = emptyList()
         _activeOrder.value = null

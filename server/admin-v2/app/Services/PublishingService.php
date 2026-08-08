@@ -127,6 +127,11 @@ final class PublishingService
                 'dailyRule'      => self::appDailyRule($r['daily_rule']),
                 'policy'         => $r['daily_rule'],
                 'maxPerDay'      => $r['max_per_day'] !== null ? (int) $r['max_per_day'] : null,
+                // Safaricom's time-of-day selling window, "HH:MM" in Nairobi time
+                // ('' = no restriction on that end). The app shows this on every
+                // offer card and refuses checkout outside it.
+                'availableFrom'  => \App\Repositories\OfferRepository::hhmm($r['available_from'] ?? null),
+                'availableTo'    => \App\Repositories\OfferRepository::hhmm($r['available_to'] ?? null),
                 'commercialTag'  => $r['commercial_tag'],
                 'offlineEligible'=> (int) $r['offline_eligible'] === 1,
                 'restrictions'   => $r['restrictions'],

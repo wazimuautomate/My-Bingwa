@@ -77,6 +77,12 @@ final class PaymentsController extends Controller
         $trend      = PaymentRepository::buyerTrend($windowStart, $windowEnd);
         $outcomes   = PaymentRepository::statusBreakdown($windowStart, $windowEnd);
         $series     = PaymentRepository::dailySeries(14);
+        // When people buy, which kind of bundle they buy, and which bundles have
+        // regulars. All three follow the same date window as the cards above, so a
+        // figure and the rows behind it never disagree.
+        $hourly     = PaymentRepository::hourlyDistribution($windowStart, $windowEnd);
+        $policy     = PaymentRepository::policyTrend($windowStart, $windowEnd);
+        $regulars   = PaymentRepository::repeatBuyers($windowStart, $windowEnd, 8);
 
         $bundles = PaymentRepository::offerPerformance($windowStart, $windowEnd, 100);
         if ($f['category'] !== '') {
@@ -115,6 +121,9 @@ final class PaymentsController extends Controller
             'outcomes' => $outcomes,
             'bundles' => $bundles,
             'series' => $series,
+            'hourly' => $hourly,
+            'policy' => $policy,
+            'regulars' => $regulars,
             'canReveal' => Rbac::can('payments.export'),
             'canDelete' => Rbac::can('payments.export'),
         ]);

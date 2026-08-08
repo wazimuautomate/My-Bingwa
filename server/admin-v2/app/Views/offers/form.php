@@ -15,6 +15,12 @@ $toLocal = function (?string $utc) {
     try { return (new DateTimeImmutable($utc, new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('Africa/Nairobi'))->format('Y-m-d\TH:i'); }
     catch (Throwable $e) { return ''; }
 };
+// A stored TIME ("17:00:00") for an <input type="time">, which wants "HH:MM".
+$toClock = function ($t) {
+    $text = trim((string) ($t ?? ''));
+    if ($text === '') return '';
+    return substr($text, 0, 5);
+};
 $err = fn($k) => isset($errs[$k]) ? '<span class="err">' . e($errs[$k]) . '</span>' : '';
 $hasErr = fn($k) => isset($errs[$k]) ? 'has-error' : '';
 ?>
@@ -82,6 +88,16 @@ $hasErr = fn($k) => isset($errs[$k]) ? 'has-error' : '';
           <label>Max per day <span class="muted small">(only for “Max per recipient”)</span></label>
           <input type="number" name="max_per_day" value="<?= e($val('max_per_day')) ?>" min="1" placeholder="e.g. 3"><?= $err('max_per_day') ?>
         </div>
+        <div class="field <?= $hasErr('available_from') ?>">
+          <label>Sells from <span class="muted small">(time of day, optional)</span></label>
+          <input type="time" name="available_from" value="<?= e($toClock($val('available_from'))) ?>">
+          <span class="hint">Nairobi time. Leave both blank if the offer sells all day.</span><?= $err('available_from') ?>
+        </div>
+        <div class="field <?= $hasErr('available_to') ?>">
+          <label>Sells until <span class="muted small">(time of day, optional)</span></label>
+          <input type="time" name="available_to" value="<?= e($toClock($val('available_to'))) ?>">
+          <span class="hint">A window may cross midnight (e.g. 22:00 → 02:00).</span><?= $err('available_to') ?>
+        </div>
         <div class="field">
           <label>Commercial tag <span class="muted small">(optional)</span></label>
           <input type="text" name="commercial_tag" value="<?= e($val('commercial_tag')) ?>" placeholder="Best value" maxlength="40">
@@ -91,11 +107,11 @@ $hasErr = fn($k) => isset($errs[$k]) ? 'has-error' : '';
           <input type="number" name="sort_hint" value="<?= e($val('sort_hint', 0)) ?>">
         </div>
         <div class="field">
-          <label>Available from <span class="muted small">(optional)</span></label>
+          <label>Campaign starts <span class="muted small">(date, optional)</span></label>
           <input type="datetime-local" name="starts_at" value="<?= e($toLocal($val('starts_at', '') ?: null)) ?>">
         </div>
         <div class="field">
-          <label>Available until <span class="muted small">(optional)</span></label>
+          <label>Campaign ends <span class="muted small">(date, optional)</span></label>
           <input type="datetime-local" name="ends_at" value="<?= e($toLocal($val('ends_at', '') ?: null)) ?>">
         </div>
         <div class="field full">
@@ -123,6 +139,10 @@ $hasErr = fn($k) => isset($errs[$k]) ? 'has-error' : '';
         <div class="row between"><span class="tag data" id="pv-cat"><?= e($val('category', 'DATA')) ?></span><span class="tag minutes" id="pv-tag"><?= e($val('commercial_tag')) ?: '' ?></span></div>
         <div class="stat__value" style="font-size:24px;margin-top:8px" id="pv-name"><?= e($val('name')) ?: 'Allowance' ?></div>
         <div class="muted" id="pv-validity"><?= e($val('validity')) ?: 'Validity' ?></div>
+        <?php $pvFrom = $toClock($val('available_from')); $pvTo = $toClock($val('available_to')); ?>
+        <?php if ($pvFrom !== '' && $pvTo !== ''): ?>
+          <div class="muted small">Sold <?= e($pvFrom) ?> – <?= e($pvTo) ?> only</div>
+        <?php endif; ?>
         <div class="between mt"><b id="pv-price"><?= e(ksh($val('price', 0))) ?></b><span class="btn btn--sm">Buy</span></div>
       </div>
     </div>

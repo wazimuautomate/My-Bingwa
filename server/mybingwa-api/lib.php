@@ -106,6 +106,230 @@ function offer_price(PDO $pdo, string $offerId, array $fallback): ?int
 }
 
 // ---------------------------------------------------------------------------
+// Purchase eligibility: Safaricom's own selling rules, enforced on the server.
+//
+// The app already shows both of these and blocks the button, but the app is not
+// the authority: an older build, a replayed request or a hand-crafted call must
+// not be able to take money for a bundle Safaricom will not deliver. Both checks
+// run before the STK push is fired, so no money moves when they refuse.
+// ---------------------------------------------------------------------------
+
+/** A stored TIME / "HH:MM" as "HH:MM", or '' when there is no usable value. */
+function hhmm_or_empty($time): string
+{
+    $text = trim((string) ($time ?? ''));
+    if ($text === '') {
+        return '';
+    }
+    $parts = explode(':', $text);
+    $h = isset($parts[0]) ? (int) $parts[0] : -1;
+    $m = isset($parts[1]) ? (int) $parts[1] : 0;
+    if ($h < 0 || $h > 24 || $m < 0 || $m > 59) {
+        return '';
+    }
+    return sprintf('%02d:%02d', $h, $m);
+}
+
+/** "HH:MM" as minutes past midnight, or null when absent/unusable. */
+function hhmm_minutes($time): ?int
+{
+    $text = hhmm_or_empty($time);
+    if ($text === '') {
+        return null;
+    }
+    $parts = explode(':', $text);
+    return ((int) $parts[0]) * 60 + (int) $parts[1];
+}
+
+/**
+ * The published rules for one offer: its time-of-day selling window and its
+ * per-day policy. Resolution order mirrors offer_price() exactly — published
+ * snapshot first, then the legacy `offers` table — so what the app was shown and
+ * what the server enforces can never come from different places.
+ *
+ * @return array{availableFrom:?int, availableTo:?int, policy:string, maxPerDay:?int}
+ */
+function offer_rules(PDO $pdo, string $offerId): array
+{
+    $none = ['availableFrom' => null, 'availableTo' => null, 'policy' => '', 'maxPerDay' => null];
+
+    $snap = published_snapshot($pdo);
+    if ($snap !== null && !empty($snap['offers'])) {
+        foreach ($snap['offers'] as $o) {
+            if ((string) ($o['id'] ?? '') === $offerId) {
+                $max = $o['maxPerDay'] ?? null;
+                return [
+                    'availableFrom' => hhmm_minutes($o['availableFrom'] ?? null),
+                    'availableTo'   => hhmm_minutes($o['availableTo'] ?? null),
+                    'policy'        => (string) ($o['policy'] ?? ($o['dailyRule'] ?? '')),
+                    'maxPerDay'     => $max === null ? null : (int) $max,
+                ];
+            }
+        }
+        return $none;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT daily_rule, available_from, available_to FROM offers WHERE offer_id = ? AND active = 1 LIMIT 1'
+        );
+        $stmt->execute([$offerId]);
+        $row = $stmt->fetch();
+        if ($row !== false) {
+            return [
+                'availableFrom' => hhmm_minutes($row['available_from'] ?? null),
+                'availableTo'   => hhmm_minutes($row['available_to'] ?? null),
+                'policy'        => (string) ($row['daily_rule'] ?? ''),
+                'maxPerDay'     => null,
+            ];
+        }
+    } catch (Throwable $e) {
+        // Column or table missing (an install predating selling windows) → no rules,
+        // which keeps every existing offer buyable exactly as it is today.
+    }
+    return $none;
+}
+
+/**
+ * Is the offer inside its time-of-day selling window right now?
+ *
+ * Evaluated on the Nairobi wall clock, never the server's timezone, because the
+ * window is a customer-facing "5pm to 11pm". A window whose start is later than
+ * its end crosses midnight (22:00 → 02:00) and is open on both sides of it. No
+ * window (either end missing) is always open, so nothing changes for the offers
+ * Safaricom sells all day.
+ */
+function offer_window_open(array $rules, ?int $nowMinuteOverride = null): bool
+{
+    $from = $rules['availableFrom'] ?? null;
+    $to   = $rules['availableTo'] ?? null;
+    if ($from === null || $to === null || $from === $to) {
+        return true;
+    }
+    if ($nowMinuteOverride !== null) {
+        $now = $nowMinuteOverride;
+    } else {
+        $nbo = new DateTimeImmutable('now', new DateTimeZone('Africa/Nairobi'));
+        $now = ((int) $nbo->format('G')) * 60 + (int) $nbo->format('i');
+    }
+    if ($from < $to) {
+        return $now >= $from && $now < $to;
+    }
+    return $now >= $from || $now < $to;
+}
+
+/** The window as the customer-facing "5:00 PM to 11:00 PM", for the error message. */
+function offer_window_label(array $rules): string
+{
+    $from = $rules['availableFrom'] ?? null;
+    $to   = $rules['availableTo'] ?? null;
+    if ($from === null || $to === null) {
+        return '';
+    }
+    $fmt = function (int $minutes): string {
+        $m = (($minutes % 1440) + 1440) % 1440;
+        return date('g:i A', mktime(intdiv($m, 60), $m % 60, 0, 1, 1, 2000));
+    };
+    return $fmt($from) . ' to ' . $fmt($to);
+}
+
+/**
+ * The start and end of "today in Nairobi", expressed on the DATABASE clock so they
+ * can be compared against `payments.created_at` (written with NOW(), i.e. MySQL's
+ * own timezone).
+ *
+ * The shift between the two clocks is measured rather than assumed: PHP's timezone,
+ * MySQL's timezone and Nairobi are three independent settings on shared hosting,
+ * and guessing wrong would silently move the daily reset off midnight.
+ *
+ * @return array{0:string, 1:string} [startInclusive, endExclusive] as 'Y-m-d H:i:s'
+ */
+function nairobi_day_bounds_db(PDO $pdo): array
+{
+    $utc = new DateTimeZone('UTC');
+    $nboNow = new DateTimeImmutable('now', new DateTimeZone('Africa/Nairobi'));
+    // Both clocks re-read as if they were UTC, so subtracting them gives the pure
+    // wall-clock offset between them, whatever either timezone actually is.
+    $nboWall = new DateTimeImmutable($nboNow->format('Y-m-d H:i:s'), $utc);
+
+    $shift = 0;
+    try {
+        $dbNowText = (string) $pdo->query('SELECT NOW()')->fetchColumn();
+        if ($dbNowText !== '') {
+            $dbWall = new DateTimeImmutable($dbNowText, $utc);
+            $shift = $dbWall->getTimestamp() - $nboWall->getTimestamp();
+        }
+    } catch (Throwable $e) {
+        $shift = 0; // Unreadable clock → assume the DB agrees with Nairobi wall time.
+    }
+    // Round to the nearest minute: NOW() and PHP's clock differ by fractions of a
+    // second, which must not leak into the day boundary.
+    $shift = (int) (round($shift / 60) * 60);
+
+    $startWall = new DateTimeImmutable($nboNow->format('Y-m-d') . ' 00:00:00', $utc);
+    $endWall = $startWall->modify('+1 day');
+    $apply = function (DateTimeImmutable $t) use ($shift): string {
+        return $t->modify(($shift >= 0 ? '+' : '-') . abs($shift) . ' seconds')->format('Y-m-d H:i:s');
+    };
+
+    return [$apply($startWall), $apply($endWall)];
+}
+
+/**
+ * How many times this recipient has already been given this offer today (Nairobi
+ * day). Counts confirmed payments, plus requests started in the last few minutes,
+ * so a customer with an M-Pesa prompt still on their screen cannot be sent a
+ * second one for the same once-a-day bundle.
+ *
+ * The count resets by itself at Nairobi midnight because the day boundary — not a
+ * stored flag — decides: a purchase at 23:58 stops counting at 00:00.
+ */
+function recipient_purchases_today(PDO $pdo, string $offerId, string $recipient): int
+{
+    $msisdn = preg_replace('/\D/', '', $recipient);
+    if ($msisdn === '') {
+        return 0;
+    }
+    // Compare the last 9 digits so 0712…, 254712… and +254712… are one number.
+    $tail = substr($msisdn, -9);
+    $bounds = nairobi_day_bounds_db($pdo);
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM payments
+              WHERE offer_id = ?
+                AND RIGHT(REPLACE(REPLACE(recipient, '+', ''), ' ', ''), 9) = ?
+                AND created_at >= ? AND created_at < ?
+                AND (status = 'PAYMENT_CONFIRMED'
+                     OR (status = 'PAYMENT_REQUESTED' AND created_at >= (NOW() - INTERVAL 10 MINUTE)))"
+        );
+        $stmt->execute([$offerId, $tail, $bounds[0], $bounds[1]]);
+        return (int) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        // Never let a counting query be the thing that blocks a legitimate purchase.
+        return 0;
+    }
+}
+
+/**
+ * How many purchases per recipient per Nairobi day this offer allows, or null for
+ * "no limit". Understands both the v2 policy names and the v1 rule name the
+ * shipped app uses, so a snapshot from either era is enforced correctly.
+ */
+function offer_daily_allowance(array $rules): ?int
+{
+    $policy = strtoupper((string) ($rules['policy'] ?? ''));
+    $max = $rules['maxPerDay'] ?? null;
+    if ($policy === 'ONCE_PER_RECIPIENT_PER_DAY' || $policy === 'ONCE_PER_DAY') {
+        return 1;
+    }
+    if ($policy === 'MAX_PER_RECIPIENT_PER_DAY') {
+        return ($max !== null && (int) $max > 0) ? (int) $max : 1;
+    }
+    return null;
+}
+
+// ---------------------------------------------------------------------------
 // Callback authenticity (Daraja cannot send custom headers, so we gate the
 // CallbackURL with a shared-secret path token + an optional source-IP allowlist).
 // ---------------------------------------------------------------------------
