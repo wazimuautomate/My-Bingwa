@@ -34,6 +34,7 @@ import com.example.data.payment.StkPushRequest
 import com.example.data.payment.StkStatusQuery
 import com.example.data.persistence.PersistedState
 import com.example.data.persistence.SnapshotStore
+import com.example.data.sync.ContentSyncers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -67,6 +68,10 @@ class FakeBingwaRepositoryImpl(
     private val configSource: RemoteConfigSource? = null,
     private val catalogueSource: RemoteCatalogueSource? = null,
     private val billboardSource: RemoteBillboardSource? = null,
+    // Notification templates, admin-published notifications and SMS rules. Null (the
+    // default) means those resources simply are not synced — the app runs on its
+    // in-APK seed, which is exactly what an unconfigured build and every unit test want.
+    private val contentSyncers: ContentSyncers? = null,
     private val localStore: SnapshotStore? = null,
     // The dispatcher persistence/restore run on. The app uses IO; tests can inject a
     // deterministic dispatcher so a restore is observable synchronously.
@@ -718,6 +723,26 @@ class FakeBingwaRepositoryImpl(
         // Promotions carry no per-user flags, so nothing local is lost.
         _promotions.value = fresh
         persist()
+    }
+
+    // --- Engine content syncs ---------------------------------------------------
+    // Notification templates, admin-published notifications and SMS rules live in
+    // their own stores, owned by the notification and SMS engines. The repository is
+    // only the [SyncTargets] front door for them, so it delegates to [ContentSyncers]
+    // rather than learning about those stores. With no syncers injected (no base URL
+    // configured, or a bare unit-test construction) each call is a silent no-op and
+    // the app keeps its in-APK seed — never an error, never an empty state.
+
+    override suspend fun syncNotificationTemplates() {
+        contentSyncers?.syncNotificationTemplates()
+    }
+
+    override suspend fun syncRemoteNotifications() {
+        contentSyncers?.syncRemoteNotifications()
+    }
+
+    override suspend fun syncSmsRules() {
+        contentSyncers?.syncSmsRules()
     }
 
     /**

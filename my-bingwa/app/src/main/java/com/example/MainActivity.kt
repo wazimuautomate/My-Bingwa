@@ -3,6 +3,7 @@ package com.example
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -38,20 +39,32 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.core.model.AppThemeSetting
+import com.example.core.model.OfferCategory
 import com.example.core.model.OfferItem
 import com.example.core.model.Promotion
+import com.example.core.model.PromotionClickAction
 import com.example.core.model.PromotionKind
 import com.example.core.notifications.AppNotifier
 import com.example.core.notifications.ConnectionState
 import com.example.core.notifications.ConnectivityObserver
 import com.example.core.notifications.NotificationChannels
 import com.example.core.notifications.SmsSignal
+import com.example.core.notifications.engine.NotificationCategory
+import com.example.core.notifications.engine.NotificationPersonalization
+import com.example.core.personalization.BehaviourProfile
+import com.example.core.personalization.PersonalizationEngine
+import com.example.core.personalization.suggestedPayerNumber
+import com.example.core.sms.SmsEventType
+import com.example.core.sms.SmsExtraction
+import com.example.data.sync.ForceSyncWatcher
+import com.example.data.sync.SyncTrigger
 import com.example.core.update.UpdateChecker
 import com.example.core.update.UpdatePromotion
 import com.example.core.update.UpdateRequiredScreen
 import com.example.core.update.UpdateResult
 import com.example.core.update.UpdateSource
 import com.example.core.update.openPlayStoreListing
+import com.example.core.ui.BrandSplashOverlay
 import com.example.core.ui.MyBingwaBottomNav
 import com.example.data.fake.BingwaRepository
 import com.example.feature.activity.ActivityScreen
@@ -69,6 +82,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
@@ -118,7 +132,28 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+
+        // Animated brand splash, layered over the Compose content AFTER setContent so
+        // it is the top-most child of android.R.id.content. Cold start only
+        // (savedInstanceState == null), so a rotation or activity re-creation never
+        // replays it. It animates on top while the first composition, the cached
+        // catalogue read and the initial sync all proceed underneath — it never gates
+        // startup work (CLAUDE.md §11). The overlay removes itself from the view
+        // hierarchy when it finishes.
+        if (savedInstanceState == null) {
+            BrandSplashOverlay.play(this, reducedMotion = isReducedMotion())
+        }
     }
+
+    /**
+     * Reduced-motion proxy: the device animator-duration-scale = 0 setting
+     * (design.md §11 "Respect Android reduced-motion settings"). Read defensively —
+     * the setting is absent on some OEM builds, and a splash must never be the thing
+     * that crashes a cold start.
+     */
+    private fun isReducedMotion(): Boolean = runCatching {
+        Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }.getOrDefault(false)
 
     // singleTop re-uses this activity for a notification tap while it is running;
     // capture the fresh route so the composable can deep-link.
@@ -145,23 +180,91 @@ fun MyBingwaApp(
     val appNotifier = remember { AppNotifier(appContext) }
     val connectivityObserver = remember { ConnectivityObserver(appContext) }
 
-    // Feed observed connectivity into the repository (sets the offline flag) and,
-    // whenever we're online, sync the seller config (Till/Paybill/support) from the
-    // server so those details stay fresh — while remaining cached for offline use.
+    // The app-scoped engines. Null in a Robolectric/preview context where the
+    // Application is not MyBingwaApplication — every call site degrades gracefully
+    // rather than crashing a test or a preview.
+    val app = appContext as? MyBingwaApplication
+    val syncOrchestrator = remember(app) { app?.syncOrchestrator }
+    val notificationEngine = remember(app) { app?.notificationEngine }
+
+    /**
+     * The customer's learned purchase behaviour. Loaded from its own on-device store
+     * for an instant cold start, then recomputed whenever Activity changes. It NEVER
+     * leaves the device (CLAUDE.md §10) and disappears with app data.
+     */
+    val behaviourProfile = remember { MutableStateFlow(BehaviourProfile.EMPTY) }
+
+    /**
+     * Facts the notification engine substitutes into its templates. Reads the flows'
+     * current values rather than composed state so it can be called from any
+     * coroutine without depending on where it sits in the composition.
+     */
+    fun personalizationFacts(
+        balanceText: String = "",
+        categoryLabel: String = ""
+    ): NotificationPersonalization {
+        val profile = behaviourProfile.value
+        val usual = repository.offers.value.firstOrNull { it.id == profile.mostPurchasedOfferId }
+        return NotificationPersonalization(
+            userName = repository.userProfile.value.name,
+            nowMillis = System.currentTimeMillis(),
+            usualBundleLabel = usual?.name.orEmpty(),
+            usualAmountKsh = profile.mostPurchasedAmountKsh,
+            balanceText = balanceText,
+            daysSinceLastPurchase = daysSinceNairobi(profile.lastPurchaseAtMillis),
+            categoryLabel = categoryLabel.ifEmpty {
+                profile.favouriteCategory?.label?.lowercase().orEmpty()
+            }
+        )
+    }
+
+    // Feed observed connectivity into the repository (sets the offline flag) and drive
+    // an INCREMENTAL sync on the offline→online edge. The orchestrator decides which
+    // resources actually changed, so returning to coverage no longer re-downloads the
+    // whole catalogue. Losing connectivity is reported instantly (the observer only
+    // debounces the online direction), so Offline Mode appears without a restart.
+    //
+    // The connectivity notifications are one of the most-liked behaviours in testing:
+    // the app noticing you dropped offline. The engine's cooldown (hours, not minutes)
+    // is what keeps that from becoming spam on a flaky connection.
     LaunchedEffect(connectivityObserver) {
+        var seenFirstState = false
+        var wasOffline = false
         connectivityObserver.observe().collect { state ->
             repository.setConnectionState(state)
-            if (state != ConnectionState.NONE) {
-                repository.syncRemoteConfig()
-                repository.syncCatalogue()
-                repository.syncBillboards()
+            val offline = state == ConnectionState.NONE
+
+            if (!offline) {
+                syncOrchestrator?.sync(SyncTrigger.CONNECTIVITY_RESTORED)
+                    ?: run {
+                        // No orchestrator (unconfigured build/tests): fall back to the
+                        // direct calls so an unwired build still refreshes.
+                        repository.syncRemoteConfig()
+                        repository.syncCatalogue()
+                        repository.syncBillboards()
+                    }
             }
+
+            // Only announce a real TRANSITION — never on the first emission, which is
+            // just "here is the current state" at launch and would fire on every start.
+            if (seenFirstState && offline != wasOffline) {
+                notificationEngine?.notify(
+                    category = if (offline) NotificationCategory.OFFLINE else NotificationCategory.ONLINE,
+                    personalization = personalizationFacts()
+                )
+            }
+            seenFirstState = true
+            wasOffline = offline
         }
     }
 
     // React to Safaricom SMS signals surfaced by SmsDeliveryReceiver via the bus.
     // Delivery is reconciled quietly (in-app + Activity, no loud system post);
     // low-balance adds an in-app offers suggestion and a quiet system nudge.
+    //
+    // EventDetected is the new server-taught signal carrying the matched rule and the
+    // extracted amounts. The two legacy cases are still emitted alongside it for the
+    // repository reconciliation, so this branch only adds the richer NOTIFICATION.
     LaunchedEffect(Unit) {
         SmsSignalBus.signals.collect { signal ->
             when (signal) {
@@ -169,7 +272,26 @@ fun MyBingwaApp(
                     repository.onBundleDeliveryDetected(signal.category)
                 is SmsSignal.LowBalanceDetected -> {
                     repository.onLowBalanceDetected(signal.category)
-                    appNotifier.postLowBalanceSuggestion(signal.category)
+                    // Fall back to the plain notifier only when the engine is absent,
+                    // so an unconfigured build still nudges.
+                    if (notificationEngine == null) {
+                        appNotifier.postLowBalanceSuggestion(signal.category)
+                    }
+                }
+                is SmsSignal.EventDetected -> {
+                    val engine = notificationEngine
+                    if (engine != null) {
+                        val category = smsEventNotificationCategory(signal.match.events)
+                        if (category != null) {
+                            engine.notify(
+                                category = category,
+                                personalization = personalizationFacts(
+                                    balanceText = balanceLabelOf(signal.match.extraction),
+                                    categoryLabel = signal.category.label.lowercase()
+                                )
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -194,6 +316,48 @@ fun MyBingwaApp(
         repository.setSmsAlertsEnabled(smsGranted())
     }
 
+    // --- On-device personalization ------------------------------------------------
+    // Load the cached profile first so Home can rank immediately on a cold start
+    // (CLAUDE.md §11), then recompute from real Activity whenever it changes and
+    // save the result back. Everything here stays on the device: nothing is uploaded,
+    // and clearing app data erases it (CLAUDE.md §10).
+    LaunchedEffect(app) {
+        val store = app?.personalizationStore ?: return@LaunchedEffect
+        runCatching { store.load() }.getOrNull()?.let { behaviourProfile.value = it }
+
+        repository.purchases.collect { purchases ->
+            val rebuilt = PersonalizationEngine.buildProfile(
+                purchases = purchases,
+                favouriteIds = repository.offers.value.filter { it.isFavourite }.map { it.id }.toSet(),
+                recentRecipients = repository.recentRecipients.value,
+                nowMillis = System.currentTimeMillis(),
+                offers = repository.offers.value
+            )
+            behaviourProfile.value = rebuilt
+            runCatching { store.save(rebuilt) }
+        }
+    }
+
+    // --- Force sync ---------------------------------------------------------------
+    // A publish in the admin console (e.g. a dead Paybill replaced) must reach every
+    // online customer without a store update or a reinstall. This polls only the tiny
+    // manifest, and only while this screen is composed — the effect is cancelled when
+    // the app leaves the foreground, so it never costs battery in the background.
+    LaunchedEffect(app) {
+        val orchestrator = app?.syncOrchestrator ?: return@LaunchedEffect
+        ForceSyncWatcher(
+            orchestrator = orchestrator,
+            manifestSource = app.manifestSource,
+            metadataStore = app.syncMetadataStore
+        ).watch()
+    }
+
+    // One incremental sync at start. The planner throttles it, so returning to the app
+    // repeatedly does not hammer the backend.
+    LaunchedEffect(app) {
+        app?.syncOrchestrator?.sync(SyncTrigger.APP_START)
+    }
+
     // Runtime permission launchers (Android 13+ POST_NOTIFICATIONS, RECEIVE_SMS).
     // Settings shows the in-app rationale first, then invokes these; the granted
     // result is written back so the toggle can never show "on" while the OS denied it.
@@ -215,6 +379,18 @@ fun MyBingwaApp(
         smsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS)
     }
 
+    // The Play flavour strips RECEIVE_SMS and the receiver from its manifest, so asking
+    // for it there would show a dialog that can never be granted. Read the merged
+    // manifest instead of a build flag — it is the actual source of truth.
+    val smsSupported = remember {
+        runCatching {
+            appContext.packageManager
+                .getPackageInfo(appContext.packageName, PackageManager.GET_PERMISSIONS)
+                .requestedPermissions
+                ?.contains(Manifest.permission.RECEIVE_SMS) == true
+        }.getOrDefault(false)
+    }
+
     // Reduced-motion proxy: honour the device animator-duration-scale = 0 setting
     // (design.md §11 "Respect Android reduced-motion settings").
     val reducedMotion = remember {
@@ -225,14 +401,14 @@ fun MyBingwaApp(
     // One check at start drives all three surfaces: the force-update gate, the system
     // notification and the Home "Update available" billboard.
     //
-    // BuildConfig.UPDATE_CHECK_ENABLED is true only for debug builds. Shipped builds
+    // BuildConfig.GITHUB_UPDATER_ENABLED is true only for debug builds. Shipped builds
     // are distributed by Google Play, which updates them natively, so they never fetch
     // update.json and never offer to install an APK themselves. With the flag false
     // `pendingUpdate` stays null, which leaves every update surface (gate, billboard,
     // notification) inert without any further branching below.
     var pendingUpdate by remember { mutableStateOf<UpdateResult.Available?>(null) }
     LaunchedEffect(Unit) {
-        if (!BuildConfig.UPDATE_CHECK_ENABLED) return@LaunchedEffect
+        if (!BuildConfig.GITHUB_UPDATER_ENABLED) return@LaunchedEffect
         val result = UpdateChecker.check()
         if (result is UpdateResult.Available) {
             pendingUpdate = result
@@ -250,7 +426,13 @@ fun MyBingwaApp(
         factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                CatalogueViewModel(repository) as T
+                // The learned profile re-ranks Home and adds the "Buy again" /
+                // "Your usual bundle" labels. An EMPTY profile (fresh install) leaves
+                // ordering and labelling exactly as they were.
+                CatalogueViewModel(
+                    repository = repository,
+                    behaviourProfileFlow = behaviourProfile.asStateFlow()
+                ) as T
         }
     )
 
@@ -343,6 +525,42 @@ fun MyBingwaApp(
                     }
                 }
             }
+            // An explicit click action published by the admin wins over the slide's
+            // kind. NONE falls through to the original kind-based behaviour below, so
+            // every billboard published before media support still behaves as it did.
+            promo.clickActionOrNone == PromotionClickAction.EXTERNAL_LINK -> {
+                // The mapper only ever emits an http(s) target, but re-check here: this
+                // is the one place the app hands control to another app.
+                val uri = runCatching { Uri.parse(promo.clickTarget) }.getOrNull()
+                if (uri != null && (uri.scheme == "https" || uri.scheme == "http")) {
+                    // No browser installed → ignore quietly. A promotion must never
+                    // crash the app or raise an error dialog.
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }
+            }
+            promo.clickActionOrNone == PromotionClickAction.INTERNAL_ROUTE -> {
+                val route = promo.clickTarget
+                if (route in listOf("home", "offers", "activity", "help", "settings")) {
+                    navController.navigate(route) {
+                        popUpTo("home") { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                } else {
+                    browseOffers(null)
+                }
+            }
+            promo.clickActionOrNone == PromotionClickAction.CATEGORY -> browseOffers(
+                OfferCategory.entries.firstOrNull { it.name.equals(promo.clickTarget, ignoreCase = true) }
+            )
+            promo.clickActionOrNone == PromotionClickAction.OFFER -> {
+                val target = offers.find { it.id == promo.clickTarget || it.id == promo.linkedOfferId }
+                if (target != null) activeOfferForPurchase = target else browseOffers(promo.linkedCategory)
+            }
             promo.kind == PromotionKind.OFFER -> {
                 val target = promo.linkedOfferId?.let { id -> offers.find { it.id == id } }
                 if (target != null) {
@@ -407,15 +625,18 @@ fun MyBingwaApp(
                                 popUpTo("onboarding") { inclusive = true }
                             }
                         },
-                        // Both permissions are asked for during onboarding, not left for
-                        // the customer to discover in Settings later. The granted flags
-                        // come from the live OS state (userProfile is written back by the
-                        // permission launchers), so a tick only appears once the system
-                        // actually granted it.
-                        notificationsGranted = userProfile.notificationsEnabled,
+                        // Permissions are asked here (with the reason shown first) rather
+                        // than buried in Settings. The launchers live in this file; the
+                        // screen only asks. Declining never blocks onboarding — it just
+                        // switches off the feature that needed the grant.
+                        onRequestNotificationPermission = requestNotificationPermission,
+                        onRequestSmsPermission = requestSmsPermission,
+                        // Below API 33 notifications are granted at install time, so show
+                        // the step as already satisfied rather than asking for nothing.
+                        notificationsGranted = userProfile.notificationsEnabled ||
+                            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU,
                         smsGranted = userProfile.smsAlertsEnabled,
-                        onRequestNotifications = requestNotificationPermission,
-                        onRequestSms = requestSmsPermission
+                        smsSupported = smsSupported
                     )
                 }
 
@@ -519,6 +740,7 @@ fun MyBingwaApp(
                     offer = offer,
                     userPrimaryNumber = userProfile.primaryNumber,
                     recentRecipients = recentRecipients,
+                    preferredPayerNumber = behaviourProfile.value.suggestedPayerNumber(),
                     isOffline = isOffline,
                     onExecuteStkPush = { off, rec, pay, crid, self -> repository.executeMpesaStkPush(off, rec, pay, crid, self) },
                     onExecuteOfflinePayment = { off, rec, pay, till, receipt -> repository.executeOfflinePayment(off, rec, pay, till, receipt) },
@@ -572,4 +794,63 @@ fun MyBingwaApp(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Small integration helpers. Top-level and pure so they stay cheap and testable.
+// ---------------------------------------------------------------------------
+
+/**
+ * Whole days between [thenMillis] and now, on the Africa/Nairobi day boundary
+ * (CLAUDE.md §8). Returns 0 when there is no recorded purchase, which the
+ * notification templates render as "a while" rather than "0 days".
+ */
+private fun daysSinceNairobi(thenMillis: Long): Int {
+    if (thenMillis <= 0L) return 0
+    val elapsed = System.currentTimeMillis() - thenMillis
+    if (elapsed <= 0L) return 0
+    return (elapsed / 86_400_000L).toInt()
+}
+
+/**
+ * A short, factual balance phrase built ONLY from what Safaricom actually said.
+ *
+ * The carrier is the source of truth here — this never estimates, predicts or
+ * infers usage, which §8 forbids. An extraction with no numbers yields an empty
+ * string and the template falls back to its own neutral wording.
+ */
+private fun balanceLabelOf(extraction: SmsExtraction): String {
+    extraction.dataMb?.let { mb ->
+        return if (mb >= 1024.0) {
+            val gb = mb / 1024.0
+            if (gb == gb.toLong().toDouble()) "${gb.toLong()}GB" else String.format(Locale.US, "%.1fGB", gb)
+        } else {
+            if (mb == mb.toLong().toDouble()) "${mb.toLong()}MB" else String.format(Locale.US, "%.1fMB", mb)
+        }
+    }
+    extraction.minutes?.let { return "$it minutes" }
+    extraction.smsCount?.let { return "$it SMS" }
+    return ""
+}
+
+/**
+ * Maps the events a server-taught SMS rule produced onto the notification the
+ * customer should see.
+ *
+ * Ordered by consequence: "no bundle left" outranks "very low" outranks "low".
+ * A received/gift event is attributed to Safaricom by the template itself — the
+ * app never claims to have delivered anything (CLAUDE.md §7). Anything we do not
+ * recognise returns null, and nothing is posted: silence beats a weak message.
+ */
+private fun smsEventNotificationCategory(events: List<SmsEventType>): NotificationCategory? = when {
+    events.contains(SmsEventType.NO_DATA) -> NotificationCategory.NO_DATA
+    events.contains(SmsEventType.VERY_LOW_DATA) -> NotificationCategory.VERY_LOW_DATA
+    events.contains(SmsEventType.LOW_DATA) -> NotificationCategory.LOW_DATA
+    events.contains(SmsEventType.LOW_MINUTES) -> NotificationCategory.LOW_MINUTES
+    events.contains(SmsEventType.LOW_SMS) -> NotificationCategory.LOW_SMS
+    events.contains(SmsEventType.GIFT_RECEIVED) -> NotificationCategory.GIFT_RECEIVED
+    events.contains(SmsEventType.DATA_RECEIVED) ||
+        events.contains(SmsEventType.SMS_RECEIVED) ||
+        events.contains(SmsEventType.MINUTES_RECEIVED) -> NotificationCategory.BUNDLE_RECEIVED
+    else -> null
 }

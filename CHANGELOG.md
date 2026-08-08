@@ -48,6 +48,115 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
   the fulfilment phone or the other routing values. Both layouts are now tried.
 
 ### Added
+Two workstreams landed in parallel: the Android app (production intelligence) and the
+PHP server (production release). They are listed separately because they ship and are
+verified independently.
+
+### Android app - production intelligence
+
+#### Added
+
+- **Notification engine** (`core/notifications/engine/`). 54 seed templates, 3+ per
+  category across 18 categories, personalised with name, time-of-day greeting, usual
+  bundle and recent activity, chosen by weighted deterministic random and never
+  repeating back-to-back. Per-category cooldowns, Africa/Nairobi quiet hours
+  (transactional categories bypass), a 6/day cap on non-transactional messages, and
+  content-hash de-duplication. Server-published wording and admin-published messages
+  cache locally and still display offline.
+- **Dynamic SMS detection engine** (`core/sms/`). Detection rules are data — sender
+  id, pattern (REGEX/KEYWORDS/TEMPLATE), event types, priority — downloaded from the
+  server and cached. 12 seed rules cover every observed Safaricom, SAF_Balance and
+  SAF_OfaMOTO message. **A new sender id or wording now needs a server change, not an
+  app release.** Generic extractors read MB/GB, minutes, SMS counts, Sh price, bundle
+  type and both expiry formats.
+- **Incremental sync engine** (`data/sync/`, `data/remote/`). Per-resource version +
+  checksum, so only what actually changed is downloaded. Force sync polls a
+  few-hundred-byte manifest every 90s while foreground, so an admin publish (e.g. a
+  replaced Paybill or Till) reaches online customers without a store update, reinstall
+  or cache clear.
+- **On-device personalisation** (`core/personalization/`). Learns most-purchased
+  bundle and amount, favourite category, buying hour and frequency, preferred payer
+  number and top recipients, with a 30-day recency half-life. Ranks Home and adds
+  "Buy again" / "Your usual bundle" / "Bought yesterday" labels, and pre-fills the
+  M-Pesa payer number at checkout. Nothing ever leaves the device.
+- **Billboard images and animated GIFs**, with click actions (offer, category,
+  internal route, external link), a bounded 32 MB Coil disk cache so a synced slide
+  still renders offline, and `mediaVersion` cache-busting.
+- **Animated cold-start splash** (`core/ui/BrandSplashOverlay.kt`). Logo scales
+  0.72→1 with alpha 0→1 on an overshoot interpolator over 460ms; the app name fades in
+  and rises 12dp→0 over 320ms starting at 160ms; after a 900ms hold the logo scales to
+  1.08 while the overlay fades out over 280ms and detaches. Honours reduced motion;
+  cold start only.
+- Four app-key-guarded server endpoints: `get_sync_manifest.php`, `get_sms_rules.php`,
+  `get_notification_templates.php`, `get_app_notifications.php`.
+
+#### Changed
+
+- **Instant offline/online switching.** Connectivity is now observed through
+  `registerDefaultNetworkCallback` plus an INTERNET-capability callback, using
+  `NET_CAPABILITY_VALIDATED` as the real-internet signal — so a captive portal
+  correctly reads as offline instead of failing a payment. Offline is reported
+  instantly; online settles for 400ms to avoid announcing a half-open network. No app
+  restart or manual refresh is needed.
+- **Notification and SMS permissions moved into onboarding**, each explaining why
+  before the system dialog, with a "Not now" escape. Declining never blocks the app.
+  The SMS step hides itself on the Play flavour.
+- **GitHub updater is now gated by flavour, not build type**
+  (`BuildConfig.GITHUB_UPDATER_ENABLED`): off for `play` (the store updates itself),
+  on for `direct` (sideloaded users have no store) and on for all debug builds.
+- `BingwaRepository` implements `SyncTargets`; `MyBingwaApplication` implements
+  `SyncOrchestratorProvider` and owns the engines.
+
+#### Fixed
+
+- **Billboard scheduling in Nairobi local time.** Start/end timestamps previously
+  parsed only UTC `...Z`, so a slide published with a Nairobi-local timestamp could
+  stay hidden for up to three hours.
+
+#### Internal
+
+- Seven separate DataStore files, one per engine, so no engine can reach the file
+  holding purchases, favourites and the active order.
+- `SmsSignal` gained `EventDetected` (matched rule + extracted values) and stays
+  `sealed`; the two legacy signals are still emitted for existing reconciliation.
+- Architecture reference added at `docs/PRODUCTION_INTELLIGENCE.md`.
+
+### Server - offer performance analytics
+
+#### Added
+
+- **Dashboard rebuilt around what actually sold.** Four cards, each clicking through to the
+  page holding the detail: total revenue (today and all time), today's sales split across
+  Data / SMS / Minutes / Special, the buy-for-myself vs buy-for-another trend, and the
+  catalogue size. Below them, the best performing bundles over 30 days and a 14-day trade row.
+- **The payments page became the performance view.** Cards for money in today / all time /
+  this view / average sale / attempts completed, sales by category, who the bundle was for,
+  and payment outcomes with a success rate - every figure a link that applies that filter.
+  Plus a sortable bundle-performance table (sales, revenue, attempts, conversion), a 14-day
+  bar row, filters for category, buyer, state, date range, search and amount, and the offer
+  name, category and buyer kind on every record. CSV export honours all of it.
+- Preview explains the first publish after a server upgrade, instead of leaving the operator
+  looking at changes they did not make.
+
+#### Fixed
+
+- **Payment figures could be counted on the wrong day.** `payments.created_at` is written
+  with MySQL `NOW()` - the database server's clock, which on shared hosting may be UTC or
+  EAT - but the code assumed UTC in one place, local time in another, and every view
+  formatted the value as if it were UTC. On an EAT host that displayed payments three hours
+  late and pushed early-morning sales into the previous day. The offset is now measured at
+  runtime and applied everywhere, with no dependency on MySQL timezone tables.
+
+#### Internal
+
+- Regression tests that publish a snapshot, read it back exactly as the code does, and fail
+  the build if the pending-changes list is not empty - the standing guarantee that
+  publishing clears Preview instead of looping. A companion test proves a genuinely edited
+  price is still detected, so the guard cannot pass by detecting nothing.
+
+### Server - production release
+
+#### Added
 
 - **Admin — SMS rules.** Message recognition is now editable data instead of hardcoded
   patterns. A rule carries a name, sender, pattern type (regular expression, contains,
@@ -85,7 +194,7 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 - **Server CI** (`.github/workflows/server-checks.yml`): lints every PHP file, runs the
   logic test suite, and checks migrations and committed secrets on every push.
 
-### Changed
+#### Changed
 
 - **Preview & publish rebuilt as a release screen.** A summary card (live version, draft
   version, pending changes, last published, published by), changes grouped by module in
@@ -98,7 +207,7 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
   and `resourceVersions`. Every section the shipped app already reads keeps its exact
   shape, so devices in the field are unaffected.
 
-### Fixed
+#### Fixed
 
 - **Unchanged items no longer appear in Preview.** Change detection compares field values
   instead of assuming a save meant an edit, so opening an offer and pressing Save without
@@ -116,14 +225,14 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
   1.0.2, so the suite could not pass. Replaced with tests for the behaviour that is
   actually intended.
 
-### Removed
+#### Removed
 
 - **Admin — Message templates page.** Superseded by SMS rules, which is strictly more
   capable. Existing templates are imported into the new table by migration, and the
   published `templates` section is now derived from the rules so apps already installed
   keep recognising messages. `/message-templates` redirects to the new page.
 
-### Internal
+#### Internal
 
 - Migrations `013`–`017`: SMS rules and catalogues, notification variations and
   scheduling, per-resource versions and field-level change records, billboard media

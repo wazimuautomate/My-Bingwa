@@ -13,6 +13,7 @@ import com.example.data.config.AppConfig
 import com.example.data.payment.ActiveOrder
 import com.example.data.payment.OfflineEligibility
 import com.example.data.payment.OfflinePaymentConfig
+import com.example.data.sync.SyncTargets
 import kotlinx.coroutines.flow.StateFlow
 
 enum class DevStkOutcome {
@@ -49,7 +50,16 @@ data class OfferFilterState(
     val selectedSort: SortOption = SortOption.LOWEST_PRICE
 )
 
-interface BingwaRepository {
+/**
+ * The app's single data surface.
+ *
+ * It extends [SyncTargets] so the [com.example.data.sync.SyncOrchestrator] can drive
+ * every server-fed resource through one contract. Each sync method honours the same
+ * offline-first rule: a failed, null, empty or incomplete response KEEPS the existing
+ * local content and never clears it. Purchases, favourites, recent recipients and
+ * personalisation are LOCAL only and are never touched by a sync.
+ */
+interface BingwaRepository : SyncTargets {
     val userProfile: StateFlow<UserProfile>
     val appTheme: StateFlow<AppThemeSetting>
     val isOffline: StateFlow<Boolean>
@@ -149,7 +159,7 @@ interface BingwaRepository {
      * when online. Only a valid, complete response replaces the cache; a failure or an
      * all-blank (incomplete) response keeps the last good config.
      */
-    suspend fun syncRemoteConfig()
+    override suspend fun syncRemoteConfig()
 
     /**
      * Fetch the catalogue from the server and replace the offers ONLY on a complete,
@@ -159,7 +169,7 @@ interface BingwaRepository {
      * partially overwriting them — so the app always has offers offline (Phase 7).
      * Local favourite/bought-today state is preserved across the replace.
      */
-    suspend fun syncCatalogue()
+    override suspend fun syncCatalogue()
 
     /**
      * Fetch the Home billboards (promotions) from the server and replace [promotions]
@@ -168,7 +178,27 @@ interface BingwaRepository {
      * existing locally-stored billboards — never clearing them — so the app always has
      * promotions offline. Promotions carry no per-user flags, so nothing is merged.
      */
-    suspend fun syncBillboards()
+    override suspend fun syncBillboards()
+
+    /**
+     * Refresh the notification wording published by the admin. A failed fetch keeps
+     * the cached templates, and the in-APK seed is the guaranteed floor — the
+     * customer can never end up with no notification copy.
+     */
+    override suspend fun syncNotificationTemplates()
+
+    /**
+     * Refresh the admin-published notification queue. Cached messages keep working
+     * after the device goes offline; a null fetch never clears them.
+     */
+    override suspend fun syncRemoteNotifications()
+
+    /**
+     * Refresh the Safaricom SMS detection rules. This is the sync that lets the owner
+     * teach the app a NEW message format from the dashboard with no app release; a
+     * failed fetch keeps the rules already on the device.
+     */
+    override suspend fun syncSmsRules()
 
     fun deletePurchaseRecord(recordId: String)
     fun deletePurchaseRecords(recordIds: List<String>)

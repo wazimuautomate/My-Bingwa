@@ -7,11 +7,13 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.example.core.notifications.AppNotifier
+import com.example.MyBingwaApplication
 import com.example.core.notifications.ConnectionState
+
 import com.example.core.notifications.ConnectivityObserver
 import com.example.core.notifications.EngagementSchedule
 import com.example.core.notifications.EngagementSlot
+import com.example.core.notifications.engine.NotificationCategory
 import java.util.concurrent.TimeUnit
 
 /**
@@ -27,7 +29,8 @@ import java.util.concurrent.TimeUnit
  * success (CLAUDE.md §9, "prefer silence over a weak message"):
  *  - the live connection does not match what the slot is for;
  *  - this slot already posted today (survives process death via prefs);
- *  - notifications are not permitted, in which case [AppNotifier] no-ops anyway.
+ *  - the shared NotificationEngine policy suppresses it (quiet hours, daily cap,
+ *    cooldown, duplicate content), or notifications are not permitted at all.
  */
 class EngagementNotificationWorker(
     appContext: Context,
@@ -51,7 +54,7 @@ class EngagementNotificationWorker(
     }
 
     /** Post the slot's message when — and only when — every condition still holds. */
-    private fun postIfDue(slot: EngagementSlot, now: Long) {
+    private suspend fun postIfDue(slot: EngagementSlot, now: Long) {
         val key = EngagementSchedule.slotKey(slot, now)
         val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         // Already posted this slot today (a retried or duplicated run) → stay silent.
@@ -62,15 +65,26 @@ class EngagementNotificationWorker(
         val connected = ConnectivityObserver(applicationContext).current() != ConnectionState.NONE
         if (connected != slot.requiresConnection) return
 
+        // Post through the shared NotificationEngine rather than straight to AppNotifier.
+        // The engine owns the cooldowns, the per-day cap, quiet hours and content
+        // de-duplication for EVERY notification the app sends, so routing through it is
+        // what stops these daily nudges stacking on top of whatever the SMS and
+        // personalisation paths already posted. `notifyRaw` keeps the wording authored
+        // here while still passing the full policy check — the engine may well decide to
+        // stay silent, and that is a correct outcome.
+        val engine = (applicationContext as? MyBingwaApplication)?.notificationEngine ?: return
         val message = EngagementSchedule.messageFor(slot, now)
-        val posted = AppNotifier(applicationContext).postOfferSuggestion(
+        val posted = engine.notifyRaw(
+            category = if (slot.requiresConnection) NotificationCategory.ONLINE else NotificationCategory.OFFLINE,
             title = message.title,
             body = message.body,
             stableId = key,
             deepLinkRoute = message.deepLinkRoute,
+            nowMillis = now,
         )
         // Only mark it done once it actually reached the system. A refusal (permission
-        // not granted yet) leaves the slot open, so it can still land on a later day.
+        // not granted, or the policy suppressing it) leaves the slot open so it can
+        // still land on a later day.
         if (posted) prefs.edit().putBoolean(key, true).apply()
     }
 

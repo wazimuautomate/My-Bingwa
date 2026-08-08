@@ -10,6 +10,7 @@ import org.junit.Test
  * Verifies the pure, data-driven parser against the four real seed samples plus
  * the negative cases (wrong sender, unrelated body).
  */
+@Suppress("DEPRECATION") // Legacy engine, kept green until every caller moves to DynamicSmsParser.
 class SafaricomSmsParserTest {
 
     private val templates = DefaultTemplates.SEED

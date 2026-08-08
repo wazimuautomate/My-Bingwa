@@ -31,6 +31,10 @@ import com.example.core.model.OfferCategory
  * @param pattern    a Java/Kotlin regex matched case-insensitively against the body.
  * @param description human note about what real message this was built from.
  */
+@Deprecated(
+    message = "Superseded by com.example.core.sms.SmsRule (server-taught, multi-event).",
+    level = DeprecationLevel.WARNING
+)
 data class DeliveryTemplate(
     val id: String,
     val senderId: String,
@@ -43,6 +47,10 @@ data class DeliveryTemplate(
  * A template that recognises a **low-balance** nudge SMS for [category].
  * Same field meanings as [DeliveryTemplate].
  */
+@Deprecated(
+    message = "Superseded by com.example.core.sms.SmsRule (server-taught, multi-event).",
+    level = DeprecationLevel.WARNING
+)
 data class LowBalanceTemplate(
     val id: String,
     val senderId: String,
@@ -55,6 +63,11 @@ data class LowBalanceTemplate(
  * A versioned bundle of templates. [version] lets the app keep the newest set
  * when the server syncs a replacement.
  */
+@Suppress("DEPRECATION")
+@Deprecated(
+    message = "Superseded by com.example.core.sms.SmsRuleSet (versioned, server-synced).",
+    level = DeprecationLevel.WARNING
+)
 data class TemplateSet(
     val version: Int,
     val delivery: List<DeliveryTemplate>,

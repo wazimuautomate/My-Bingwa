@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,11 +55,13 @@ import androidx.compose.ui.unit.dp
 import com.example.core.model.OfferCategory
 import com.example.core.model.OfferItem
 import com.example.core.model.Promotion
+import com.example.core.personalization.PersonalBadge
 import com.example.core.ui.MyBingwaTopAppBar
 import com.example.core.ui.OfferCard
 import com.example.core.ui.OfferCardSkeleton
 import com.example.core.ui.OfflineStatusStrip
 import com.example.ui.theme.CardShape
+import com.example.ui.theme.TagShape
 import com.example.ui.theme.categoryColors
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -179,8 +182,9 @@ fun HomeScreen(
                     item(key = "favourites_empty") { FavouritesEmpty() }
                 } else {
                     items(state.sections.favourites, key = { "fav_${it.id}" }) { offer ->
-                        OfferCard(
+                        PersonalOfferCard(
                             offer = offer,
+                            badge = state.personalBadges[offer.id],
                             isOffline = state.isOffline,
                             onCardClick = { onOfferSelect(offer) },
                             onBuyClick = { onOfferBuy(offer) },
@@ -202,8 +206,9 @@ fun HomeScreen(
                         ) {
                             items(state.sections.suggestions, key = { "sug_${it.id}" }) { offer ->
                                 Box(modifier = Modifier.width(300.dp)) {
-                                    OfferCard(
+                                    PersonalOfferCard(
                                         offer = offer,
+                                        badge = state.personalBadges[offer.id],
                                         isOffline = state.isOffline,
                                         onCardClick = { onOfferSelect(offer) },
                                         onBuyClick = { onOfferBuy(offer) },
@@ -224,6 +229,66 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(16.dp)
+        )
+    }
+}
+
+/**
+ * An offer card with an optional, deliberately quiet personal label above it
+ * ("Buy again", "Your usual bundle", "Bought yesterday").
+ *
+ * design.md: the label is a `labelSmall` on the neutral surface-variant
+ * container — no gradient, no emoji, no glow, no shadow, no accent colour, and
+ * never a second call to action. It must read as a footnote to the card, never
+ * compete with the offer name, the price or the Buy button. When [badge] is null
+ * this composes exactly the same tree as before, so a fresh install is unchanged.
+ *
+ * No motion is attached to the badge, so there is nothing for reduced-motion to
+ * suppress; it simply appears with the card it belongs to.
+ */
+@Composable
+private fun PersonalOfferCard(
+    offer: OfferItem,
+    badge: PersonalBadge?,
+    isOffline: Boolean,
+    onCardClick: () -> Unit,
+    onBuyClick: () -> Unit,
+    onFavouriteToggle: () -> Unit
+) {
+    if (badge == null) {
+        OfferCard(
+            offer = offer,
+            isOffline = isOffline,
+            onCardClick = onCardClick,
+            onBuyClick = onBuyClick,
+            onFavouriteToggle = onFavouriteToggle
+        )
+        return
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = TagShape
+        ) {
+            Text(
+                text = badge.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                    .testTag("personal_badge_${offer.id}")
+            )
+        }
+        OfferCard(
+            offer = offer,
+            isOffline = isOffline,
+            onCardClick = onCardClick,
+            onBuyClick = onBuyClick,
+            onFavouriteToggle = onFavouriteToggle
         )
     }
 }

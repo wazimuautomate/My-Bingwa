@@ -47,7 +47,9 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CardGiftcard
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Phone
@@ -67,7 +69,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,11 +83,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.BuildConfig
 import com.example.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -113,75 +114,85 @@ private val AccentSms = Color(0xFF7C6CF2)
 private val AccentMinutes = Color(0xFF18C964)
 private val AccentSpecial = Color(0xFFFF8A00)
 
-private const val TOTAL_STEPS = 4
+/**
+ * The ordered first-run steps. Permission asks sit AFTER the value is clear
+ * (promise + gains) and BEFORE the personal setup, so the customer already knows
+ * what My Bingwa does when it explains why it wants a permission. [SMS] is
+ * dropped entirely on the Play flavour, where the SMS receiver is stripped from
+ * the manifest and the permission does not exist.
+ */
+private enum class OnboardingStep { PROMISE, GAINS, NOTIFICATIONS, SMS, SETUP }
 
 /**
- * @param notificationsGranted live OS state of POST_NOTIFICATIONS.
- * @param smsGranted           live OS state of RECEIVE_SMS.
- * @param onRequestNotifications launches the system permission prompt.
- * @param onRequestSms           launches the system permission prompt.
+ * First-run onboarding.
+ *
+ * Runtime permissions are requested HERE rather than from Settings: adoption
+ * from a buried settings row was poor. Each ask is preceded by a short, plain
+ * explanation of what the permission buys the customer, shown before the system
+ * dialog appears (CLAUDE.md §9 — never ask cold).
+ *
+ * Declining is a first-class outcome: the step can always be skipped, the flow
+ * always continues, only that one feature is disabled, and the customer is never
+ * scolded or asked twice in the same session.
+ *
+ * The Activity owns the `rememberLauncherForActivityResult` launchers; this
+ * screen only calls back and renders the granted state it is given. Every new
+ * parameter is defaulted so existing callers and tests keep compiling.
+ *
+ * @param onRequestNotificationPermission asks the OS for POST_NOTIFICATIONS.
+ * @param onRequestSmsPermission asks the OS for RECEIVE_SMS/READ_SMS.
+ * @param notificationsGranted live grant state, for the confirmation UI.
+ * @param smsGranted live grant state, for the confirmation UI.
+ * @param smsSupported false on the Play flavour — hides the SMS step entirely.
  */
 @Composable
 fun OnboardingScreen(
     onCompleteOnboarding: (String, String) -> Unit,
+    onRequestNotificationPermission: () -> Unit = {},
+    onRequestSmsPermission: () -> Unit = {},
     notificationsGranted: Boolean = false,
     smsGranted: Boolean = false,
-    onRequestNotifications: () -> Unit = {},
-    onRequestSms: () -> Unit = {}
+    smsSupported: Boolean = true
 ) {
     val reducedMotion = rememberReducedMotion()
     val scope = rememberCoroutineScope()
 
-    var step by remember { mutableIntStateOf(1) }
+    val steps = remember(smsSupported) {
+        buildList {
+            add(OnboardingStep.PROMISE)
+            add(OnboardingStep.GAINS)
+            add(OnboardingStep.NOTIFICATIONS)
+            if (smsSupported) add(OnboardingStep.SMS)
+            add(OnboardingStep.SETUP)
+        }
+    }
+    var stepIndex by remember { mutableIntStateOf(0) }
+    // Clamp defensively: smsSupported could flip while onboarding is open.
+    val safeIndex = stepIndex.coerceIn(0, steps.lastIndex)
+    val currentStep = steps[safeIndex]
+
+    // "Asked once" flags. After one ask the CTA becomes a plain Continue, so a
+    // customer whose OS no longer shows the dialog can never be trapped on the
+    // step by tapping a button that appears to do nothing.
+    var askedNotifications by remember { mutableStateOf(false) }
+    var askedSms by remember { mutableStateOf(false) }
+
     var nameInput by remember { mutableStateOf("") }
     var phoneInput by remember { mutableStateOf("") }
     var nameError by remember { mutableStateOf<String?>(null) }
     var phoneError by remember { mutableStateOf<String?>(null) }
     var launching by remember { mutableStateOf(false) }
 
-    // How many times a permission prompt has been fired from this screen. Android stops
-    // showing a runtime dialog after the second refusal of the same permission, so
-    // insisting past that would trap the customer on a screen whose button does nothing.
-    // Four taps covers two asks for each permission; after that the journey continues and
-    // Settings keeps both switches available.
-    var permissionAsks by rememberSaveable { mutableIntStateOf(0) }
-
-    // SMS only counts when the flavour actually ships the permission.
-    val smsRequired = BuildConfig.SMS_DETECTION_AVAILABLE
-    val allPermissionsGranted = notificationsGranted && (smsGranted || !smsRequired)
-    val permissionsSettled = allPermissionsGranted || permissionAsks >= 4
-
-    /**
-     * Ask for ONE permission per tap. Firing both launchers together races: the second
-     * request arrives while the first dialog owns the screen and is silently dropped, so
-     * the customer would never see it.
-     */
-    fun requestMissingPermissions() {
-        permissionAsks += 1
-        when {
-            !notificationsGranted -> onRequestNotifications()
-            smsRequired && !smsGranted -> onRequestSms()
-        }
-    }
-
-    /** True when the typed name and number are usable; sets the inline errors otherwise. */
-    fun validateSetup(): Boolean {
-        val trimmedName = nameInput.trim()
-        val normalized = normalizeKenyanPhone(phoneInput)
-        nameError = if (trimmedName.length < 2) "Enter your name" else null
-        phoneError = if (normalized == null) "Enter a valid Safaricom number" else null
-        return nameError == null && phoneError == null
+    fun advance() {
+        if (safeIndex < steps.lastIndex) stepIndex = safeIndex + 1
     }
 
     fun finish() {
         val trimmedName = nameInput.trim()
         val normalized = normalizeKenyanPhone(phoneInput)
-        if (!validateSetup()) {
-            // Should be unreachable (step 3 gates on the same check) but keeps the
-            // completion callback from ever firing with an unusable profile.
-            step = 3
-            return
-        }
+        nameError = if (trimmedName.length < 2) "Enter your name" else null
+        phoneError = if (normalized == null) "Enter a valid Safaricom number" else null
+        if (nameError != null || phoneError != null) return
 
         if (reducedMotion) {
             onCompleteOnboarding(trimmedName, normalized!!)
@@ -214,11 +225,12 @@ fun OnboardingScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                StepProgress(step = step)
-                // Skip jumps to the SETUP step (3), never past it — name, number and
-                // the permission ask are all required, only the two intro slides are not.
-                if (step < 3) {
-                    TextButton(onClick = { step = 3 }) {
+                StepProgress(step = safeIndex + 1, total = steps.size)
+                if (safeIndex < steps.lastIndex) {
+                    TextButton(
+                        onClick = { stepIndex = steps.lastIndex },
+                        modifier = Modifier.testTag("onboarding_skip_to_setup")
+                    ) {
                         Text(
                             text = "Skip",
                             style = MaterialTheme.typography.labelLarge,
@@ -231,7 +243,7 @@ fun OnboardingScreen(
             }
 
             AnimatedContent(
-                targetState = step,
+                targetState = safeIndex,
                 transitionSpec = {
                     (slideInHorizontally(tween(420)) { w -> w / 2 } + fadeIn(tween(420))) togetherWith
                         (slideOutHorizontally(tween(420)) { w -> -w / 2 } + fadeOut(tween(220)))
@@ -240,11 +252,21 @@ fun OnboardingScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-            ) { current ->
-                when (current) {
-                    1 -> StepPromise(reducedMotion = reducedMotion)
-                    2 -> StepGains(reducedMotion = reducedMotion)
-                    3 -> StepSetup(
+            ) { index ->
+                when (steps.getOrNull(index) ?: OnboardingStep.SETUP) {
+                    OnboardingStep.PROMISE -> StepPromise(reducedMotion = reducedMotion)
+                    OnboardingStep.GAINS -> StepGains(reducedMotion = reducedMotion)
+                    OnboardingStep.NOTIFICATIONS -> StepNotifications(
+                        granted = notificationsGranted,
+                        asked = askedNotifications,
+                        reducedMotion = reducedMotion
+                    )
+                    OnboardingStep.SMS -> StepSms(
+                        granted = smsGranted,
+                        asked = askedSms,
+                        reducedMotion = reducedMotion
+                    )
+                    OnboardingStep.SETUP -> StepSetup(
                         name = nameInput,
                         phone = phoneInput,
                         nameError = nameError,
@@ -253,39 +275,67 @@ fun OnboardingScreen(
                         onNameChange = { nameInput = it; nameError = null },
                         onPhoneChange = { phoneInput = it; phoneError = null }
                     )
-                    else -> StepPermissions(
-                        notificationsGranted = notificationsGranted,
-                        smsGranted = smsGranted,
-                        onRequestNotifications = onRequestNotifications,
-                        onRequestSms = onRequestSms
-                    )
                 }
             }
 
             Spacer(Modifier.height(12.dp))
 
+            // One dominant CTA per step. On a permission step the first tap opens
+            // the system dialog; afterwards — granted or denied — it simply moves
+            // on, so the customer is never stuck behind an OS decision.
             PrimaryCtaButton(
-                text = when (step) {
-                    1 -> "Get started"
-                    2 -> "I love it! Continue."
-                    3 -> "Continue"
-                    // Step 4 asks for the two permissions. While either is still
-                    // missing the button re-opens the prompts rather than moving on,
-                    // so the customer is asked here and not left to find Settings.
-                    else -> if (permissionsSettled) "Start using My Bingwa" else "Allow and continue"
+                text = when (currentStep) {
+                    OnboardingStep.PROMISE -> "Get started"
+                    OnboardingStep.GAINS -> "I love it! Continue."
+                    OnboardingStep.NOTIFICATIONS ->
+                        if (notificationsGranted || askedNotifications) "Continue" else "Turn on updates"
+                    OnboardingStep.SMS ->
+                        if (smsGranted || askedSms) "Continue" else "Allow bundle messages"
+                    OnboardingStep.SETUP -> "Start using My Bingwa"
                 },
                 enabled = !launching,
+                modifier = Modifier.testTag("onboarding_primary_cta"),
                 onClick = {
-                    when (step) {
-                        1, 2 -> step += 1
-                        // Validate name/number BEFORE the permissions step so a
-                        // customer is never asked for permissions and then bounced
-                        // back to fix a typo.
-                        3 -> if (validateSetup()) step += 1
-                        else -> if (permissionsSettled) finish() else requestMissingPermissions()
+                    when (currentStep) {
+                        OnboardingStep.NOTIFICATIONS ->
+                            if (notificationsGranted || askedNotifications) {
+                                advance()
+                            } else {
+                                askedNotifications = true
+                                onRequestNotificationPermission()
+                            }
+                        OnboardingStep.SMS ->
+                            if (smsGranted || askedSms) {
+                                advance()
+                            } else {
+                                askedSms = true
+                                onRequestSmsPermission()
+                            }
+                        OnboardingStep.SETUP -> finish()
+                        else -> advance()
                     }
                 }
             )
+
+            // Always-available escape hatch on a permission step. No nagging, no
+            // second ask, no scolding — the feature is simply left off.
+            if (currentStep == OnboardingStep.NOTIFICATIONS || currentStep == OnboardingStep.SMS) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    TextButton(
+                        onClick = { advance() },
+                        modifier = Modifier.testTag("onboarding_permission_skip")
+                    ) {
+                        Text(
+                            text = "Not now",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
 
             Spacer(Modifier.height(8.dp))
         }
@@ -665,107 +715,201 @@ private fun BenefitGlassCard(
 }
 
 // ---------------------------------------------------------------------------
-// Screen 3 — Personal Setup: name slides from left, phone from right.
+// Permission steps — explain first, ask second, never trap.
+//
+// Both steps follow the same shape: a centred glyph and title (centre-anchored
+// composition), then START-aligned explanation copy inside the existing glass
+// card (CLAUDE.md §6 — paragraphs are never centred). Flat fills only: no new
+// gradient, no glow, no emoji. The single dominant CTA lives in the shared
+// footer above, with a quiet "Not now" beneath it.
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun StepPermissions(
-    notificationsGranted: Boolean,
-    smsGranted: Boolean,
-    onRequestNotifications: () -> Unit,
-    onRequestSms: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = "Two last things.",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = "My Bingwa needs both to be useful. You can change them any time in Settings.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 12.dp)
-        )
-        Spacer(Modifier.height(28.dp))
-
-        PermissionRow(
-            icon = Icons.Rounded.Notifications,
-            title = "Offer alerts",
-            // Says what arrives and how often, so "Allow" is an informed tap
-            // (CLAUDE.md §9 — explain before asking).
-            body = "A short note when there is a bundle worth your money. Twice a day at most, never at night.",
-            granted = notificationsGranted,
-            onAllow = onRequestNotifications
-        )
-
-        if (BuildConfig.SMS_DETECTION_AVAILABLE) {
-            Spacer(Modifier.height(16.dp))
-            PermissionRow(
-                icon = Icons.Rounded.Sms,
-                title = "Read Safaricom messages",
-                // Be precise about the scope: Safaricom's own confirmations, read on the
-                // device, never uploaded. Nothing else is touched.
-                body = "So the app can see Safaricom's own confirmation that your bundle arrived. Read on your phone only — nothing is ever sent anywhere.",
-                granted = smsGranted,
-                onAllow = onRequestSms
-            )
-        }
-
-        Spacer(Modifier.height(24.dp))
-    }
+private fun StepNotifications(granted: Boolean, asked: Boolean, reducedMotion: Boolean) {
+    PermissionStep(
+        icon = Icons.Rounded.NotificationsActive,
+        accent = AccentData,
+        stepTag = "onboarding_step_notifications",
+        title = "Know the moment it lands",
+        lead = "Allow notifications and My Bingwa will tell you when your M-Pesa " +
+            "payment is received and when a bundle you buy often is back in stock.",
+        bullets = listOf(
+            "Payment updates for the purchases you make.",
+            "Quiet hours are respected — nothing wakes you at night.",
+            "Offers are a separate, optional channel you control in Settings."
+        ),
+        privacyNote = "You can change this any time in Settings.",
+        granted = granted,
+        grantedText = "Notifications are on. We will keep them useful, not noisy.",
+        deniedText = "No problem. My Bingwa still works — you can turn notifications " +
+            "on later in Settings.",
+        asked = asked,
+        reducedMotion = reducedMotion
+    )
 }
 
 @Composable
-private fun PermissionRow(
+private fun StepSms(granted: Boolean, asked: Boolean, reducedMotion: Boolean) {
+    PermissionStep(
+        icon = Icons.Rounded.Sms,
+        accent = AccentSms,
+        stepTag = "onboarding_step_sms",
+        title = "Keep track of your bundles",
+        lead = "My Bingwa reads only Safaricom bundle messages so it can notify you " +
+            "when your bundles are running low and automatically update your bundle " +
+            "status. We never upload or store your SMS. Everything stays on your phone.",
+        bullets = listOf(
+            "Only Safaricom bundle and balance messages are read.",
+            "Personal messages are ignored and never opened.",
+            "Nothing is uploaded — no server ever sees your SMS."
+        ),
+        privacyNote = "You can change this any time in Settings.",
+        granted = granted,
+        grantedText = "Bundle tracking is on. Everything stays on this phone.",
+        deniedText = "No problem. My Bingwa still works — bundle tracking simply " +
+            "stays off until you turn it on in Settings.",
+        asked = asked,
+        reducedMotion = reducedMotion
+    )
+}
+
+@Composable
+private fun PermissionStep(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    accent: Color,
+    stepTag: String,
     title: String,
-    body: String,
+    lead: String,
+    bullets: List<String>,
+    privacyNote: String,
     granted: Boolean,
-    onAllow: () -> Unit
+    grantedText: String,
+    deniedText: String,
+    asked: Boolean,
+    reducedMotion: Boolean
 ) {
-    GlassSurface(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(enabled = !granted, onClick = onAllow)
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (granted) Icons.Rounded.CheckCircle else icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp)
+    val intro = remember { Animatable(if (reducedMotion) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        if (!reducedMotion) intro.animateTo(1f, tween(700, easing = FastOutSlowInEasing))
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .testTag(stepTag),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(16.dp))
+
+        StaggeredItem(intro.value, 0.05f) {
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.16f))
+                    .border(1.dp, accent.copy(alpha = 0.35f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(34.dp))
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        StaggeredItem(intro.value, 0.14f) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center
             )
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+        }
+
+        Spacer(Modifier.height(18.dp))
+
+        StaggeredItem(intro.value, 0.24f) {
+            GlassSurface(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    // Explanations are START-aligned paragraphs (CLAUDE.md §6).
+                    Text(
+                        text = lead,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    bullets.forEach { line ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(top = 7.dp)
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(accent)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = line,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Rounded.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = privacyNote,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // Outcome line. Granted is confirmed; a decline is acknowledged calmly and
+        // is never repeated or judged.
+        if (granted || asked) {
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("${stepTag}_status"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (granted) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
+                    contentDescription = null,
+                    tint = if (granted) BrandDeepGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
                 )
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = if (granted) "Allowed" else body,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = if (granted) grantedText else deniedText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (granted) BrandDeepGreen else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
+
+        Spacer(Modifier.height(20.dp))
     }
 }
+
+// ---------------------------------------------------------------------------
+// Final step — Personal Setup: name slides from left, phone from right.
+// ---------------------------------------------------------------------------
 
 @Composable
 private fun StepSetup(
@@ -780,7 +924,8 @@ private fun StepSetup(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .testTag("onboarding_step_setup"),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(12.dp))
@@ -913,8 +1058,8 @@ private fun SlideIn(fromLeft: Boolean, reducedMotion: Boolean, content: @Composa
 }
 
 @Composable
-private fun StepProgress(step: Int) {
-    val target = step.toFloat() / TOTAL_STEPS
+private fun StepProgress(step: Int, total: Int) {
+    val target = step.toFloat() / total.coerceAtLeast(1)
     val fill by animateFloatAsState(target, tween(500, easing = FastOutSlowInEasing), label = "progress")
     Box(
         modifier = Modifier
@@ -936,9 +1081,14 @@ private fun StepProgress(step: Int) {
 }
 
 @Composable
-private fun PrimaryCtaButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+private fun PrimaryCtaButton(
+    text: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(56.dp)
             .graphicsLayer { alpha = if (enabled) 1f else 0.6f }

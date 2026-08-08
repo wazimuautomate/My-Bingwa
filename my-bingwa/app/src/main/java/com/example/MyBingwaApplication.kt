@@ -9,6 +9,16 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkRequest
+import com.example.core.notifications.AppNotifier
+import com.example.core.notifications.engine.DataStoreNotificationStateStore
+import com.example.core.notifications.engine.DataStoreNotificationTemplateStore
+import com.example.core.notifications.engine.DataStoreRemoteNotificationStore
+import com.example.core.notifications.engine.NotificationEngine
+import com.example.core.notifications.engine.NotificationTemplateProvider
+import com.example.core.notifications.engine.RemoteNotificationStore
+import com.example.core.personalization.DataStorePersonalizationStore
+import com.example.core.personalization.PersonalizationStore
+import com.example.core.sms.SmsRuleProvider
 import com.example.data.catalogue.AndroidRemoteBillboardSource
 import com.example.data.catalogue.AndroidRemoteCatalogueSource
 import com.example.data.config.AndroidRemoteConfigSource
@@ -17,8 +27,18 @@ import com.example.data.fake.FakeBingwaRepositoryImpl
 import com.example.data.payment.PaymentGatewayProvider
 import com.example.data.payment.UnavailablePaymentGateway
 import com.example.data.persistence.LocalStore
+import com.example.data.remote.AndroidRemoteNotificationSource
+import com.example.data.remote.AndroidRemoteNotificationTemplateSource
+import com.example.data.remote.AndroidRemoteSmsRuleSource
+import com.example.data.remote.AndroidRemoteSyncManifestSource
 import com.example.data.sync.CatalogueSyncWorker
 import com.example.data.sync.EngagementNotificationWorker
+import com.example.data.sync.ContentSyncers
+import com.example.data.sync.DataStoreSyncMetadataStore
+import com.example.data.sync.RemoteSyncManifestSource
+import com.example.data.sync.SyncMetadataStore
+import com.example.data.sync.SyncOrchestrator
+import com.example.data.sync.SyncOrchestratorProvider
 import java.util.concurrent.TimeUnit
 
 /**
@@ -27,7 +47,7 @@ import java.util.concurrent.TimeUnit
  * repository — the same StateFlows and the same on-device [LocalStore] — instead of
  * two divergent copies. It also schedules the periodic catalogue/config sync.
  */
-class MyBingwaApplication : Application() {
+class MyBingwaApplication : Application(), SyncOrchestratorProvider {
 
     /**
      * The app's one repository. Built lazily on first access (UI start or the sync
@@ -37,6 +57,82 @@ class MyBingwaApplication : Application() {
      * Daraja credentials never live in the app.
      */
     val repository: BingwaRepository by lazy { buildRepository() }
+
+    /** True when a usable https base URL is configured; server syncing needs nothing else. */
+    private val hasBaseUrl: Boolean
+        get() = BuildConfig.PAYMENTS_BASE_URL.isNotBlank() &&
+            BuildConfig.PAYMENTS_BASE_URL.startsWith("https://")
+
+    // --- Notification engine ------------------------------------------------------
+    // Built lazily so nothing here touches disk or the main thread during onCreate.
+
+    /** Cached, server-synced notification wording; the in-APK seed is the floor. */
+    val notificationTemplateProvider: NotificationTemplateProvider by lazy {
+        NotificationTemplateProvider(DataStoreNotificationTemplateStore(applicationContext))
+    }
+
+    /** Admin-published messages, cached so they still display once offline. */
+    val remoteNotificationStore: RemoteNotificationStore by lazy {
+        DataStoreRemoteNotificationStore(applicationContext)
+    }
+
+    /**
+     * The one notification entry point. Owns cooldowns, quiet hours, the daily cap
+     * and de-duplication, so no caller can accidentally spam the customer.
+     */
+    val notificationEngine: NotificationEngine by lazy {
+        NotificationEngine(
+            context = applicationContext,
+            notifier = AppNotifier(applicationContext),
+            stateStore = DataStoreNotificationStateStore(applicationContext),
+            templateProvider = notificationTemplateProvider
+        )
+    }
+
+    /**
+     * Server-taught Safaricom SMS rules. Process-wide so the manifest-registered
+     * [com.example.notifications.SmsDeliveryReceiver] finds a warm in-memory cache
+     * and can classify a message without waiting on disk.
+     */
+    val smsRuleProvider: SmsRuleProvider by lazy { SmsRuleProvider.shared(applicationContext) }
+
+    /** On-device purchase behaviour. Never uploaded; disappears with app data. */
+    val personalizationStore: PersonalizationStore by lazy {
+        DataStorePersonalizationStore(applicationContext)
+    }
+
+    /**
+     * Drives every sync. Nullable by contract: with no base URL there is no manifest
+     * source, and the orchestrator falls back to throttled full syncs of whatever
+     * sources exist — it still never wipes cached content.
+     */
+    override val syncOrchestrator: SyncOrchestrator? by lazy {
+        SyncOrchestrator(
+            targets = repository,
+            // The SAME store the ForceSyncWatcher reads, so the watcher compares against
+            // the versions the orchestrator actually committed.
+            metadataStore = syncMetadataStore,
+            manifestSource = manifestSource
+        )
+    }
+
+    /** Tiny fingerprint document; polled while foreground to catch an admin publish. */
+    val manifestSource: RemoteSyncManifestSource? by lazy {
+        if (hasBaseUrl) {
+            AndroidRemoteSyncManifestSource(
+                baseUrl = BuildConfig.PAYMENTS_BASE_URL,
+                appKey = BuildConfig.PAYMENTS_APP_KEY,
+                enableLogging = BuildConfig.DEBUG
+            )
+        } else {
+            null
+        }
+    }
+
+    /** Metadata store shared with [syncOrchestrator] so the watcher sees the same versions. */
+    val syncMetadataStore: SyncMetadataStore by lazy {
+        DataStoreSyncMetadataStore(applicationContext)
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -110,6 +206,35 @@ class MyBingwaApplication : Application() {
                     baseUrl = baseUrl,
                     appKey = appKey,
                     enableLogging = BuildConfig.DEBUG
+                )
+            } else {
+                null
+            },
+            // Notification wording, admin-published messages and Safaricom SMS rules.
+            // These are what make the app teachable from the dashboard without an app
+            // release. No base URL → left null, and the app runs on its in-APK seeds.
+            contentSyncers = if (hasBaseUrl) {
+                val baseUrl = BuildConfig.PAYMENTS_BASE_URL
+                val appKey = BuildConfig.PAYMENTS_APP_KEY
+                ContentSyncers(
+                    templateProvider = notificationTemplateProvider,
+                    templateSource = AndroidRemoteNotificationTemplateSource(
+                        baseUrl = baseUrl,
+                        appKey = appKey,
+                        enableLogging = BuildConfig.DEBUG
+                    ),
+                    notificationStore = remoteNotificationStore,
+                    notificationSource = AndroidRemoteNotificationSource(
+                        baseUrl = baseUrl,
+                        appKey = appKey,
+                        enableLogging = BuildConfig.DEBUG
+                    ),
+                    smsRuleProvider = smsRuleProvider,
+                    smsRuleSource = AndroidRemoteSmsRuleSource(
+                        baseUrl = baseUrl,
+                        appKey = appKey,
+                        enableLogging = BuildConfig.DEBUG
+                    )
                 )
             } else {
                 null

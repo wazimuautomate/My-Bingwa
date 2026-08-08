@@ -34,7 +34,7 @@ android {
 
     // Where the DEBUG build's update check reads its manifest. Non-secret. See
     // update.json at the repo root and core/update/UpdateChecker.kt. Only consulted
-    // when UPDATE_CHECK_ENABLED is true (debug only — see buildTypes below).
+    // when GITHUB_UPDATER_ENABLED is true (debug only — see buildTypes below).
     // Overridable via the `updateManifestUrl` Gradle property or the
     // UPDATE_MANIFEST_URL env var.
     val updateManifestUrl = (project.findProperty("updateManifestUrl") as String?)?.takeIf { it.isNotBlank() }
@@ -72,6 +72,9 @@ android {
     create("direct") {
       dimension = "distribution"
       buildConfigField("boolean", "SMS_DETECTION_AVAILABLE", "true")
+      // The direct channel IS the GitHub channel: sideloaded users have no store
+      // to update them, so the in-app GitHub updater is their only upgrade path.
+      buildConfigField("boolean", "GITHUB_UPDATER_ENABLED", "true")
     }
     // Google Play build. Identical applicationId and signing identity as `direct`,
     // so the two channels are update-compatible. It keeps RECEIVE_SMS by owner
@@ -85,6 +88,12 @@ android {
     create("play") {
       dimension = "distribution"
       buildConfigField("boolean", "SMS_DETECTION_AVAILABLE", "true")
+      // Play distribution updates itself natively. Shipping a second, in-app
+      // update channel there is redundant and violates Play policy, so the
+      // GitHub updater is compiled out of this flavour. The implementation is
+      // retained (not deleted) behind this flag so it can be re-enabled if
+      // distribution ever changes.
+      buildConfigField("boolean", "GITHUB_UPDATER_ENABLED", "false")
     }
   }
 
@@ -113,7 +122,7 @@ android {
       // REQUEST_INSTALL_PACKAGES) and breach Play's distribution policy. With this
       // false, MainActivity skips the start-up check and Settings hides the
       // "Check for updates" control entirely.
-      buildConfigField("boolean", "UPDATE_CHECK_ENABLED", "false")
+      buildConfigField("boolean", "GITHUB_UPDATER_ENABLED", "false")
     }
     // Debug is installable alongside release: a distinct application-id suffix and
     // the "My Bingwa Dev" launcher label. Uses AGP's auto-generated debug
@@ -122,9 +131,10 @@ android {
       applicationIdSuffix = ".debug"
       versionNameSuffix = "-debug"
       manifestPlaceholders["appLabel"] = "My Bingwa Dev"
-      // Keep the update check on the debug APK so development installs can still
-      // pull a newer test build from update.json.
-      buildConfigField("boolean", "UPDATE_CHECK_ENABLED", "true")
+      // A buildType field overrides the flavour field, so debug builds always keep
+      // the GitHub updater — including the `play` debug variant, which testers
+      // install by sideloading and therefore still need an in-app upgrade path.
+      buildConfigField("boolean", "GITHUB_UPDATER_ENABLED", "true")
     }
   }
   compileOptions {
@@ -157,6 +167,12 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.core.splashscreen)
+  // Billboard media: Coil renders synced billboard images and animated GIFs from
+  // its own on-disk cache, so a slide that was fetched once keeps rendering
+  // OFFLINE. coil-gif adds the animated-GIF decoders (ImageDecoder on API 28+,
+  // Movie below it). No network is required for a cache hit.
+  implementation(libs.coil.compose)
+  implementation(libs.coil.gif)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)

@@ -8,11 +8,21 @@ package com.example.core.notifications
  * [TemplateSet.version]) via [RemoteTemplateSync] — that is the single seam
  * where the backend plugs in.
  */
+@Suppress("DEPRECATION")
+@Deprecated(
+    message = "Superseded by com.example.core.sms.SmsRuleProvider.",
+    level = DeprecationLevel.WARNING
+)
 interface TemplateProvider {
     fun current(): TemplateSet
 }
 
 /** Returns the seed templates shipped in the APK. Always available, offline. */
+@Suppress("DEPRECATION")
+@Deprecated(
+    message = "Superseded by com.example.core.sms.SmsRuleProvider (seed + server-synced cache).",
+    level = DeprecationLevel.WARNING
+)
 class LocalSeedTemplateProvider : TemplateProvider {
     override fun current(): TemplateSet = DefaultTemplates.SEED
 }
@@ -29,6 +39,11 @@ class LocalSeedTemplateProvider : TemplateProvider {
  * Kept as an interface only so SMS logic stays framework-light and this scope
  * ships no networking.
  */
+@Suppress("DEPRECATION")
+@Deprecated(
+    message = "Superseded by com.example.core.sms.RemoteSmsRuleSource.",
+    level = DeprecationLevel.WARNING
+)
 interface RemoteTemplateSync {
     /** Fetch the latest templates, or null when unavailable/offline. */
     suspend fun fetchLatest(): TemplateSet?

@@ -6,9 +6,14 @@ import com.example.core.model.OfferDailyState
 import com.example.core.model.OfferItem
 import com.example.core.model.Promotion
 import com.example.core.model.PurchaseRecord
+import com.example.core.personalization.BehaviourProfile
+import com.example.core.personalization.PersonalBadge
+import com.example.core.personalization.suggestedPayerNumber
+import com.example.core.personalization.suggestedRecipients
 import com.example.data.fake.BingwaRepository
 import com.example.data.fake.OfferFilterState
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -24,7 +29,20 @@ data class HomeUiState(
     val sections: HomeSections = HomeSections(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList()),
     val purchases: List<PurchaseRecord> = emptyList(),
     val recipientNumber: String = "",
-    val nowMillis: Long = 0L
+    val nowMillis: Long = 0L,
+    /**
+     * At most a couple of quiet personal labels ("Buy again", "Your usual
+     * bundle", "Bought yesterday"), keyed by offer id. Always empty until this
+     * installation has real local purchase history, so a fresh install renders
+     * exactly as before. Derived on-device only — never uploaded (CLAUDE.md §10).
+     */
+    val personalBadges: Map<String, PersonalBadge> = emptyMap(),
+    /**
+     * The learned on-device behaviour profile behind [personalBadges] and the
+     * section ordering. Exposed so checkout can pre-fill the usual M-Pesa payment
+     * number and recent bundle recipients without re-deriving anything.
+     */
+    val behaviourProfile: BehaviourProfile = BehaviourProfile.EMPTY
 ) {
     val hasAnyContent: Boolean
         get() = sections.popular.isNotEmpty() || sections.favourites.isNotEmpty() ||
@@ -53,10 +71,19 @@ data class OffersUiState(
  * derives immutable UI state from the repository flows and forwards user intents;
  * it holds no mutable catalogue truth of its own. A [clock] is injected so the
  * daily-purchase and promotion logic is deterministic under test.
+ *
+ * [behaviourProfileFlow] carries the on-device personalization profile. This
+ * ViewModel deliberately does **not** read the personalization store itself: the
+ * caller owns construction and background refresh, and passes the profile in.
+ * It defaults to a flow of [BehaviourProfile.EMPTY], which means "nothing learned
+ * yet" and reproduces the exact pre-personalization Home ordering, so existing
+ * construction sites and tests are unaffected.
  */
 class CatalogueViewModel(
     private val repository: BingwaRepository,
-    private val clock: () -> Long = { System.currentTimeMillis() }
+    private val clock: () -> Long = { System.currentTimeMillis() },
+    private val behaviourProfileFlow: StateFlow<BehaviourProfile> =
+        MutableStateFlow(BehaviourProfile.EMPTY)
 ) : ViewModel() {
 
     // isOffline + catalogueLoading folded into one flow so each UI state combines
@@ -64,25 +91,45 @@ class CatalogueViewModel(
     private val connectivity: Flow<Pair<Boolean, Boolean>> =
         combine(repository.isOffline, repository.catalogueLoading) { offline, loading -> offline to loading }
 
+    // Home additionally needs the on-device behaviour profile. It is folded into
+    // the same slot rather than added as a sixth flow, and deliberately NOT into
+    // [connectivity] — the Offers screen is not personalised, so a profile refresh
+    // must not make it recompute (CLAUDE.md §11).
+    private val homeSignals: Flow<Triple<Boolean, Boolean, BehaviourProfile>> =
+        combine(
+            repository.isOffline,
+            repository.catalogueLoading,
+            behaviourProfileFlow
+        ) { offline, loading, behaviour -> Triple(offline, loading, behaviour) }
+
     val homeUiState: StateFlow<HomeUiState> =
         combine(
             repository.offers,
             repository.promotions,
             repository.purchases,
             repository.userProfile,
-            connectivity
+            homeSignals
         ) { offers, promotions, purchases, profile, flags ->
-            val (offline, loading) = flags
+            val offline = flags.first
+            val loading = flags.second
+            val behaviour = flags.third
             val now = clock()
+            val personalized = personalizeHomeSections(
+                deriveHomeSections(offers, purchases, now),
+                behaviour,
+                now
+            )
             HomeUiState(
                 loading = loading && offers.isEmpty(),
                 greetingName = profile.name,
                 isOffline = offline,
                 promotions = selectPromotions(promotions, offers, now, seed = nairobiDayIndex(now)),
-                sections = deriveHomeSections(offers, purchases, now),
+                sections = personalized.sections,
                 purchases = purchases,
                 recipientNumber = profile.primaryNumber,
-                nowMillis = now
+                nowMillis = now,
+                personalBadges = personalized.badges,
+                behaviourProfile = behaviour
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
@@ -124,4 +171,21 @@ class CatalogueViewModel(
     /** Daily-purchase presentation for an offer against the profile's own number. */
     fun dailyState(offer: OfferItem, state: HomeUiState): OfferDailyState =
         dailyStateFor(offer, state.purchases, state.recipientNumber, state.nowMillis)
+
+    // --- On-device personalization (never leaves the device) ---------------
+
+    /** The current learned behaviour profile. */
+    val behaviourProfile: BehaviourProfile get() = behaviourProfileFlow.value
+
+    /**
+     * The M-Pesa payment number to pre-fill at checkout — the one this
+     * installation pays with most — falling back to [fallback] (normally the
+     * customer's own primary number) when nothing has been learned yet.
+     */
+    fun suggestedPayerNumber(fallback: String = ""): String =
+        behaviourProfileFlow.value.suggestedPayerNumber(fallback)
+
+    /** Bundle recipient numbers to offer as quick chips, most-used first. */
+    fun suggestedRecipients(limit: Int = 3): List<String> =
+        behaviourProfileFlow.value.suggestedRecipients(limit)
 }

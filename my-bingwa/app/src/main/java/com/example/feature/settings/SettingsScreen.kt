@@ -372,7 +372,7 @@ fun SettingsScreen(
                 // distributed and updated by Google Play, so it neither fetches
                 // update.json nor offers to install an APK itself — the whole control is
                 // absent rather than present-but-useless.
-                if (BuildConfig.UPDATE_CHECK_ENABLED) {
+                if (BuildConfig.GITHUB_UPDATER_ENABLED) {
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Button(

@@ -104,6 +104,11 @@ fun PurchaseBottomSheet(
     offer: OfferItem,
     userPrimaryNumber: String,
     recentRecipients: List<String>,
+    // The M-Pesa number this customer actually pays with, learned on-device from
+    // their own history. Customers rarely change it, so pre-filling it saves the
+    // most-retyped field in checkout. Blank (no history yet, or a fresh install)
+    // falls back to the primary number exactly as before.
+    preferredPayerNumber: String = "",
     isOffline: Boolean,
     onExecuteStkPush: suspend (OfferItem, String, String, String, Boolean) -> PurchaseRecord,
     onExecuteOfflinePayment: suspend (OfferItem, String, String, Boolean, String?) -> PurchaseRecord,
@@ -117,7 +122,9 @@ fun PurchaseBottomSheet(
     var purchaseStep by rememberSaveable { mutableStateOf(STEP_RECIPIENT) }
     var isForSelf by rememberSaveable { mutableStateOf(true) }
     var recipientNumber by rememberSaveable { mutableStateOf(userPrimaryNumber) }
-    var payerNumber by rememberSaveable { mutableStateOf(userPrimaryNumber) }
+    var payerNumber by rememberSaveable {
+        mutableStateOf(preferredPayerNumber.ifBlank { userPrimaryNumber })
+    }
 
     var lastRecord by remember { mutableStateOf<PurchaseRecord?>(null) }
     var isLoading by remember { mutableStateOf(false) }

@@ -28,6 +28,13 @@ object NotificationChannels {
     /** App-update news. Low importance. */
     const val UPDATES = "updates"
 
+    /**
+     * Admin-published general messages from My Bingwa (the assistant engine's
+     * GENERAL category). Low importance — never urgent, never a payment update,
+     * so it stays out of the way and can be silenced on its own.
+     */
+    const val NEWS = "news"
+
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -68,6 +75,16 @@ object NotificationChannels {
             enableVibration(false)
         }
 
-        manager.createNotificationChannels(listOf(transactions, offers, reminders, updates))
+        val news = NotificationChannel(
+            NEWS,
+            "News from My Bingwa",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Occasional messages from My Bingwa. Quiet by default."
+            setSound(null, null)
+            enableVibration(false)
+        }
+
+        manager.createNotificationChannels(listOf(transactions, offers, reminders, updates, news))
     }
 }
