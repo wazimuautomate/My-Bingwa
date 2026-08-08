@@ -1341,3 +1341,22 @@ destinations.
   cPanel. The local copy says `4953696` (the DEV Till per the 2026-07-26 entry) while the admin
   publishes `4063396` as the PROD offline Till. Confirm in cPanel File Manager that `party_b` is
   the Till that should COLLECT buy-for-myself money before any more live payments.
+
+- **VERIFICATION RESULT (2026-08-08, branch `feature/server-production-release`):**
+  - `Server checks` GREEN @ `f8671cd` (run 31261283432): every PHP file parsed on 8.1,
+    **PASS: 154  FAIL: 0**, migration lint and committed-secret check passed. Covers the new
+    `offer_price()` and the rewritten `stk.php`.
+  - `Feature debug build` RED @ `f8671cd`, then GREEN @ `d5c26eb` (run 31261631165):
+    `assembleDirectDebug` + `./gradlew test lint` both BUILD SUCCESSFUL. The one red was
+    `RemoteConfigTest.defaults_whenNoConfigSource_areAlwaysAvailableOffline`, which asserted the
+    exact behaviour that was just fixed (a blank config still being handed to the checkout). It was
+    CORRECTED to assert the intended behaviour, not weakened — see commit `d5c26eb`.
+  - Local (`ANDROID_HOME` set to the existing SDK; no Android Studio needed):
+    `testDirectDebugUnitTest` and `testPlayDebugUnitTest` **157 tests each, 0 failures**, plus
+    `compileDirectReleaseKotlin` + `compilePlayReleaseKotlin` BUILD SUCCESSFUL — the RELEASE
+    variants are not compiled by the CI debug gate, so the `UPDATE_CHECK_ENABLED = false` path
+    was verified here.
+  - `gh` was authenticated as `TricretA` (no push rights); switched the active account to
+    `wazimuautomate` to push. Worth remembering for future sessions.
+- **NOT verified:** no physical-phone acceptance run, and no live payment (a real STK would move
+  real money). `main` NOT merged and no tag pushed — the owner asked for the report first.
