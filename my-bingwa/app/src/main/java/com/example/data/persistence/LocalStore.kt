@@ -72,6 +72,14 @@ data class PersistedState(
      * deserialise — they simply retry the registration once.
      */
     val customerRegistered: Boolean = false,
+    /**
+     * When the Play rating card was last launched for this install (0 = never).
+     * Persisted so the 60-day gap in [com.example.core.review.ReviewPolicy] survives
+     * a restart — the whole point of the limit is that it is not per-session. A new
+     * field with a default, so older snapshots deserialise and simply become
+     * eligible once they meet the purchase rule.
+     */
+    val lastReviewPromptMillis: Long = 0L,
     val initialized: Boolean = false
 )
 

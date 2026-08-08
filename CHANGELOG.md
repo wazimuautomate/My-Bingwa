@@ -10,7 +10,7 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ## [Unreleased]
 
-## [1.0.5] - 2026-08-08
+## [1.0.6] - 2026-08-08
 
 ### Added
 
@@ -43,6 +43,20 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 - **Both numbers on the review step are tappable.** Seeing a wrong digit at the moment of
   paying is exactly when it needs fixing; hunting for "Change details" below the fold was
   a step too many.
+- **Ask for a Play Store rating, from inside the app.** After a purchase the customer
+  actually received, Google's own rating card is shown over the app: they rate, write a
+  comment and submit without ever leaving My Bingwa, and it lands on the Play listing.
+  Three rules govern it (`core/review/ReviewPolicy.kt`), and each one exists to avoid a
+  one-star review: only after a payment that succeeded, never before the second received
+  purchase, and at most once every 60 days. It is deliberately **not** immediate — a
+  short settle delay lets the M-Pesa SMS, the caller-ID summary and the Safaricom
+  confirmation land first, because a card in that pile-up is dismissed unread — and it
+  never appears over the open checkout sheet. Google never reports whether the card
+  actually displayed, so the attempt is recorded either way rather than re-asking on the
+  assumption it did not. There is no "Do you like the app?" pre-question: filtering who
+  sees the card is against Play policy. The Play library ships on the Play flavour only;
+  the direct APK, where the card cannot work at all, falls back to opening the Play
+  listing under the same 60-day rule.
 - **A customer register, and a Customers page in the admin.** The app sends the name and
   Safaricom number typed at onboarding to the seller's backend **once** per install
   (`register_user.php`), so the owner knows who their customers are. It is the only
@@ -70,6 +84,14 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 - **Settings no longer offers the "Push Notifications" or "Reads Safaricom SMS"
   toggles.** With both permissions required and granted during onboarding, a switch the
   app would immediately override is worse than no switch at all.
+- **Google Play is the only update channel for a shipped build.** The `release` build
+  type sets `GITHUB_UPDATER_ENABLED` false and a build type always wins over a product
+  flavour, so **no** production artifact — direct APK or Play AAB — fetches `update.json`,
+  shows "Check for updates", posts the update notification, renders the Home update
+  billboard or raises the force-update gate. Only debug builds do. A second in-app update
+  channel alongside Play is redundant at best and grounds for rejection at worst. The
+  implementation is kept behind the flag rather than deleted, so it can come back if
+  distribution ever changes.
 - **The in-app GitHub update check is now a debug-build feature only.** Shipped builds
   no longer fetch `update.json`, no longer show the "Check for updates" control, the
   update notification, the Home "update available" billboard or the force-update gate.

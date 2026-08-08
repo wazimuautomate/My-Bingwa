@@ -1,10 +1,10 @@
 {
-  "latestVersionCode": 6,
-  "latestVersionName": "1.0.5",
+  "latestVersionCode": 7,
+  "latestVersionName": "1.0.6",
   "minSupportedVersionCode": 1,
   "updateSource": "github",
-  "apkUrl": "https://github.com/wazimuautomate/My-Bingwa/releases/download/v1.0.5/My-Bingwa-v1.0.5-direct.apk",
-  "apkSha256": "REPLACE_WITH_v1.0.5_DIRECT_APK_SHA256",
+  "apkUrl": "https://github.com/wazimuautomate/My-Bingwa/releases/download/v1.0.6/My-Bingwa-v1.0.6-direct.apk",
+  "apkSha256": "REPLACE_WITH_v1.0.6_DIRECT_APK_SHA256",
   "releaseNotes": "Offers now show the hours Safaricom sells them, and the app tells you when a number has already had a once-a-day bundle today. Notifications and bundle messages are set up during onboarding.",
   "mandatory": false
 }

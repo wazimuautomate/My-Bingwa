@@ -23,8 +23,8 @@ android {
     // GitHub and Play channels and updates supersede correctly (same signing
     // identity — see signingConfigs + docs/RELEASE_PLAYSTORE.md). Bump BOTH for
     // every release; versionCode must only ever increase.
-    versionCode = 6
-    versionName = "1.0.5"
+    versionCode = 7
+    versionName = "1.0.6"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -111,8 +111,13 @@ android {
     create("direct") {
       dimension = "distribution"
       buildConfigField("boolean", "SMS_DETECTION_AVAILABLE", "true")
-      // The direct channel IS the GitHub channel: sideloaded users have no store
-      // to update them, so the in-app GitHub updater is their only upgrade path.
+      // The GitHub updater is a DEBUG-ONLY development convenience, on both
+      // flavours. This flavour default is what a `directDebug` build gets; the
+      // `release` build type below overrides it to false, and a build type always
+      // wins over a flavour — so no shipped APK or AAB, direct or Play, ever
+      // fetches update.json or offers to install anything. Google Play is the only
+      // update channel for a production build, which is both what Play policy
+      // requires and what keeps the app out of a rejection.
       buildConfigField("boolean", "GITHUB_UPDATER_ENABLED", "true")
     }
     // Google Play build. Identical applicationId and signing identity as `direct`,
@@ -236,6 +241,12 @@ dependencies {
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
   implementation(libs.retrofit)
+  // Google Play in-app review, PLAY FLAVOUR ONLY. The card is drawn by the Play
+  // Store over our activity, so the customer rates and comments without leaving the
+  // app. It only works for an install the Play Store made, which is exactly why the
+  // direct flavour does not carry the library at all — it has its own
+  // AppReviewLauncher that opens the Play listing instead (src/direct).
+  "playImplementation"("com.google.android.play:review-ktx:2.0.2")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

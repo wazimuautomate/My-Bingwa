@@ -241,6 +241,11 @@ class FakeBingwaRepositoryImpl(
     // memory and persisted, so the registration happens exactly once per install.
     private val _customerRegistered = MutableStateFlow(false)
 
+    // When the Play rating card was last launched. Persisted, so the 60-day gap is
+    // a real gap and not merely a per-session one.
+    private val _lastReviewPromptMillis = MutableStateFlow(0L)
+    override val lastReviewPromptMillis: StateFlow<Long> = _lastReviewPromptMillis.asStateFlow()
+
     private val _connectionState = MutableStateFlow(ConnectionState.NONE)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
@@ -291,6 +296,7 @@ class FakeBingwaRepositoryImpl(
         _recentRecipients.value = s.recentRecipients
         _catalogueVersion.value = s.catalogueVersion
         _customerRegistered.value = s.customerRegistered
+        _lastReviewPromptMillis.value = s.lastReviewPromptMillis
         // Previously synced billboards are the offline source of truth; fall back to the
         // seeded promotions only when nothing has been synced yet. No per-user flags to
         // merge (unlike offers), so this is a plain restore.
@@ -352,6 +358,7 @@ class FakeBingwaRepositoryImpl(
         // offline and across process death (no per-user flags to strip).
         promotions = _promotions.value,
         customerRegistered = _customerRegistered.value,
+        lastReviewPromptMillis = _lastReviewPromptMillis.value,
         initialized = true
     )
 
@@ -687,6 +694,11 @@ class FakeBingwaRepositoryImpl(
      * This is the only customer detail that ever leaves the device. Purchases,
      * favourites and behaviour stay on the phone (CLAUDE.md §10).
      */
+    override fun markReviewPrompted(nowMillis: Long) {
+        _lastReviewPromptMillis.value = nowMillis
+        persist()
+    }
+
     override suspend fun registerCustomer() {
         val source = customerSource ?: return
         // Never race the restore: registering before the on-disk snapshot has loaded
@@ -915,6 +927,7 @@ class FakeBingwaRepositoryImpl(
         _offers.update { list -> list.map { it.copy(isFavourite = false, isBoughtToday = false) } }
         // Clearing local data resets the install, so the next onboarding registers again.
         _customerRegistered.value = false
+        _lastReviewPromptMillis.value = 0L
         _notifications.value = emptyList()
         _recentRecipients.value = emptyList()
         _activeOrder.value = null

@@ -58,6 +58,8 @@ import com.example.core.notifications.engine.NotificationCategory
 import com.example.core.notifications.engine.NotificationPersonalization
 import com.example.core.personalization.BehaviourProfile
 import com.example.core.personalization.PersonalizationEngine
+import com.example.core.review.AppReviewLauncher
+import com.example.core.review.ReviewPolicy
 import com.example.core.personalization.suggestedPayerNumber
 import com.example.core.sms.SmsEventType
 import com.example.core.sms.SmsExtraction
@@ -809,7 +811,40 @@ fun MyBingwaApp(
                 }
             }
 
-            // Purchase flow bottom sheet overlay (Phase 4 owns the state machine).
+            // --- Ask for a Play rating, after a purchase that actually worked ------------
+    //
+    // Deliberately not immediate. The seconds right after paying are the noisiest on
+    // the phone: M-Pesa's own SMS lands, a caller-ID app summarises the payment,
+    // Safaricom confirms the bundle. A rating card in that pile-up is dismissed
+    // without being read, so this waits for the noise to pass — a few seconds, not
+    // minutes, while the customer is still on the screen where the good thing
+    // happened — and waits for the purchase sheet to be closed so the card is never
+    // stacked on top of a modal.
+    //
+    // ReviewPolicy decides IF: two received purchases and at most once every 60
+    // days. Google quotas the card too, but invisibly — the API never reports
+    // whether it appeared — so the attempt is recorded either way rather than
+    // re-asking on the assumption it did not show.
+    val lastReviewPrompt by repository.lastReviewPromptMillis.collectAsState()
+    val newestReceivedId = purchases
+        .firstOrNull { it.status == com.example.core.model.PaymentStatus.RECEIVED }?.id
+
+    LaunchedEffect(newestReceivedId, activeOfferForPurchase == null, lastReviewPrompt) {
+        val activity = activity ?: return@LaunchedEffect
+        if (newestReceivedId == null) return@LaunchedEffect
+        // Never over the open checkout sheet.
+        if (activeOfferForPurchase != null) return@LaunchedEffect
+        if (!ReviewPolicy.shouldPrompt(purchases, lastReviewPrompt, System.currentTimeMillis())) {
+            return@LaunchedEffect
+        }
+        kotlinx.coroutines.delay(ReviewPolicy.SETTLE_DELAY_MILLIS)
+        // Re-check after the wait: the customer may have started another purchase.
+        if (activeOfferForPurchase != null) return@LaunchedEffect
+        repository.markReviewPrompted(System.currentTimeMillis())
+        AppReviewLauncher.launch(activity)
+    }
+
+    // Purchase flow bottom sheet overlay (Phase 4 owns the state machine).
             activeOfferForPurchase?.let { snapshot ->
                 val offer = liveOffer(snapshot)
                 PurchaseBottomSheet(

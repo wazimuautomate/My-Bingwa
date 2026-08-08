@@ -103,6 +103,17 @@ interface BingwaRepository : SyncTargets {
      * the device (CLAUDE.md §10). A failure is silent and retried on a later launch.
      */
     suspend fun registerCustomer()
+
+    /** When the Play rating card was last launched for this install (0 = never). */
+    val lastReviewPromptMillis: StateFlow<Long>
+
+    /**
+     * Record that the rating card was launched. Called whether or not the card
+     * actually appeared: Google never tells us, and a burned quota slot counts
+     * either way, so re-asking on the assumption it did not show would be exactly
+     * the nagging the limit exists to prevent.
+     */
+    fun markReviewPrompted(nowMillis: Long)
     /** Reflect the real OS notification-permission state into the profile (persisted). */
     fun setNotificationsEnabled(enabled: Boolean)
     /** Reflect the real OS RECEIVE_SMS grant into the profile (persisted). */

@@ -1,11 +1,11 @@
-# My Bingwa v1.0.5 — release pack
+# My Bingwa v1.0.6 — release pack
 
-**versionName** `1.0.5` · **versionCode** `6` · **applicationId** `com.bingwasokoni`
+**versionName** `1.0.6` · **versionCode** `7` · **applicationId** `com.bingwasokoni`
 
 > **Build status: artifacts not yet produced.** The signing key lives only in GitHub
 > Actions secrets — no keystore exists on any local machine — so the `.aab` and the
 > signed `.apk` for this version are produced by the "Release (signed)" workflow from
-> the `v1.0.5` tag, exactly as v1.0.3 was. This folder holds the release notes and the
+> the `v1.0.6` tag, exactly as v1.0.3 was. This folder holds the release notes and the
 > checklist; drop the CI artifacts in beside this file when the run finishes.
 
 ## What ships in this version
@@ -123,6 +123,45 @@ number, filters by date, removes customers singly or via select-all, and exports
 current filter to CSV. Removing a customer deletes only the seller's copy — their app
 keeps working and re-registers if they reinstall.
 
+### 7. In-app Play Store rating
+
+After a purchase the customer actually received, Google's rating card appears **over**
+the app — they rate, write a comment and submit without leaving My Bingwa, and the
+review lands on the Play listing.
+
+It is governed by `core/review/ReviewPolicy.kt`:
+
+| Rule | Why |
+|---|---|
+| Only after a payment that succeeded | Asking someone whose payment just failed is how apps earn one-star reviews |
+| Not before the 2nd received purchase | A returning customer has an opinion worth writing down |
+| At most once every 60 days | Google quotas the card invisibly; our stricter limit makes the one attempt count |
+| A few seconds' delay, never immediate | The M-Pesa SMS, the caller-ID summary and the Safaricom confirmation all land first — a card in that pile-up is dismissed unread |
+| Never over the open checkout sheet | It waits for the purchase sheet to close |
+
+Two things worth knowing before you test it:
+
+- **Google never tells us whether the card appeared.** The API reports nothing — not
+  whether it showed, not whether the customer reviewed. So the attempt is recorded either
+  way; we never re-ask on the assumption it did not show.
+- **It cannot be tested from a normal build.** The card only works for an install the
+  Play Store made. Use the internal test track or internal app sharing. On the direct
+  APK the card can never work, so that flavour opens the Play listing instead, under the
+  same 60-day rule.
+
+There is deliberately no "Do you like the app?" question first — pre-filtering who sees
+the card breaches Play policy.
+
+### 8. Google Play is the only update channel
+
+The `release` build type sets `GITHUB_UPDATER_ENABLED` false, and a build type overrides
+a product flavour, so **neither production artifact** — direct APK or Play AAB — fetches
+`update.json`, shows "Check for updates", posts the update notification, renders the Home
+"update available" billboard, or raises the force-update gate. Only debug builds do.
+
+`update.json` in the repository root is therefore for **debug installs only**. It is kept
+current out of habit, not because a shipped build reads it.
+
 ## Server files to re-upload with this release
 
 From `server/mybingwa-api/`: **`stk.php`**, **`lib.php`**, **`get_offers.php`**,
@@ -171,6 +210,13 @@ before anyone touches the admin.
     rather than adding a second one. Try the CSV export and a select-all removal.
 11. **Registration retry.** Finish onboarding in aeroplane mode, then turn the network
     on and reopen the app — the customer must appear then.
+12. **The rating card** (internal test track only — it cannot appear on a normally
+    installed build). Complete two purchases, close the success sheet, and wait a few
+    seconds. Confirm it does not appear on the first purchase, does not appear over the
+    open sheet, and does not appear twice.
+13. **No update prompts anywhere in the release build.** Settings must have no "Check for
+    updates" control, no update notification must arrive at launch, and Home must show no
+    "update available" billboard. If any of those appear, the build is a debug build.
 
 ## Carried over from v1.0.3 — still verify before publishing
 
