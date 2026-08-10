@@ -1398,3 +1398,149 @@ destinations.
 - **Files changed:** `app/Repositories/PaymentRepository.php` (analytics + clock), `app/Controllers/{Dashboard,Payments,Preview}Controller.php`, `app/Views/dashboard/index.php`, `app/Views/payments/{index,show}.php`, `app/Views/preview/index.php`, `tests/cases/publishing.php`.
 - **Verification:** no PHP locally, so CI is the gate again. Statically confirmed: all 84 routes resolve; all 16 `PaymentRepository::` methods used across the app exist and are public static; no `<script>` in any new view (the CSP is `script-src 'self'`); no `fmt_nairobi()` left on a payments timestamp.
 - **Next:** merge to `main`, confirm `Server checks` green, rebuild the cPanel package and give the owner the file list.
+
+### 2026-08-10 10:30 EAT — v1.0.7: remove SMS permission entirely, fix silent daily notifications, editable self number
+
+- **Objective (owner):** the app was declined on Play production for the SMS
+  permission — remove the SMS-reading feature entirely (app + server), not just on
+  the Play flavour. Find why the morning/evening engagement notifications never
+  fired in real usage over several days and implement them properly. Fix the
+  long-standing bug where the "buy for myself" checkout number was not editable.
+  Produce a new signed release in `release/`.
+- **Result:** Complete. Signed release built and verified.
+- **Root causes found and fixed:**
+  1. **SMS permission actually still shipped.** `app/src/play/AndroidManifest.xml`
+     had a comment claiming an owner decision to keep `RECEIVE_SMS` on Play despite
+     the rejection risk — the direct and Play manifests had diverged from what later
+     release notes claimed. This is exactly what got the app declined.
+  2. **Silent notifications — a self-cancelling WorkManager race.**
+     `MyBingwaApplication.onCreate()` called
+     `EngagementNotificationWorker.scheduleNext(this)` with `ExistingWorkPolicy.REPLACE`
+     on every cold start. Android always runs `Application.onCreate()` before
+     dispatching the WorkManager job that triggered that cold start, so on
+     essentially every real-world run (the app is rarely still warm hours later when
+     a slot fires) the app cancelled the very notification job about to execute, then
+     scheduled a later one that would hit the same race. Existing tests only covered
+     the pure `EngagementSchedule` calculation, never the actual WorkManager wiring,
+     so this was invisible to the test suite.
+  3. **Buy-for-myself number: a rendering gap, not a broken edit mode.** The state
+     (`recipientNumber`/`payerNumber`) was already correctly seeded to the profile
+     number on self-select; `RecipientSelectionStep` simply never rendered an
+     editable field for the `isForSelf` branch, only for "for another number".
+- **Changed:**
+  - **App — SMS removal:** deleted `core/sms/*` (6 files), `core/notifications/{SafaricomSmsParser,SmsTemplates,TemplateProvider,DefaultTemplates}.kt`,
+    `data/remote/AndroidRemoteSmsRuleSource.kt`, `notifications/{SmsDeliveryReceiver,SmsSignalBus}.kt`,
+    and their tests. Removed `RECEIVE_SMS` permission, the telephony `<uses-feature>`,
+    and the `SmsDeliveryReceiver` `<receiver>` from `AndroidManifest.xml`; removed the
+    stale "keep RECEIVE_SMS on Play" comment from `src/play/AndroidManifest.xml`.
+    Removed `SMS_DETECTION_AVAILABLE` build flags. Stripped SMS wiring from
+    `MainActivity.kt` (signal bus collection, permission launcher, `smsSupported`
+    probe, `missingSms` gating), `MyBingwaApplication.kt` (rule provider, remote
+    source), `PermissionRequiredScreen.kt`, `UserProfile.kt` (`smsAlertsEnabled`),
+    `BingwaRepository`/`FakeBingwaRepositoryImpl` (`setSmsAlertsEnabled`,
+    `syncSmsRules`, `onBundleDeliveryDetected`, `onLowBalanceDetected`),
+    `ContentSyncers`/`SyncModels`/`SyncOrchestrator` (`SyncResource.SMS_RULES`,
+    `SyncTargets.syncSmsRules`), `AppNotifier.kt` (now-unreachable
+    `postDeliveryUpdate`/`postLowBalanceSuggestion`), and `PurchaseRecord.kt`
+    (`isDeliveryConfirmed`, plus the `ActivityScreen.kt` badge that read it — it could
+    only ever be set from the removed SMS reconciliation path). Removed the SMS
+    onboarding step entirely from `OnboardingScreen.kt` (kept `AccentSms`/
+    `Icons.Rounded.Sms`, still used by the unrelated SMS-bundle-product category
+    glyph). Updated the corresponding test files
+    (`OnboardingPermissionComposeTest.kt`, `SyncOrchestratorTest.kt`,
+    `SyncPlannerTest.kt`, `PersistedStateSerializationTest.kt`).
+  - **Server — SMS Rules module removal (delegated to a background agent, then
+    manually reviewed via `git diff` since no PHP interpreter is available in this
+    environment):** deleted `SmsRulesController.php`, `SmsRuleEngine.php`, the three
+    `sms_rules/*` views, `get_sms_rules.php`, the orphaned legacy
+    `get_templates.php`/`templates.sql`, `snapshot_templates.php`, and the SMS-rules
+    test suite. Added migration `020_drop_sms_rules.sql` (drops the 4 tables migration
+    013 created — 013 itself is left as a historical ledger entry; also disables the
+    `sms_event` notification trigger type and removes the `sms_rules` feature flag).
+    Removed the `SMS_RULES` sync resource and the derived legacy `templates` snapshot
+    section from `PublishingService`/`ResourceVersions`/`ChangeDetector`/
+    `RollbackRestorer`/`get_sync_manifest.php`, the `/sms-rules/*` + `/message-templates`
+    routes, the sidebar/settings/RBAC entries, and the "which phone message triggers
+    this notification" option from `NotificationsController`, `JsonImporter`,
+    `notifications/form.php` and `app.js`. ~30 files touched; manually reviewed the
+    full diff for structural correctness (balanced braces/arrays) — genuinely clean.
+  - **Notification fix:** `EngagementNotificationWorker.scheduleNext()` gained a
+    `policy: ExistingWorkPolicy` parameter (default `REPLACE`, used by the worker's
+    own tail-of-run reschedule); `MyBingwaApplication.onCreate()` now calls it with
+    `ExistingWorkPolicy.KEEP` — same pattern already proven by the sibling periodic
+    `CatalogueSyncWorker`. Also moved the morning/evening categories off
+    `NotificationCategory.ONLINE`/`OFFLINE` (shared with the connectivity-change
+    nudge, 6h cooldown) onto the already-defined-but-unused `MORNING`/`EVENING`
+    categories (24h cooldown, semantically correct for a once-daily nudge; confirmed
+    via grep these were unused anywhere else). Left the `NotificationPolicy`
+    quiet-hours boundary (22:00–06:59) untouched — it's covered by an existing,
+    apparently-intentional test (`hour 6` asserted quiet) and isn't the cause of
+    total silence; only a partial, likely-intentional overlap with `MORNING_DATA`'s
+    06:30 start.
+  - **Purchase modal:** `RecipientSelectionStep` in `PurchaseBottomSheet.kt` now
+    renders a single editable "Your number" field for `isForSelf`, wired to update
+    both `recipientNumber` and `payerNumber` together (kept in sync deliberately —
+    two independently-editable fields for the self case risked the recipient and
+    M-Pesa payer silently diverging). The "for another number" branch is unchanged.
+  - **Docs:** `docs/PRIVACY.md` — removed the SMS permission section/row entirely
+    (no longer accurate on any build).
+  - **Version:** `versionCode` 7 → 8, `versionName` 1.0.6 → 1.0.7.
+- **Decisions/assumptions:**
+  - Left `NotificationCategory`'s other balance-driven values (`LOW_DATA`,
+    `VERY_LOW_DATA`, `NO_DATA`, `LOW_SMS`, `LOW_MINUTES`, `BUNDLE_RECEIVED`,
+    `GIFT_RECEIVED`) and their seed template copy in place, even though nothing can
+    raise them anymore now that SMS reading is gone — pruning them is a template/
+    policy-test-touching change not required to remove the permission, and out of
+    scope under the time pressure of this request. Flagged as a follow-up.
+  - Did not touch `docs/Plan.md`, `docs/design.md`,
+    `docs/ARCHITECTURE_FOR_REBUILD.md`, `docs/PRODUCTION_INTELLIGENCE.md`, or the
+    two `MY_BINGWA_*_PROMPT.md` planning docs, which still describe SMS reading as a
+    feature in places — large narrative documents, out of scope for a
+    speed-critical fix. Follow-up.
+- **Verification:**
+  - **Local Gradle build was unusable this session** — the cached Gradle 9.3.1
+    distribution and then the `~/.gradle/caches/9.3.1/transforms` directory were
+    both corrupted (pre-existing local-machine state, unrelated to this change);
+    cleared both, but re-verification kept getting interrupted by session boundaries.
+    Abandoned local verification per CLAUDE.md §5.1 ("workflow must not depend on"
+    local tools) and went straight to the authoritative GitHub Actions build.
+  - **GitHub Actions "Release (signed)" run `31364855138`, tag `v1.0.7`, commit
+    `769e41f` on `main` — SUCCESS** (`assembleDirectRelease` + `bundlePlayRelease`,
+    3m17s). This is the real compile signal for every file touched above — it passed.
+    Note: `release.yml` does not run the unit-test/lint gate (only `feature-debug-build.yml`
+    does, on ordinary pushes) — the test suite itself was not re-run in CI on this
+    change; the source edits to the 4 touched test files were reviewed by eye only.
+  - **Artifact inspection (aapt/apksigner) on the actual built APK:**
+    `versionCode=8`, `versionName=1.0.7`, `applicationId=com.bingwasokoni`,
+    `minSdk=24`, `targetSdk=36` confirmed. **`RECEIVE_SMS` confirmed ABSENT** from the
+    shipped permission list (the actual point of this release). Signing certificate
+    SHA-256 `185d3fca...7837cd` confirmed byte-identical to v1.0.3/v1.0.6 — update
+    compatibility preserved.
+  - **Server-side PHP: NOT syntax-checked** — no PHP interpreter available in this
+    environment (checked common Windows paths, none found). Verified by manual
+    `git diff` review of all ~30 touched files instead (structural correctness:
+    balanced braces, valid array literals). Recorded as an explicit gap in the
+    release README; recommend a smoke test of Notifications/Publish/Preview and the
+    sync manifest endpoint after uploading.
+- **Git:** Branch `fix/remove-sms-fix-notifications-editable-number`, commit
+  `769e41f`, pushed. Fast-forward merged into `main`, pushed
+  (`94d8f22..769e41f`). Tagged `v1.0.7`, pushed — triggered and completed the signed
+  release workflow.
+- **Release artifacts:** `release/My-Bingwa-v1.0.7/` — `My-Bingwa-v1.0.7-direct.apk`
+  (+ `.sha256` from CI), `My-Bingwa-v1.0.7-play.aab` (+ `.sha256` computed locally
+  after download, since CI only checksums the APK), `README.md` (full verification
+  record + phone test plan + server re-upload list).
+- **Risks/blockers:**
+  - Server PHP is unverified beyond manual review (see above) — smoke-test before
+    trusting in production.
+  - No physical-phone acceptance test performed this session (CLAUDE.md §12.6) —
+    the notification fix in particular can only be truly confirmed by leaving a
+    real phone uninstalled-from-foreground across a morning/evening window.
+  - `NotificationCategory`'s now-unreachable balance-driven values are a known,
+    accepted piece of dead code (see Decisions).
+- **Next:** Physical-phone acceptance test (fresh install → confirm no SMS
+  permission prompt anywhere; buy-for-myself number edits correctly; leave the app
+  installed across a real morning/evening window and confirm a notification
+  arrives). Upload the listed server files and let migration 020 run. Update the
+  Play Console data-safety form to remove the SMS declaration. Consider a follow-up
+  pass on the docs and dead notification-category code flagged above.

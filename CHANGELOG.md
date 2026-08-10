@@ -10,6 +10,47 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-08-10
+
+### Removed
+
+- **The SMS-reading permission and feature, entirely, on both channels.** Google
+  Play declined the app in production for `RECEIVE_SMS`. Rather than stripping it
+  only from the Play flavour, the whole on-device "read Safaricom bundle/balance
+  messages" feature is gone: the manifest permission, the telephony `<uses-feature>`
+  declaration, `SmsDeliveryReceiver`, the on-device rule engine/parser/store
+  (`core/sms/*`), the legacy message-template classes, and the SMS-rule remote sync
+  source. Onboarding's SMS permission step is gone (it now ends at Notifications,
+  still required); the blocking "a permission is switched off" screen no longer
+  mentions SMS. The server's entire SMS Rules admin module (controller, matching
+  engine, the three `/sms-rules/*` views, the `SMS_RULES` sync resource, the legacy
+  `templates` snapshot section it fed, and the notification campaign's "which phone
+  message triggers this" option) is removed, with a new migration
+  (`020_drop_sms_rules.sql`) dropping the now-unused tables. The only permission the
+  app requests now is notifications.
+
+### Fixed
+
+- **Morning/evening engagement notifications now actually fire.** They were
+  implemented in a previous release but never worked: `MyBingwaApplication.onCreate()`
+  rescheduled the daily notification job with `ExistingWorkPolicy.REPLACE` on every
+  cold start, including the cold start the pending job itself caused — silently
+  cancelling the very notification about to fire, on essentially every real-world
+  run. Cold-start scheduling now uses `ExistingWorkPolicy.KEEP` (matching the
+  sibling periodic catalogue-sync job); only the worker's own tail-of-run reschedule
+  still uses `REPLACE`. Also split the morning/evening nudges onto their own
+  notification categories instead of sharing the connectivity online/offline
+  categories, so an ordinary connectivity blip can no longer consume the daily
+  nudge's rate-limit budget.
+- **"Buy for myself" now has an editable number.** The confirmation step showed the
+  saved profile number as plain, uneditable text; it is now a real editable field
+  (mirroring the already-editable "buy for another number" fields), so a wrong
+  digit can be fixed without leaving checkout.
+
+### Internal
+
+- `versionCode` 7 → 8, `versionName` 1.0.6 → 1.0.7.
+
 ## [1.0.6] - 2026-08-08
 
 ### Added
