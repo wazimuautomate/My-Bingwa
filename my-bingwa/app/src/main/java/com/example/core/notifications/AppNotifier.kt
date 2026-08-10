@@ -12,7 +12,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.example.R
-import com.example.core.model.OfferCategory
 import com.example.ui.theme.BrandGreen
 import java.util.concurrent.ConcurrentHashMap
 
@@ -38,44 +37,6 @@ class AppNotifier(private val context: Context) {
     private val postedStableIds = ConcurrentHashMap.newKeySet<String>()
 
     private val brandColor: Int = BrandGreen.toArgb()
-
-    /**
-     * Delivery update. Attributed to Safaricom (the source of truth) and worded
-     * to avoid the §7-banned claims ("delivered", "activated", "confirmed",
-     * "successful"). Posts on the TRANSACTIONS channel.
-     */
-    fun postDeliveryUpdate(
-        category: OfferCategory,
-        deepLinkRoute: String = "activity"
-    ): Boolean {
-        val what = categoryNoun(category)
-        return post(
-            channelId = NotificationChannels.TRANSACTIONS,
-            stableId = "delivery_${category.name}",
-            title = "Update from Safaricom",
-            body = "Safaricom just messaged you about your $what. Tap to check your balance.",
-            deepLinkRoute = deepLinkRoute
-        )
-    }
-
-    /**
-     * Low-balance top-up suggestion. Uses only §8 allowed language — never
-     * "you are running out" / "you need more data". Posts on the OFFERS channel
-     * (quiet).
-     */
-    fun postLowBalanceSuggestion(
-        category: OfferCategory,
-        deepLinkRoute: String = "offers"
-    ): Boolean {
-        val what = categoryNoun(category)
-        return post(
-            channelId = NotificationChannels.OFFERS,
-            stableId = "lowbal_${category.name}",
-            title = "More offers you can buy",
-            body = "Top up your $what with these deals whenever you are ready.",
-            deepLinkRoute = deepLinkRoute
-        )
-    }
 
     /**
      * General offer/suggestion notification on the OFFERS channel. The caller
@@ -200,14 +161,6 @@ class AppNotifier(private val context: Context) {
                 context,
                 Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
-
-    private fun categoryNoun(category: OfferCategory): String = when (category) {
-        OfferCategory.DATA -> "data bundle"
-        OfferCategory.SMS -> "SMS bundle"
-        OfferCategory.MINUTES -> "minutes"
-        OfferCategory.SPECIAL -> "bundle"
-        OfferCategory.ALL, OfferCategory.FAVOURITES -> "bundle"
-    }
 
     companion object {
         /**

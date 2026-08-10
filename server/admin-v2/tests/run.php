@@ -176,8 +176,6 @@ function baseSnapshot(): array
         'categories' => [],
         'billboards' => [],
         'notifications' => [],
-        'smsRules' => [],
-        'templates' => ['version' => 1, 'delivery' => [], 'lowBalance' => []],
         'support' => ['tillNumber' => '111111', 'paybillNumber' => '222222'],
         'appConfig' => [],
         'featureFlags' => [],

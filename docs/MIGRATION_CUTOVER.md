@@ -90,9 +90,9 @@ The shipped app calls `get_offers.php` / `get_config.php` at the host root. Two 
 `/admin/` and switch to `/api/v1/app/offers` etc. Requires a new `versionCode`.
 
 **B. Make the legacy endpoints serve published data (no app release).** Replace the bodies
-of `get_offers.php` / `get_config.php` / `get_templates.php` with a version that reads the
-current published snapshot from `mb_configuration_releases`, keeping the legacy `X-App-Key`
-check and JSON shapes. Minimal example for `get_offers.php`:
+of `get_offers.php` / `get_config.php` with a version that reads the current published
+snapshot from `mb_configuration_releases`, keeping the legacy `X-App-Key` check and JSON
+shapes. Minimal example for `get_offers.php`:
 
 ```php
 <?php

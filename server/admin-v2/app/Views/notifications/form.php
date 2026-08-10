@@ -55,12 +55,7 @@ $selectedDays = (isset($old['days']) && is_array($old['days']))
     ? array_map('intval', $old['days'])
     : \App\Services\NotificationService::dayList($c['days_of_week'] ?? '');
 
-$needsEvent = [];
-foreach ($triggers as $trigKey => $trig) {
-    $needsEvent[(string) $trigKey] = (int) $trig['needs_event'] === 1;
-}
 $currentTrigger = (string) $val('trigger_type', 'manual');
-$showEvent = !empty($needsEvent[$currentTrigger]);
 $isActive = ((string) $val('status', 'draft')) === 'active';
 $isEnabled = (int) $val('enabled', 1) === 1;
 
@@ -139,24 +134,13 @@ foreach ($errs as $errKey => $errMsg) {
         <div class="form-grid">
           <div class="field <?= isset($errs['trigger_type']) ? 'has-error' : '' ?>">
             <label for="nf-trigger">The moment the app checks this</label>
-            <select id="nf-trigger" name="trigger_type" data-needs-event="<?= e(json_encode($needsEvent)) ?>">
+            <select id="nf-trigger" name="trigger_type">
               <?php foreach ($triggers as $key => $trig): ?>
                 <option value="<?= e($key) ?>" data-desc="<?= e($trig['description']) ?>" <?= $currentTrigger === (string) $key ? 'selected' : '' ?>><?= e($trig['label']) ?></option>
               <?php endforeach; ?>
             </select>
             <span class="hint" id="nf-trigger-hint"><?= e($triggers[$currentTrigger]['description'] ?? 'Choose the moment this message becomes relevant.') ?></span>
             <?= $err('trigger_type') ?>
-          </div>
-          <div class="field <?= isset($errs['trigger_event']) ? 'has-error' : '' ?> <?= $showEvent ? '' : 'is-hidden' ?>" id="nf-event-field">
-            <label for="nf-event">Which phone message sets it off?</label>
-            <select id="nf-event" name="trigger_event">
-              <option value="">Choose…</option>
-              <?php foreach ($events as $ev): ?>
-                <option value="<?= e($ev['event_key']) ?>" <?= ((string) $val('trigger_event')) === (string) $ev['event_key'] ? 'selected' : '' ?>><?= e($ev['label']) ?></option>
-              <?php endforeach; ?>
-            </select>
-            <span class="hint">Matched on the phone by the SMS rules. The message itself never leaves the device.</span>
-            <?= $err('trigger_event') ?>
           </div>
         </div>
 

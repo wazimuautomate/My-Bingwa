@@ -280,7 +280,7 @@ private fun RecipientSelectionStep(
 
         SelectableRecipientCard(
             title = "For my number",
-            subtitle = KenyanPhone.toDisplay(userPrimaryNumber),
+            subtitle = KenyanPhone.toDisplay(recipientNumber),
             isSelected = isForSelf,
             onClick = { onOptionSelect(true) },
             testTag = "recipient_for_my_number"
@@ -298,7 +298,22 @@ private fun RecipientSelectionStep(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        if (!isForSelf) {
+        if (isForSelf) {
+            // Buying for yourself: recipient and M-Pesa payer are the same number,
+            // so a single editable field drives both — tapping it lets the customer
+            // fix a wrong digit instead of being stuck with whatever is on the
+            // profile (design.md §13.3: the field label is explicit).
+            LabelledPhoneField(
+                label = "Your number",
+                value = recipientNumber,
+                onValueChange = { number ->
+                    onRecipientChange(number)
+                    onPayerChange(number)
+                },
+                placeholder = "0712 345 678",
+                testTag = "recipient_number_field"
+            )
+        } else {
             // design.md §13.3: the recipient field label is explicit.
             LabelledPhoneField(
                 label = "Bundle recipient",

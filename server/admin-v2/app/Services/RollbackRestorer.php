@@ -7,8 +7,8 @@
  * Every section is restored only when the snapshot actually carries it. A release
  * published before a section existed (an older schema) leaves those working tables
  * completely alone rather than wiping them, so rolling back to an old version can never
- * silently delete SMS rules, notifications, categories or feature flags that the old
- * snapshot simply had no way to describe.
+ * silently delete notifications, categories or feature flags that the old snapshot
+ * simply had no way to describe.
  *
  * Billboard image files are not part of a published snapshot: assets are matched back by
  * their stored filename where they still exist on disk, otherwise the media reference is
@@ -32,22 +32,6 @@ final class RollbackRestorer
         self::restoreVersion($snap['version'] ?? [], $actor);
 
         // Sections introduced after the first releases. Absent key => untouched table.
-        if (array_key_exists('smsRules', $snap) && is_array($snap['smsRules'])) {
-            self::restoreSmsRules($snap['smsRules'], $actor);
-        } elseif (isset($snap['templates']) && is_array($snap['templates'])) {
-            // A release published BEFORE SMS Rules existed only carries the legacy
-            // `templates` section. Message recognition now lives in mb_sms_rules and the
-            // published `templates` section is derived from it, so restoring into the old
-            // mb_message_templates table would look successful and change nothing. Convert
-            // instead, using the same mapping as migration 013_sms_rules.sql.
-            self::restoreSmsRules(
-                self::legacyTemplatesAsRules(array_merge(
-                    $snap['templates']['delivery'] ?? [],
-                    $snap['templates']['lowBalance'] ?? []
-                )),
-                $actor
-            );
-        }
         if (array_key_exists('categories', $snap) && is_array($snap['categories'])) {
             self::restoreCategories($snap['categories']);
         }
@@ -90,109 +74,6 @@ final class RollbackRestorer
             $in = implode(',', array_fill(0, count($keep), '?'));
             Database::run(
                 "UPDATE {$t} SET status='archived', updated_at=UTC_TIMESTAMP(), updated_by=? WHERE status='active' AND offer_id NOT IN ({$in})",
-                array_merge([$actor], $keep)
-            );
-        }
-    }
-
-    /**
-     * Translate v1 `templates` entries into the SMS-rule shape restoreSmsRules() expects.
-     * Pure, so the mapping is unit-testable. purpose + category decide the event, mirroring
-     * migration 013_sms_rules.sql, and the v1 ascending priority is inverted back into the
-     * descending scale the rule engine uses.
-     *
-     * @param array<int,array> $templates
-     * @return array<int,array>
-     */
-    public static function legacyTemplatesAsRules(array $templates): array
-    {
-        $out = [];
-        foreach ($templates as $tpl) {
-            if (!is_array($tpl) || (string) ($tpl['id'] ?? '') === '') {
-                continue;
-            }
-            $purpose  = (string) ($tpl['purpose'] ?? 'delivery');
-            $category = (string) ($tpl['category'] ?? 'DATA');
-            if ($purpose === 'delivery') {
-                $event = $category === 'SMS' ? 'SMS_RECEIVED'
-                    : ($category === 'MINUTES' ? 'MINUTES_RECEIVED' : 'DATA_RECEIVED');
-            } elseif ($purpose === 'very_low_balance') {
-                $event = 'VERY_LOW_DATA';
-            } else {
-                $event = $category === 'SMS' ? 'LOW_SMS'
-                    : ($category === 'MINUTES' ? 'LOW_MINUTES' : 'LOW_DATA');
-            }
-            $out[] = [
-                'id'          => (string) $tpl['id'],
-                'name'        => (string) ($tpl['description'] ?? $tpl['id']),
-                'senderId'    => (string) ($tpl['senderId'] ?? ''),
-                'patternType' => 'regex',
-                'pattern'     => (string) ($tpl['pattern'] ?? ''),
-                'caseSensitive' => false,
-                'event'       => $event,
-                'secondaryEvents' => [],
-                'category'    => $category,
-                'bundleType'  => '',
-                'captures'    => [],
-                'correlationWindowMinutes' => (int) ($tpl['correlationWindowMinutes'] ?? 30),
-                'priority'    => max(1, 1000 - (int) ($tpl['priority'] ?? 500)),
-            ];
-        }
-        return $out;
-    }
-
-    /* ------------------------------------------------------------------ SMS rules */
-
-    /**
-     * A published snapshot only carries ENABLED rules, so restoring means: upsert every
-     * rule in the snapshot as enabled, then disable any other currently enabled rule.
-     * Nothing is deleted — a disabled rule keeps its samples and history.
-     */
-    private static function restoreSmsRules(array $rules, string $actor): void
-    {
-        $t = Database::table('sms_rules');
-        $keep = [];
-        foreach ($rules as $r) {
-            if (!is_array($r) || (string) ($r['id'] ?? '') === '') {
-                continue;
-            }
-            $keep[] = (string) $r['id'];
-            $captures = $r['captures'] ?? null;
-            if (is_object($captures)) {
-                $captures = (array) $captures;
-            }
-            $capturesJson = (is_array($captures) && $captures !== []) ? json_encode($captures) : null;
-            $secondary = $r['secondaryEvents'] ?? [];
-            $secondary = is_array($secondary) ? implode(',', array_map('strval', $secondary)) : (string) $secondary;
-
-            Database::run(
-                "INSERT INTO {$t}
-                    (rule_key, name, description, sender_id, pattern_type, pattern, case_sensitive,
-                     event_type, secondary_events, category, bundle_type, captures_json,
-                     correlation_window_min, priority, enabled, row_version, created_at, updated_at, created_by, updated_by)
-                 VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?, ?)
-                 ON DUPLICATE KEY UPDATE name=VALUES(name), sender_id=VALUES(sender_id),
-                    pattern_type=VALUES(pattern_type), pattern=VALUES(pattern),
-                    case_sensitive=VALUES(case_sensitive), event_type=VALUES(event_type),
-                    secondary_events=VALUES(secondary_events), category=VALUES(category),
-                    bundle_type=VALUES(bundle_type), captures_json=VALUES(captures_json),
-                    correlation_window_min=VALUES(correlation_window_min), priority=VALUES(priority),
-                    enabled=1, row_version = row_version + 1, updated_at=UTC_TIMESTAMP(), updated_by=VALUES(updated_by)",
-                [
-                    (string) $r['id'], (string) ($r['name'] ?? $r['id']), (string) ($r['senderId'] ?? ''),
-                    (string) ($r['patternType'] ?? 'regex'), (string) ($r['pattern'] ?? ''),
-                    !empty($r['caseSensitive']) ? 1 : 0, (string) ($r['event'] ?? 'UNKNOWN'),
-                    $secondary, (string) ($r['category'] ?? ''), (string) ($r['bundleType'] ?? ''),
-                    $capturesJson, (int) ($r['correlationWindowMinutes'] ?? 30), (int) ($r['priority'] ?? 100),
-                    $actor, $actor,
-                ]
-            );
-        }
-        if ($keep !== []) {
-            $in = implode(',', array_fill(0, count($keep), '?'));
-            Database::run(
-                "UPDATE {$t} SET enabled = 0, updated_at = UTC_TIMESTAMP(), updated_by = ?
-                  WHERE enabled = 1 AND rule_key NOT IN ({$in})",
                 array_merge([$actor], $keep)
             );
         }

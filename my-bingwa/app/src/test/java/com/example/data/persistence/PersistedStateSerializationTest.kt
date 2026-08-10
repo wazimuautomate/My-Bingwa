@@ -38,8 +38,7 @@ class PersistedStateSerializationTest {
                 name = "Amina",
                 primaryNumber = "0722000111",
                 isOnboardingCompleted = true,
-                notificationsEnabled = true,
-                smsAlertsEnabled = true
+                notificationsEnabled = true
             ),
             theme = "DARK",
             favouriteIds = listOf("data_6", "sms_2"),
@@ -58,8 +57,7 @@ class PersistedStateSerializationTest {
                     status = PaymentStatus.RECEIVED,
                     paymentMethod = PaymentMethod.STK_PUSH,
                     clientRequestId = "crid-1",
-                    orderReference = "ORD1",
-                    isDeliveryConfirmed = true
+                    orderReference = "ORD1"
                 )
             ),
             notifications = listOf(

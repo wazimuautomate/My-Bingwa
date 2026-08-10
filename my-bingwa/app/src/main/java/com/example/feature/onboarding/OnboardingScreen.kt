@@ -117,17 +117,13 @@ private val AccentSpecial = Color(0xFFFF8A00)
 /**
  * The ordered first-run steps.
  *
- * The permission asks come LAST, immediately after the name and number, and they
- * are **required**: My Bingwa's payment updates and bundle tracking are the
- * product, not an extra, so the owner's decision is that a customer who refuses
- * them cannot use the app. There is no skip past them and no way back — the only
- * two outcomes are "granted, continue" and "close the app".
- *
- * [SMS] is dropped entirely on the Play flavour, where the SMS receiver is
- * stripped from the manifest and the permission does not exist, so there is
- * nothing to require there.
+ * The permission ask comes LAST, immediately after the name and number, and it
+ * is **required**: My Bingwa's payment updates are the product, not an extra, so
+ * the owner's decision is that a customer who refuses it cannot use the app.
+ * There is no skip past it and no way back — the only two outcomes are
+ * "granted, continue" and "close the app".
  */
-private enum class OnboardingStep { PROMISE, GAINS, SETUP, NOTIFICATIONS, SMS }
+private enum class OnboardingStep { PROMISE, GAINS, SETUP, NOTIFICATIONS }
 
 /**
  * First-run onboarding.
@@ -143,15 +139,12 @@ private enum class OnboardingStep { PROMISE, GAINS, SETUP, NOTIFICATIONS, SMS }
  * dialog (two refusals), the CTA opens the app's system settings instead, so
  * "required" never becomes "impossible".
  *
- * The Activity owns the `rememberLauncherForActivityResult` launchers; this
+ * The Activity owns the `rememberLauncherForActivityResult` launcher; this
  * screen only calls back and renders the granted state it is given. Every new
  * parameter is defaulted so existing callers and tests keep compiling.
  *
  * @param onRequestNotificationPermission asks the OS for POST_NOTIFICATIONS.
- * @param onRequestSmsPermission asks the OS for RECEIVE_SMS/READ_SMS.
  * @param notificationsGranted live grant state, for the confirmation UI.
- * @param smsGranted live grant state, for the confirmation UI.
- * @param smsSupported false on the Play flavour — hides the SMS step entirely.
  * @param onOpenAppSettings opens this app's system settings page, for the case
  *        where Android will no longer show the permission dialog.
  * @param onExitApp closes My Bingwa — the outcome of refusing a required permission.
@@ -160,36 +153,30 @@ private enum class OnboardingStep { PROMISE, GAINS, SETUP, NOTIFICATIONS, SMS }
 fun OnboardingScreen(
     onCompleteOnboarding: (String, String) -> Unit,
     onRequestNotificationPermission: () -> Unit = {},
-    onRequestSmsPermission: () -> Unit = {},
     notificationsGranted: Boolean = false,
-    smsGranted: Boolean = false,
-    smsSupported: Boolean = true,
     onOpenAppSettings: () -> Unit = {},
     onExitApp: () -> Unit = {}
 ) {
     val reducedMotion = rememberReducedMotion()
     val scope = rememberCoroutineScope()
 
-    val steps = remember(smsSupported) {
-        buildList {
-            add(OnboardingStep.PROMISE)
-            add(OnboardingStep.GAINS)
-            add(OnboardingStep.SETUP)
-            add(OnboardingStep.NOTIFICATIONS)
-            if (smsSupported) add(OnboardingStep.SMS)
-        }
+    val steps = remember {
+        listOf(
+            OnboardingStep.PROMISE,
+            OnboardingStep.GAINS,
+            OnboardingStep.SETUP,
+            OnboardingStep.NOTIFICATIONS
+        )
     }
     var stepIndex by remember { mutableIntStateOf(0) }
-    // Clamp defensively: smsSupported could flip while onboarding is open.
     val safeIndex = stepIndex.coerceIn(0, steps.lastIndex)
     val currentStep = steps[safeIndex]
 
-    // How many times each required permission has been asked for. Android stops
+    // How many times the required permission has been asked for. Android stops
     // showing its dialog after the second refusal, so from the second ask onwards
     // the CTA sends the customer to the app's system settings instead of tapping a
     // button that appears to do nothing.
     var notificationAsks by remember { mutableIntStateOf(0) }
-    var smsAsks by remember { mutableIntStateOf(0) }
 
     var nameInput by remember { mutableStateOf("") }
     var phoneInput by remember { mutableStateOf("") }
@@ -253,10 +240,9 @@ fun OnboardingScreen(
     // moment it does rather than making the customer tap the same button twice.
     // This also carries the step that is already satisfied — POST_NOTIFICATIONS is
     // granted at install below Android 13 — straight through.
-    LaunchedEffect(currentStep, notificationsGranted, smsGranted) {
+    LaunchedEffect(currentStep, notificationsGranted) {
         when (currentStep) {
             OnboardingStep.NOTIFICATIONS -> if (notificationsGranted) continueFromPermission()
-            OnboardingStep.SMS -> if (smsGranted) continueFromPermission()
             else -> Unit
         }
     }
@@ -306,11 +292,6 @@ fun OnboardingScreen(
                         refused = notificationAsks > 0 && !notificationsGranted,
                         reducedMotion = reducedMotion
                     )
-                    OnboardingStep.SMS -> StepSms(
-                        granted = smsGranted,
-                        refused = smsAsks > 0 && !smsGranted,
-                        reducedMotion = reducedMotion
-                    )
                     OnboardingStep.SETUP -> StepSetup(
                         name = nameInput,
                         phone = phoneInput,
@@ -340,12 +321,6 @@ fun OnboardingScreen(
                         notificationAsks == 1 -> "Try again"
                         else -> "Turn on updates"
                     }
-                    OnboardingStep.SMS -> when {
-                        smsGranted -> if (lastStep) "Start using My Bingwa" else "Continue"
-                        smsAsks >= 2 -> "Open settings and allow"
-                        smsAsks == 1 -> "Try again"
-                        else -> "Allow bundle messages"
-                    }
                 },
                 enabled = !launching,
                 modifier = Modifier.testTag("onboarding_primary_cta"),
@@ -361,14 +336,6 @@ fun OnboardingScreen(
                                 onRequestNotificationPermission()
                             }
                         }
-                        OnboardingStep.SMS -> when {
-                            smsGranted -> continueFromPermission()
-                            smsAsks >= 2 -> onOpenAppSettings()
-                            else -> {
-                                smsAsks++
-                                onRequestSmsPermission()
-                            }
-                        }
                         OnboardingStep.SETUP -> submitSetup()
                         else -> advance()
                     }
@@ -378,10 +345,8 @@ fun OnboardingScreen(
             // The only alternative to granting a required permission. It is stated
             // plainly rather than hidden, so nobody is left tapping a button that
             // cannot work — but it closes the app, it does not skip the step.
-            val onRequiredStep = currentStep == OnboardingStep.NOTIFICATIONS ||
-                currentStep == OnboardingStep.SMS
-            val stepGranted = if (currentStep == OnboardingStep.SMS) smsGranted else notificationsGranted
-            if (onRequiredStep && !stepGranted) {
+            val onRequiredStep = currentStep == OnboardingStep.NOTIFICATIONS
+            if (onRequiredStep && !notificationsGranted) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center
@@ -806,32 +771,6 @@ private fun StepNotifications(granted: Boolean, refused: Boolean, reducedMotion:
         grantedText = "Notifications are on. We will keep them useful, not noisy.",
         deniedText = "My Bingwa cannot continue without notifications. Allow them to " +
             "carry on, or close the app.",
-        refused = refused,
-        reducedMotion = reducedMotion
-    )
-}
-
-@Composable
-private fun StepSms(granted: Boolean, refused: Boolean, reducedMotion: Boolean) {
-    PermissionStep(
-        icon = Icons.Rounded.Sms,
-        accent = AccentSms,
-        stepTag = "onboarding_step_sms",
-        title = "Keep track of your bundles",
-        lead = "My Bingwa reads only Safaricom bundle messages, so it can confirm a " +
-            "bundle arrived and tell you when you are running low. This is what keeps " +
-            "your purchases accurate, so it has to be on to continue. Nothing is ever " +
-            "uploaded — everything stays on your phone.",
-        bullets = listOf(
-            "Only Safaricom bundle and balance messages are read.",
-            "Personal messages are ignored and never opened.",
-            "Nothing is uploaded — no server ever sees your SMS."
-        ),
-        privacyNote = "Required to use My Bingwa.",
-        granted = granted,
-        grantedText = "Bundle tracking is on. Everything stays on this phone.",
-        deniedText = "My Bingwa cannot continue without this. Allow it to carry on, " +
-            "or close the app.",
         refused = refused,
         reducedMotion = reducedMotion
     )

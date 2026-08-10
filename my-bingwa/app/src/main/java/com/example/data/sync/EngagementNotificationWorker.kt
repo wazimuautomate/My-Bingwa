@@ -68,14 +68,14 @@ class EngagementNotificationWorker(
         // Post through the shared NotificationEngine rather than straight to AppNotifier.
         // The engine owns the cooldowns, the per-day cap, quiet hours and content
         // de-duplication for EVERY notification the app sends, so routing through it is
-        // what stops these daily nudges stacking on top of whatever the SMS and
-        // personalisation paths already posted. `notifyRaw` keeps the wording authored
-        // here while still passing the full policy check — the engine may well decide to
-        // stay silent, and that is a correct outcome.
+        // what stops these daily nudges stacking on top of whatever the personalisation
+        // paths already posted. `notifyRaw` keeps the wording authored here while still
+        // passing the full policy check — the engine may well decide to stay silent, and
+        // that is a correct outcome.
         val engine = (applicationContext as? MyBingwaApplication)?.notificationEngine ?: return
         val message = EngagementSchedule.messageFor(slot, now)
         val posted = engine.notifyRaw(
-            category = if (slot.requiresConnection) NotificationCategory.ONLINE else NotificationCategory.OFFLINE,
+            category = engagementCategory(slot),
             title = message.title,
             body = message.body,
             stableId = key,
@@ -89,6 +89,24 @@ class EngagementNotificationWorker(
     }
 
     companion object {
+        /**
+         * Dedicated per-time-of-day category, NOT [NotificationCategory.ONLINE] /
+         * [NotificationCategory.OFFLINE] (those are reserved for the connectivity-change
+         * nudge in [com.example.MainActivity]). Sharing a category would mean an ordinary
+         * connectivity blip while the app happens to be open could consume the category's
+         * cooldown and silently block that day's engagement post. [NotificationCategory.MORNING]
+         * / [NotificationCategory.EVENING] carry a 24h cooldown, which is also the
+         * semantically correct budget for a once-a-day nudge (the two slots per time of
+         * day are mutually exclusive at fire time, so one category per time of day is
+         * exactly right).
+         */
+        private fun engagementCategory(slot: EngagementSlot): NotificationCategory =
+            if (slot == EngagementSlot.MORNING_DATA || slot == EngagementSlot.MORNING_TALK) {
+                NotificationCategory.MORNING
+            } else {
+                NotificationCategory.EVENING
+            }
+
         private const val PREFS = "mybingwa_engagement"
         private const val KEY_SLOT = "slot"
 
@@ -98,15 +116,31 @@ class EngagementNotificationWorker(
         /**
          * Enqueue the next due slot as a one-shot job.
          *
-         * Safe to call as often as you like — from [com.example.MyBingwaApplication] on
-         * every cold start and from the worker itself. `REPLACE` means the newest
-         * computation of "what is next" always wins and no chain is ever left running
-         * beside another.
+         * [policy] matters a lot here and the two call sites deliberately use different
+         * values:
+         *  - The worker itself ([doWork], at the tail of a run that just finished) passes
+         *    the default `REPLACE`: this job's own WorkSpec is already on its way to
+         *    SUCCEEDED, so replacing the (now-nonexistent) current occupant of the unique
+         *    name with the next one is correct and cannot race itself.
+         *  - [com.example.MyBingwaApplication.onCreate] passes `KEEP`. Android always runs
+         *    `Application.onCreate()` before dispatching a WorkManager job in that process,
+         *    so a cold start caused BY this very engagement job firing would otherwise call
+         *    `scheduleNext` with `REPLACE` and cancel the job that is about to run —
+         *    silently eating every notification (the original bug: the chain rescheduled
+         *    itself out from under itself on essentially every real-world cold start,
+         *    because the app is rarely still warm hours later when a slot fires). `KEEP`
+         *    leaves an already-pending/running job alone and only seeds a new one when the
+         *    chain is genuinely missing (first install, or repair after a reboot, force-stop
+         *    or app update) — the same pattern already used for the periodic catalogue sync.
          *
          * No network constraint: the offline slots exist precisely to reach a customer
          * with no connection, and the copy is built on the device.
          */
-        fun scheduleNext(context: Context, nowMillis: Long = System.currentTimeMillis()) {
+        fun scheduleNext(
+            context: Context,
+            nowMillis: Long = System.currentTimeMillis(),
+            policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE,
+        ) {
             val (slot, at) = EngagementSchedule.nextOccurrence(nowMillis) ?: return
             val delay = (at - nowMillis).coerceAtLeast(0L)
 
@@ -117,7 +151,7 @@ class EngagementNotificationWorker(
 
             WorkManager.getInstance(context).enqueueUniqueWork(
                 UNIQUE_WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
+                policy,
                 request,
             )
         }

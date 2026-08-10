@@ -53,7 +53,6 @@ import com.example.core.notifications.AppNotifier
 import com.example.core.notifications.ConnectionState
 import com.example.core.notifications.ConnectivityObserver
 import com.example.core.notifications.NotificationChannels
-import com.example.core.notifications.SmsSignal
 import com.example.core.notifications.engine.NotificationCategory
 import com.example.core.notifications.engine.NotificationPersonalization
 import com.example.core.personalization.BehaviourProfile
@@ -61,8 +60,6 @@ import com.example.core.personalization.PersonalizationEngine
 import com.example.core.review.AppReviewLauncher
 import com.example.core.review.ReviewPolicy
 import com.example.core.personalization.suggestedPayerNumber
-import com.example.core.sms.SmsEventType
-import com.example.core.sms.SmsExtraction
 import com.example.data.sync.ForceSyncWatcher
 import com.example.data.sync.SyncTrigger
 import com.example.core.update.UpdateChecker
@@ -87,13 +84,11 @@ import com.example.feature.offers.OffersScreen
 import com.example.feature.onboarding.OnboardingScreen
 import com.example.feature.purchase.PurchaseBottomSheet
 import com.example.feature.settings.SettingsScreen
-import com.example.notifications.SmsSignalBus
 import com.example.ui.theme.MyBingwaTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
@@ -269,45 +264,6 @@ fun MyBingwaApp(
         }
     }
 
-    // React to Safaricom SMS signals surfaced by SmsDeliveryReceiver via the bus.
-    // Delivery is reconciled quietly (in-app + Activity, no loud system post);
-    // low-balance adds an in-app offers suggestion and a quiet system nudge.
-    //
-    // EventDetected is the new server-taught signal carrying the matched rule and the
-    // extracted amounts. The two legacy cases are still emitted alongside it for the
-    // repository reconciliation, so this branch only adds the richer NOTIFICATION.
-    LaunchedEffect(Unit) {
-        SmsSignalBus.signals.collect { signal ->
-            when (signal) {
-                is SmsSignal.DeliveryDetected ->
-                    repository.onBundleDeliveryDetected(signal.category)
-                is SmsSignal.LowBalanceDetected -> {
-                    repository.onLowBalanceDetected(signal.category)
-                    // Fall back to the plain notifier only when the engine is absent,
-                    // so an unconfigured build still nudges.
-                    if (notificationEngine == null) {
-                        appNotifier.postLowBalanceSuggestion(signal.category)
-                    }
-                }
-                is SmsSignal.EventDetected -> {
-                    val engine = notificationEngine
-                    if (engine != null) {
-                        val category = smsEventNotificationCategory(signal.match.events)
-                        if (category != null) {
-                            engine.notify(
-                                category = category,
-                                personalization = personalizationFacts(
-                                    balanceText = balanceLabelOf(signal.match.extraction),
-                                    categoryLabel = signal.category.label.lowercase()
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     // Real OS permission state → profile, so the Settings toggles reflect the actual
     // grant (not an optimistic "on"). Checked on start and refreshed on every result.
     fun notificationsGranted(): Boolean =
@@ -318,16 +274,11 @@ fun MyBingwaApp(
             NotificationManagerCompat.from(appContext).areNotificationsEnabled()
         }
 
-    fun smsGranted(): Boolean =
-        ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECEIVE_SMS) ==
-            PackageManager.PERMISSION_GRANTED
-
-    // Both grants are re-read on every foreground pass, not just at start: the
-    // customer may have revoked one in Android settings (or granted it there after
-    // the OS stopped showing its dialog) while the app was in the background.
+    // Re-read on every foreground pass, not just at start: the customer may have
+    // revoked the grant in Android settings (or granted it there after the OS
+    // stopped showing its dialog) while the app was in the background.
     var permissionEpoch by remember { mutableStateOf(0) }
     val notificationsAllowed = remember(permissionEpoch) { notificationsGranted() }
-    val smsAllowed = remember(permissionEpoch) { smsGranted() }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -338,9 +289,8 @@ fun MyBingwaApp(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(notificationsAllowed, smsAllowed) {
+    LaunchedEffect(notificationsAllowed) {
         repository.setNotificationsEnabled(notificationsAllowed)
-        repository.setSmsAlertsEnabled(smsAllowed)
     }
 
     // --- On-device personalization ------------------------------------------------
@@ -395,20 +345,13 @@ fun MyBingwaApp(
         }
     }
 
-    // Runtime permission launchers (Android 13+ POST_NOTIFICATIONS, RECEIVE_SMS).
-    // Settings shows the in-app rationale first, then invokes these; the granted
-    // result is written back so the toggle can never show "on" while the OS denied it.
+    // Runtime permission launcher (Android 13+ POST_NOTIFICATIONS). Settings shows
+    // the in-app rationale first, then invokes this; the granted result is written
+    // back so the toggle can never show "on" while the OS denied it.
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         repository.setNotificationsEnabled(granted)
-        permissionEpoch++
-    }
-
-    val smsPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        repository.setSmsAlertsEnabled(granted)
         permissionEpoch++
     }
 
@@ -417,21 +360,6 @@ fun MyBingwaApp(
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         // Below API 33 the permission is granted at install time; nothing to ask.
-    }
-    val requestSmsPermission: () -> Unit = {
-        smsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS)
-    }
-
-    // The Play flavour strips RECEIVE_SMS and the receiver from its manifest, so asking
-    // for it there would show a dialog that can never be granted. Read the merged
-    // manifest instead of a build flag — it is the actual source of truth.
-    val smsSupported = remember {
-        runCatching {
-            appContext.packageManager
-                .getPackageInfo(appContext.packageName, PackageManager.GET_PERMISSIONS)
-                .requestedPermissions
-                ?.contains(Manifest.permission.RECEIVE_SMS) == true
-        }.getOrDefault(false)
     }
 
     // Reduced-motion proxy: honour the device animator-duration-scale = 0 setting
@@ -505,12 +433,10 @@ fun MyBingwaApp(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: if (startOnboarding) "onboarding" else "home"
 
-    // Whether a required permission is missing right now, and how many times this
-    // session has already asked. RECEIVE_SMS is only required where the build
-    // actually ships it (the Play flavour strips it from the manifest).
+    // Whether the required notification permission is missing right now, and how
+    // many times this session has already asked.
     val missingNotifications = !notificationsAllowed &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    val missingSms = smsSupported && !smsAllowed
     var permissionAsks by remember { mutableStateOf(0) }
 
     // Closing the app is the stated consequence of refusing a required permission.
@@ -704,7 +630,6 @@ fun MyBingwaApp(
                         // screen only asks. Declining never blocks onboarding — it just
                         // switches off the feature that needed the grant.
                         onRequestNotificationPermission = requestNotificationPermission,
-                        onRequestSmsPermission = requestSmsPermission,
                         // Below API 33 notifications are granted at install time, so show
                         // the step as already satisfied rather than asking for nothing.
                         // Read from the live OS grant, not the stored profile: the
@@ -713,8 +638,6 @@ fun MyBingwaApp(
                         // at install, so that step passes straight through.
                         notificationsGranted = notificationsAllowed ||
                             Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU,
-                        smsGranted = smsAllowed,
-                        smsSupported = smsSupported,
                         onOpenAppSettings = { openAppSettings(context) },
                         onExitApp = exitApp
                     )
@@ -912,22 +835,20 @@ fun MyBingwaApp(
                 )
             }
 
-            // Blocking gate for a REQUIRED permission that is no longer granted —
-            // normally revoked in Android settings after onboarding. Notifications
-            // and Safaricom bundle messages are mandatory (owner decision), so the
-            // app does not carry on without them: the only ways out are granting the
-            // permission or closing the app. Never shown during onboarding, which
-            // asks for them itself.
-            if (!startOnboarding && (missingNotifications || missingSms)) {
+            // Blocking gate for the REQUIRED notification permission when it is no
+            // longer granted — normally revoked in Android settings after onboarding.
+            // Notifications are mandatory (owner decision), so the app does not carry
+            // on without them: the only ways out are granting the permission or
+            // closing the app. Never shown during onboarding, which asks for it itself.
+            if (!startOnboarding && missingNotifications) {
                 PermissionRequiredScreen(
                     missingNotifications = missingNotifications,
-                    missingSms = missingSms,
                     // Two refusals and Android stops showing its dialog; from then on
                     // only the app's settings page can grant it.
                     canAskAgain = permissionAsks < 2,
                     onAllow = {
                         permissionAsks++
-                        if (missingNotifications) requestNotificationPermission() else requestSmsPermission()
+                        requestNotificationPermission()
                     },
                     onOpenAppSettings = { openAppSettings(context) },
                     onExitApp = exitApp
@@ -961,47 +882,4 @@ private fun daysSinceNairobi(thenMillis: Long): Int {
     val elapsed = System.currentTimeMillis() - thenMillis
     if (elapsed <= 0L) return 0
     return (elapsed / 86_400_000L).toInt()
-}
-
-/**
- * A short, factual balance phrase built ONLY from what Safaricom actually said.
- *
- * The carrier is the source of truth here — this never estimates, predicts or
- * infers usage, which §8 forbids. An extraction with no numbers yields an empty
- * string and the template falls back to its own neutral wording.
- */
-private fun balanceLabelOf(extraction: SmsExtraction): String {
-    extraction.dataMb?.let { mb ->
-        return if (mb >= 1024.0) {
-            val gb = mb / 1024.0
-            if (gb == gb.toLong().toDouble()) "${gb.toLong()}GB" else String.format(Locale.US, "%.1fGB", gb)
-        } else {
-            if (mb == mb.toLong().toDouble()) "${mb.toLong()}MB" else String.format(Locale.US, "%.1fMB", mb)
-        }
-    }
-    extraction.minutes?.let { return "$it minutes" }
-    extraction.smsCount?.let { return "$it SMS" }
-    return ""
-}
-
-/**
- * Maps the events a server-taught SMS rule produced onto the notification the
- * customer should see.
- *
- * Ordered by consequence: "no bundle left" outranks "very low" outranks "low".
- * A received/gift event is attributed to Safaricom by the template itself — the
- * app never claims to have delivered anything (CLAUDE.md §7). Anything we do not
- * recognise returns null, and nothing is posted: silence beats a weak message.
- */
-private fun smsEventNotificationCategory(events: List<SmsEventType>): NotificationCategory? = when {
-    events.contains(SmsEventType.NO_DATA) -> NotificationCategory.NO_DATA
-    events.contains(SmsEventType.VERY_LOW_DATA) -> NotificationCategory.VERY_LOW_DATA
-    events.contains(SmsEventType.LOW_DATA) -> NotificationCategory.LOW_DATA
-    events.contains(SmsEventType.LOW_MINUTES) -> NotificationCategory.LOW_MINUTES
-    events.contains(SmsEventType.LOW_SMS) -> NotificationCategory.LOW_SMS
-    events.contains(SmsEventType.GIFT_RECEIVED) -> NotificationCategory.GIFT_RECEIVED
-    events.contains(SmsEventType.DATA_RECEIVED) ||
-        events.contains(SmsEventType.SMS_RECEIVED) ||
-        events.contains(SmsEventType.MINUTES_RECEIVED) -> NotificationCategory.BUNDLE_RECEIVED
-    else -> null
 }

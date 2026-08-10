@@ -28,12 +28,12 @@ test('resource checksums change when the section changes', function () {
 });
 
 test('resource checksums only cover known, present sections', function () {
-    $snapshot = ['offers' => [], 'smsRules' => [], 'somethingElse' => ['x' => 1]];
+    $snapshot = ['offers' => [], 'billboards' => [], 'somethingElse' => ['x' => 1]];
     $sums = \App\Services\ResourceVersions::checksums($snapshot);
     ok(array_key_exists('offers', $sums));
-    ok(array_key_exists('smsRules', $sums));
+    ok(array_key_exists('billboards', $sums));
     ok(!array_key_exists('somethingElse', $sums), 'unknown sections are not resources');
-    ok(!array_key_exists('billboards', $sums), 'absent sections are not invented');
+    ok(!array_key_exists('notifications', $sums), 'absent sections are not invented');
 });
 
 test('every declared resource has a label and a list flag', function () {
@@ -42,7 +42,7 @@ test('every declared resource has a label and a list flag', function () {
         ok(is_bool(\App\Services\ResourceVersions::isList($key)));
     }
     ok(in_array('offers', \App\Services\ResourceVersions::keys(), true));
-    ok(in_array('smsRules', \App\Services\ResourceVersions::keys(), true));
+    ok(in_array('billboards', \App\Services\ResourceVersions::keys(), true));
     ok(in_array('featureFlags', \App\Services\ResourceVersions::keys(), true));
 });
 
@@ -96,9 +96,9 @@ test('compute is idempotent when nothing changed at all', function () {
 
 test('a resource added by a later release starts at that release version', function () {
     $v1 = \App\Services\ResourceVersions::compute(['offers' => []], [], 1);
-    $v2 = \App\Services\ResourceVersions::compute(['offers' => [], 'smsRules' => []], $v1, 2);
+    $v2 = \App\Services\ResourceVersions::compute(['offers' => [], 'billboards' => []], $v1, 2);
     eq($v2['offers']['version'], 1);
-    eq($v2['smsRules']['version'], 2);
+    eq($v2['billboards']['version'], 2);
 });
 
 test('forRelease tolerates a release published before resource versioning', function () {
@@ -121,14 +121,14 @@ test('parseKeys with no parameter returns every supported resource', function ()
 });
 
 test('parseKeys selects the requested resources in the order asked', function () use ($supportedKeys) {
-    $r = \App\Controllers\Api\SyncController::parseKeys('smsRules,offers', $supportedKeys);
-    eq($r['keys'], ['smsRules', 'offers']);
+    $r = \App\Controllers\Api\SyncController::parseKeys('billboards,offers', $supportedKeys);
+    eq($r['keys'], ['billboards', 'offers']);
     eq($r['unknown'], []);
 });
 
 test('parseKeys reports unknown keys instead of failing the request', function () use ($supportedKeys) {
-    $r = \App\Controllers\Api\SyncController::parseKeys('offers,wallet,smsRules', $supportedKeys);
-    eq($r['keys'], ['offers', 'smsRules']);
+    $r = \App\Controllers\Api\SyncController::parseKeys('offers,wallet,billboards', $supportedKeys);
+    eq($r['keys'], ['offers', 'billboards']);
     eq($r['unknown'], ['wallet']);
 });
 
@@ -192,7 +192,7 @@ test('normaliseKey strips anything that is not an identifier', function () {
 
 test('resourceUrl is a relative path with no scheme or host', function () {
     eq(\App\Controllers\Api\SyncController::resourceUrl('offers'), 'api/sync/resource/offers');
-    $url = \App\Controllers\Api\SyncController::resourceUrl('smsRules');
+    $url = \App\Controllers\Api\SyncController::resourceUrl('billboards');
     ok(strpos($url, '://') === false, 'never a hardcoded domain');
     ok($url[0] !== '/', 'relative so the app can resolve it against its own base URL');
 });

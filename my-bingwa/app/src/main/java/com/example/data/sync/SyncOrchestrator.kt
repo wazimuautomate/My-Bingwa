@@ -25,7 +25,6 @@ interface SyncTargets {
     suspend fun syncBillboards()
     suspend fun syncNotificationTemplates()
     suspend fun syncRemoteNotifications()
-    suspend fun syncSmsRules()
 }
 
 /**
@@ -166,7 +165,6 @@ class SyncOrchestrator(
             SyncResource.BILLBOARDS -> targets.syncBillboards()
             SyncResource.NOTIFICATION_TEMPLATES -> targets.syncNotificationTemplates()
             SyncResource.REMOTE_NOTIFICATIONS -> targets.syncRemoteNotifications()
-            SyncResource.SMS_RULES -> targets.syncSmsRules()
         }
     }
 }

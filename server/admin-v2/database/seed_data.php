@@ -2,8 +2,8 @@
 /**
  * Canonical reference data for a fresh admin-v2 install:
  *  - the full permission set and the default roles (§17),
- *  - the app's shipped catalogue, message templates and support/config defaults,
- *    mirroring the Android app + legacy server so the first publish matches the app.
+ *  - the app's shipped catalogue and support/config defaults, mirroring the Android app
+ *    + legacy server so the first publish matches the app.
  *
  * Editing this file changes only NEW installs / empty tables. It never clobbers data
  * an administrator has already edited (see Seeder).
@@ -22,7 +22,6 @@ return [
         'billboards.manage'   => ['Billboards', 'Manage billboard adverts'],
         'notifications.create'=> ['Notifications', 'Create notification campaigns'],
         'notifications.schedule'=> ['Notifications', 'Schedule / cancel campaigns'],
-        'templates.manage'    => ['Message templates', 'Manage message templates'],
         'payments.view'       => ['Payments', 'View payment operations'],
         'payments.export'     => ['Payments', 'Export payment CSV'],
         'support.edit'        => ['Support', 'Edit support & payment routes'],
@@ -109,39 +108,4 @@ return [
         ['SAF_OfaMOTO', 'Minutes / offers delivery'],
     ],
 
-    // Kept for reference only. Message recognition now lives in mb_sms_rules, seeded by
-    // migration 013_sms_rules.sql — the seeder no longer writes mb_message_templates.
-    // [template_key, purpose, sender, category, pattern, label, positive[], negative[]]
-    'message_templates' => [
-        [
-            'data_bingwa_sokoni', 'delivery', 'Safaricom', 'DATA',
-            'received\\b.*?\\d+\\s*(?:MB|GB).*?from\\s+Bingwa\\s+Sokoni', 'Bingwa Sokoni data delivery',
-            ['You have received Sh20=250MB 24hr from Bingwa Sokoni. Valid till...'],
-            ['Your data balance is below 2MBs'],
-        ],
-        [
-            'sms_daily_bundle', 'delivery', 'Safaricom', 'SMS',
-            'received\\s+\\d+\\s+SMS', 'SMS bundle delivery',
-            ['You have received 20 SMS Daily SMS Bundle. Expiry date:...'],
-            ['You have received Sh20=250MB'],
-        ],
-        [
-            'minutes_gift', 'delivery', 'SAF_OfaMOTO', 'MINUTES',
-            'received\\s+a\\s+gift\\s+of.*?\\d+\\s*Mins', 'Minutes gift delivery',
-            ['You have received a gift of Sh20=43 Mins,3hrs from...'],
-            ['You have received 20 SMS'],
-        ],
-        [
-            'data_low_balance', 'low_balance', 'SAF_Balance', 'DATA',
-            'data\\s+balance\\s+is\\s+(?:below|[0-9])', 'Data low balance',
-            ['Dear customer, your deal of the day data balance is 75MBs...'],
-            ['You have received Sh20=250MB from Bingwa Sokoni'],
-        ],
-        [
-            'data_very_low_balance', 'very_low_balance', 'SAF_Balance', 'DATA',
-            'data\\s+balance\\s+is\\s+below\\s+2\\s*MBs', 'Data very low balance',
-            ['Dear customer, your deal of the day data balance is below 2MBs...'],
-            ['your deal of the day data balance is 75MBs'],
-        ],
-    ],
 ];

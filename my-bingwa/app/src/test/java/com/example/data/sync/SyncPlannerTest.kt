@@ -149,7 +149,7 @@ class SyncPlannerTest {
         )
         assertFalse(plan.resources.contains(SyncResource.OFFERS))
         assertTrue(plan.resources.contains(SyncResource.CONFIG))
-        assertTrue(plan.resources.contains(SyncResource.SMS_RULES))
+        assertTrue(plan.resources.contains(SyncResource.BILLBOARDS))
     }
 
     @Test

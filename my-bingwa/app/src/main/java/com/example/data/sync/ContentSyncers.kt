@@ -4,17 +4,15 @@ import com.example.core.notifications.engine.NotificationTemplateProvider
 import com.example.core.notifications.engine.RemoteNotificationSource
 import com.example.core.notifications.engine.RemoteNotificationStore
 import com.example.core.notifications.engine.RemoteNotificationTemplateSource
-import com.example.core.sms.RemoteSmsRuleSource
-import com.example.core.sms.SmsRuleProvider
 
 /**
- * The three content syncs that belong to the notification and SMS engines rather
- * than to the offer catalogue.
+ * The content syncs that belong to the notification engine rather than to the offer
+ * catalogue.
  *
- * The repository owns the [SyncTargets] contract, but notification templates,
- * admin-published notifications and SMS rules live in their own stores — the
- * repository has no business knowing about them. This collaborator holds that
- * knowledge in one place, so the repository simply delegates.
+ * The repository owns the [SyncTargets] contract, but notification templates and
+ * admin-published notifications live in their own stores — the repository has no
+ * business knowing about them. This collaborator holds that knowledge in one place,
+ * so the repository simply delegates.
  *
  * Every dependency is nullable and every method degrades to a silent no-op when
  * its pieces are absent. That is what keeps a build with no configured base URL
@@ -28,9 +26,7 @@ class ContentSyncers(
     private val templateProvider: NotificationTemplateProvider? = null,
     private val templateSource: RemoteNotificationTemplateSource? = null,
     private val notificationStore: RemoteNotificationStore? = null,
-    private val notificationSource: RemoteNotificationSource? = null,
-    private val smsRuleProvider: SmsRuleProvider? = null,
-    private val smsRuleSource: RemoteSmsRuleSource? = null
+    private val notificationSource: RemoteNotificationSource? = null
 ) {
 
     /**
@@ -57,16 +53,5 @@ class ContentSyncers(
         val source = notificationSource ?: return
         val fetched = source.fetch() ?: return
         store.save(fetched)
-    }
-
-    /**
-     * Refreshes the Safaricom SMS detection rules — the sync that lets the owner
-     * teach the app a new message format from the dashboard, with no app release.
-     * A null/empty fetch keeps the rules already on the device.
-     */
-    suspend fun syncSmsRules() {
-        val provider = smsRuleProvider ?: return
-        val source = smsRuleSource ?: return
-        provider.syncFrom(source)
     }
 }

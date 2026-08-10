@@ -85,9 +85,8 @@ profile of you across other apps or websites.
 - **No location data.**
 - **No contact list.** The app never reads your contacts. You type recipient
   numbers yourself.
-- **No SMS content leaves your device.** (See the RECEIVE_SMS permission below —
-  it exists only in the directly-downloaded build and is read entirely on your
-  phone.)
+- **No SMS access at all.** The app does not request permission to read your
+  messages, on any build.
 
 ---
 
@@ -99,7 +98,8 @@ profile of you across other apps or websites.
 | **Network state** | To detect whether you are online or offline, so the app stays usable offline and can show M-Pesa Till/Paybill instructions instead. |
 | **Notifications** (Android 13+) | Optional. Only requested after we explain it in the app. Used for payment updates and, if you allow them, offer reminders. You can decline and the app still works. |
 | **Phone state** | Requested only when you tap "open M-Pesa" for an offline payment, and only to pick the SIM matching the number you told us is yours so the M-Pesa menu opens on the right line. It is best-effort; if you decline, the app falls back to your default SIM. The app does not silently read or upload your phone number. |
-| **Receive SMS** (directly-downloaded build only) | Optional local feature. If you enable "Bundle & balance alerts", the app reads incoming **Safaricom** messages on your phone to notice when a bundle was delivered or your balance is low, so it can show you a helpful note. This reading happens entirely on your device. **No SMS content, and no numbers from your messages, ever leave your phone.** The Google Play version of the app does not include this permission at all. |
+
+My Bingwa does not request permission to read your SMS messages, on any build.
 
 ---
 

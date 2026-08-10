@@ -116,8 +116,6 @@ interface BingwaRepository : SyncTargets {
     fun markReviewPrompted(nowMillis: Long)
     /** Reflect the real OS notification-permission state into the profile (persisted). */
     fun setNotificationsEnabled(enabled: Boolean)
-    /** Reflect the real OS RECEIVE_SMS grant into the profile (persisted). */
-    fun setSmsAlertsEnabled(enabled: Boolean)
     fun setAppTheme(theme: AppThemeSetting)
     fun toggleOfflineMode()
     fun setOfflineMode(offline: Boolean)
@@ -212,35 +210,12 @@ interface BingwaRepository : SyncTargets {
      */
     override suspend fun syncRemoteNotifications()
 
-    /**
-     * Refresh the Safaricom SMS detection rules. This is the sync that lets the owner
-     * teach the app a NEW message format from the dashboard with no app release; a
-     * failed fetch keeps the rules already on the device.
-     */
-    override suspend fun syncSmsRules()
-
     fun deletePurchaseRecord(recordId: String)
     fun deletePurchaseRecords(recordIds: List<String>)
     fun undoDeletePurchaseRecord(record: PurchaseRecord)
 
     /** Record the latest observed connectivity state (from [ConnectivityObserver]). */
     fun setConnectionState(state: ConnectionState)
-
-    /**
-     * Reconcile a Safaricom bundle-delivery SMS against the most recent RECEIVED
-     * purchase of [category] not yet flagged confirmed: flip its
-     * [PurchaseRecord.isDeliveryConfirmed] and add a carrier-attributed in-app
-     * notification. Honest — this never claims My Bingwa delivered anything, and
-     * it does not post a loud system notification (delivery is not shouted).
-     */
-    fun onBundleDeliveryDetected(category: OfferCategory)
-
-    /**
-     * Handle a Safaricom low-balance SMS for [category] by adding an in-app
-     * offers suggestion using only §8-allowed language (never "you are running
-     * out" / "you need more data").
-     */
-    fun onLowBalanceDetected(category: OfferCategory)
 
     fun markNotificationRead(id: String)
     fun markAllNotificationsRead()

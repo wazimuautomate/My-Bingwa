@@ -39,7 +39,6 @@ class SyncOrchestratorTest {
         override suspend fun syncBillboards() = record(SyncResource.BILLBOARDS)
         override suspend fun syncNotificationTemplates() = record(SyncResource.NOTIFICATION_TEMPLATES)
         override suspend fun syncRemoteNotifications() = record(SyncResource.REMOTE_NOTIFICATIONS)
-        override suspend fun syncSmsRules() = record(SyncResource.SMS_RULES)
     }
 
     /** Blocks inside every target call until [gate] completes. */
@@ -56,7 +55,6 @@ class SyncOrchestratorTest {
         override suspend fun syncBillboards() = block()
         override suspend fun syncNotificationTemplates() = block()
         override suspend fun syncRemoteNotifications() = block()
-        override suspend fun syncSmsRules() = block()
     }
 
     private class FakeManifestSource(private val manifest: SyncManifest?) : RemoteSyncManifestSource {

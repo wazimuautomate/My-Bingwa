@@ -357,23 +357,9 @@ final class JsonImporter
                 $errors[] = "{$label}: unknown trigger \"{$trigger}\". Known: " . implode(', ', array_keys($triggers)) . '.';
                 continue;
             }
-            $triggerEvent = self::str($item, ['triggerEvent', 'trigger_event']);
-            if ((int) ($triggers[$trigger]['needs_event'] ?? 0) === 1) {
-                if ($triggerEvent === '') {
-                    $errors[] = "{$label}: trigger \"{$trigger}\" needs a \"triggerEvent\".";
-                    continue;
-                }
-                $exists = Database::scalar(
-                    'SELECT COUNT(*) FROM ' . Database::table('sms_event_types') . ' WHERE event_key = ?',
-                    [$triggerEvent]
-                );
-                if ((int) $exists === 0) {
-                    $errors[] = "{$label}: phone-message event \"{$triggerEvent}\" does not exist.";
-                    continue;
-                }
-            } else {
-                $triggerEvent = '';
-            }
+            // No current trigger needs a supporting event key — a JSON entry may still
+            // include a "triggerEvent", it is simply never stored.
+            $triggerEvent = '';
 
             // Wordings: accept the list form, or a bare title/body pair.
             $wordings = [];

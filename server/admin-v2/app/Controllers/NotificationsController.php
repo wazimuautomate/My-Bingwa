@@ -232,10 +232,6 @@ final class NotificationsController extends Controller
             'categories' => NotificationService::categories(),
             'triggers'   => NotificationService::triggers(),
             'variables'  => NotificationService::variables(),
-            'events'     => Database::fetchAll(
-                'SELECT event_key, label FROM ' . Database::table('sms_event_types') . '
-                  WHERE enabled = 1 ORDER BY sort_order, event_key'
-            ),
             'offers'     => Database::fetchAll(
                 'SELECT offer_id, name, category FROM ' . Database::table('offers') . "
                   WHERE status='active' ORDER BY category, name"
@@ -272,18 +268,6 @@ final class NotificationsController extends Controller
         }
         if (!isset($triggers[$input['trigger_type']])) {
             $v->add('trigger_type', 'Choose when this message is allowed to appear.');
-        } elseif ((int) $triggers[$input['trigger_type']]['needs_event'] === 1) {
-            if ($input['trigger_event'] === '') {
-                $v->add('trigger_event', 'Choose the phone message that sets this off.');
-            } else {
-                $exists = Database::scalar(
-                    'SELECT COUNT(*) FROM ' . Database::table('sms_event_types') . ' WHERE event_key = ?',
-                    [$input['trigger_event']]
-                );
-                if ((int) $exists === 0) {
-                    $v->add('trigger_event', 'That phone-message event no longer exists.');
-                }
-            }
         } else {
             $input['trigger_event'] = '';
         }

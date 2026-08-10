@@ -451,16 +451,6 @@ private fun ActivityRowItem(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            // Carrier-attributed confirmation only — never a "delivered by us"
-            // claim (CLAUDE.md §7). Shown only when Safaricom messaged the device.
-            if (record.isDeliveryConfirmed) {
-                Text(
-                    text = "Safaricom confirmed delivery",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
         }
 
         Column(horizontalAlignment = Alignment.End) {

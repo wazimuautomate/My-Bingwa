@@ -142,7 +142,7 @@ foreach ($groups as $g) { $totalInView += (int) $g['count']; }
     <div class="empty">
       <?= icon('check', 32) ?>
       <h3>Nothing to publish</h3>
-      <p>The live configuration matches the draft. Change an offer, advert, notification, SMS rule or setting and it will appear here.</p>
+      <p>The live configuration matches the draft. Change an offer, advert, notification or setting and it will appear here.</p>
     </div>
   </div>
 <?php elseif ($groups === []): ?>

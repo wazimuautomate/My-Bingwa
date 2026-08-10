@@ -162,9 +162,6 @@ final class Seeder
         }
 
         $msg[] = count($data['sender_ids']) . ' sender IDs ensured.';
-        // Message recognition itself is seeded by migration 013 straight into mb_sms_rules,
-        // which is the single editable source. The v1 mb_message_templates table is left
-        // untouched (an upgrading install has its rows imported by that same migration).
     }
 
     /** Create the first Super Admin. Password from config bootstrap_admin, else generated. */

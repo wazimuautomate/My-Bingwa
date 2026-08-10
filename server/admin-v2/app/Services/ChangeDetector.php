@@ -29,8 +29,6 @@ final class ChangeDetector
         'categories'    => 'Categories',
         'billboards'    => 'Billboards',
         'notifications' => 'Notifications',
-        'smsRules'      => 'SMS rules',
-        'templates'     => 'Message templates (legacy)',
         'support'       => 'Payment & support details',
         'appConfig'     => 'App configuration',
         'featureFlags'  => 'Feature flags',
@@ -43,8 +41,6 @@ final class ChangeDetector
         'category'     => 'categories',
         'billboard'    => 'billboards',
         'notification' => 'notifications',
-        'smsRule'      => 'smsRules',
-        'template'     => 'templates',
         'support'      => 'support',
         'appConfig'    => 'appConfig',
         'app_config'   => 'appConfig',   // release rows written before the rename
@@ -88,20 +84,6 @@ final class ChangeDetector
             'cooldownMinutes' => 'Cooldown (minutes)', 'frequencyCap' => 'Frequency cap',
             'respectQuietHours' => 'Respect quiet hours',
             'suppressRecentPurchase' => 'Suppress after purchase', 'expiresAt' => 'Expires',
-        ],
-        'smsRule' => [
-            'id' => 'Rule key', 'name' => 'Name', 'description' => 'Description',
-            'senderId' => 'Sender id',
-            'patternType' => 'Pattern type', 'pattern' => 'Pattern',
-            'caseSensitive' => 'Case sensitive', 'event' => 'Event',
-            'secondaryEvents' => 'Secondary events', 'category' => 'Category',
-            'bundleType' => 'Bundle type', 'captures' => 'Captured values',
-            'correlationWindowMinutes' => 'Correlation window (minutes)', 'priority' => 'Priority',
-        ],
-        'template' => [
-            'id' => 'Template id', 'senderId' => 'Sender id', 'category' => 'Category',
-            'pattern' => 'Pattern', 'description' => 'Description', 'purpose' => 'Purpose',
-            'priority' => 'Priority', 'correlationWindowMinutes' => 'Correlation window (minutes)',
         ],
         'support' => [
             'tillNumber' => 'Till number', 'paybillNumber' => 'Paybill number',
@@ -322,7 +304,7 @@ final class ChangeDetector
         return (string) json_encode(self::normalise($value), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
-    /** 'syncIntervalMinutes' => 'Sync interval minutes'; 'sms_rules' => 'Sms rules'. */
+    /** 'syncIntervalMinutes' => 'Sync interval minutes'; 'deep_link' => 'Deep link'. */
     private static function humanise(string $key): string
     {
         if ($key === '') {

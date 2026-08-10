@@ -263,16 +263,12 @@
     });
   })();
 
-  /* ---- Notifications: only ask for an SMS event when the trigger needs one ---- */
+  /* ---- Notifications: refresh the trigger description when the choice changes ---- */
   (function () {
     var trigger = document.getElementById('nf-trigger');
     if (!trigger) return;
-    var eventField = document.getElementById('nf-event-field');
     var hint = document.getElementById('nf-trigger-hint');
-    var needs = {};
-    try { needs = JSON.parse(trigger.getAttribute('data-needs-event') || '{}'); } catch (e) { needs = {}; }
     trigger.addEventListener('change', function () {
-      if (eventField) eventField.classList.toggle('is-hidden', !needs[trigger.value]);
       var opt = trigger.options[trigger.selectedIndex];
       if (hint && opt) hint.textContent = opt.getAttribute('data-desc') || '';
     });

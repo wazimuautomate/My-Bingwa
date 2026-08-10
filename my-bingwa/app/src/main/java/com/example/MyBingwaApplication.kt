@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -18,7 +19,6 @@ import com.example.core.notifications.engine.NotificationTemplateProvider
 import com.example.core.notifications.engine.RemoteNotificationStore
 import com.example.core.personalization.DataStorePersonalizationStore
 import com.example.core.personalization.PersonalizationStore
-import com.example.core.sms.SmsRuleProvider
 import com.example.data.catalogue.AndroidRemoteBillboardSource
 import com.example.data.catalogue.AndroidRemoteCatalogueSource
 import com.example.data.config.AndroidRemoteConfigSource
@@ -30,7 +30,6 @@ import com.example.data.persistence.LocalStore
 import com.example.data.remote.AndroidRemoteCustomerSource
 import com.example.data.remote.AndroidRemoteNotificationSource
 import com.example.data.remote.AndroidRemoteNotificationTemplateSource
-import com.example.data.remote.AndroidRemoteSmsRuleSource
 import com.example.data.remote.AndroidRemoteSyncManifestSource
 import com.example.data.sync.CatalogueSyncWorker
 import com.example.data.sync.EngagementNotificationWorker
@@ -90,13 +89,6 @@ class MyBingwaApplication : Application(), SyncOrchestratorProvider {
         )
     }
 
-    /**
-     * Server-taught Safaricom SMS rules. Process-wide so the manifest-registered
-     * [com.example.notifications.SmsDeliveryReceiver] finds a warm in-memory cache
-     * and can classify a message without waiting on disk.
-     */
-    val smsRuleProvider: SmsRuleProvider by lazy { SmsRuleProvider.shared(applicationContext) }
-
     /** On-device purchase behaviour. Never uploaded; disappears with app data. */
     val personalizationStore: PersonalizationStore by lazy {
         DataStorePersonalizationStore(applicationContext)
@@ -144,9 +136,13 @@ class MyBingwaApplication : Application(), SyncOrchestratorProvider {
         runCatching { scheduleCatalogueSync() }
             .onFailure { Log.w("MyBingwaApplication", "Background sync scheduling skipped: ${it.message}") }
         // Same best-effort contract: the daily engagement notifications must never be
-        // able to crash a cold start. Re-enqueued on every start so the chain repairs
-        // itself after a reboot, a force-stop or an app update.
-        runCatching { EngagementNotificationWorker.scheduleNext(this) }
+        // able to crash a cold start. KEEP (not REPLACE) so this never disturbs a
+        // pending/running job — including the one whose OWN fire time just caused this
+        // cold start. It only seeds a fresh chain when one is genuinely missing (first
+        // install, or repair after a reboot, force-stop or app update). See the policy
+        // doc on EngagementNotificationWorker.scheduleNext for why REPLACE here used to
+        // silently cancel the very notification it was about to show.
+        runCatching { EngagementNotificationWorker.scheduleNext(this, policy = ExistingWorkPolicy.KEEP) }
             .onFailure { Log.w("MyBingwaApplication", "Engagement scheduling skipped: ${it.message}") }
     }
 
@@ -223,9 +219,9 @@ class MyBingwaApplication : Application(), SyncOrchestratorProvider {
             } else {
                 null
             },
-            // Notification wording, admin-published messages and Safaricom SMS rules.
-            // These are what make the app teachable from the dashboard without an app
-            // release. No base URL → left null, and the app runs on its in-APK seeds.
+            // Notification wording and admin-published messages. These are what make
+            // the app teachable from the dashboard without an app release. No base URL
+            // → left null, and the app runs on its in-APK seeds.
             contentSyncers = if (hasBaseUrl) {
                 val baseUrl = BuildConfig.PAYMENTS_BASE_URL
                 val appKey = BuildConfig.PAYMENTS_APP_KEY
@@ -238,12 +234,6 @@ class MyBingwaApplication : Application(), SyncOrchestratorProvider {
                     ),
                     notificationStore = remoteNotificationStore,
                     notificationSource = AndroidRemoteNotificationSource(
-                        baseUrl = baseUrl,
-                        appKey = appKey,
-                        enableLogging = BuildConfig.DEBUG
-                    ),
-                    smsRuleProvider = smsRuleProvider,
-                    smsRuleSource = AndroidRemoteSmsRuleSource(
                         baseUrl = baseUrl,
                         appKey = appKey,
                         enableLogging = BuildConfig.DEBUG

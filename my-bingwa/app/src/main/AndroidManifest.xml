@@ -12,14 +12,6 @@
       the default SIM if the permission is denied or the SIM number is unavailable.
     -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <!--
-      RECEIVE_SMS powers optional Safaricom bundle-delivery / low-balance
-      detection only (SmsDeliveryReceiver reads carrier messages locally to
-      confirm delivery honestly and suggest top-ups). It is a Google Play
-      restricted permission and must be excluded from the Play build variant;
-      it is kept here for the direct-APK build. No SMS content leaves the device.
-    -->
-    <uses-permission android:name="android.permission.RECEIVE_SMS" />
 
     <!--
       REQUEST_INSTALL_PACKAGES lets the direct (GitHub/sideload) channel install a
@@ -31,16 +23,6 @@
       + signing key + higher versionCode).
     -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-
-    <!--
-      RECEIVE_SMS implies telephony hardware; declare it optional so the app
-      still installs on non-telephony devices (tablets / ChromeOS) and to satisfy
-      lint (PermissionImpliesUnsupportedChromeOsHardware). SMS detection simply
-      stays inactive where there is no telephony.
-    -->
-    <uses-feature
-        android:name="android.hardware.telephony"
-        android:required="false" />
 
     <application
         android:name=".MyBingwaApplication"
@@ -82,21 +64,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-
-        <!--
-          Listens for incoming Safaricom SMS to detect bundle delivery and
-          low-balance nudges. Protected by BROADCAST_SMS so only the system can
-          deliver the broadcast. Reads message text locally; never logs or
-          forwards full numbers or bodies (CLAUDE.md §10).
-        -->
-        <receiver
-            android:name=".notifications.SmsDeliveryReceiver"
-            android:exported="true"
-            android:permission="android.permission.BROADCAST_SMS">
-            <intent-filter>
-                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
-            </intent-filter>
-        </receiver>
     </application>
 
 </manifest>

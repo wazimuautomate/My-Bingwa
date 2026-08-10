@@ -109,21 +109,6 @@ $router->post('/notifications/{id}/test',[App\Controllers\NotificationsControlle
 $router->get('/notifications/import',    [App\Controllers\ImportController::class, 'notificationsForm']);
 $router->post('/notifications/import',   [App\Controllers\ImportController::class, 'importNotifications']);
 
-/* --------------------------------------------------------------- SMS rules */
-// Replaces the v1 "Message templates" page. The published snapshot still exposes the old
-// `templates` section, derived from these rules, so apps already in the field keep working.
-$router->get('/sms-rules',                [App\Controllers\SmsRulesController::class, 'index']);
-$router->get('/sms-rules/new',            [App\Controllers\SmsRulesController::class, 'create']);
-$router->get('/sms-rules/tester',         [App\Controllers\SmsRulesController::class, 'tester']);
-$router->post('/sms-rules/tester',        [App\Controllers\SmsRulesController::class, 'runTester']);
-$router->get('/sms-rules/{id}/edit',      [App\Controllers\SmsRulesController::class, 'edit']);
-$router->post('/sms-rules/save',          [App\Controllers\SmsRulesController::class, 'save']);
-$router->post('/sms-rules/{id}/toggle',   [App\Controllers\SmsRulesController::class, 'toggle']);
-$router->post('/sms-rules/{id}/duplicate',[App\Controllers\SmsRulesController::class, 'duplicate']);
-$router->post('/sms-rules/{id}/delete',   [App\Controllers\SmsRulesController::class, 'delete']);
-// Legacy path kept alive so old bookmarks land on the new page instead of a 404.
-$router->get('/message-templates',        [App\Controllers\SmsRulesController::class, 'legacyRedirect']);
-
 /* ------------------------------------------------------------- customers */
 $router->get('/customers',                  [App\Controllers\CustomersController::class, 'index']);
 $router->get('/customers-export',           [App\Controllers\CustomersController::class, 'exportCsv']);

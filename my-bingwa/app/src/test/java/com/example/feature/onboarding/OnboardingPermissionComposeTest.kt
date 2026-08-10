@@ -8,7 +8,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.example.ui.theme.MyBingwaTheme
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -128,7 +127,6 @@ class OnboardingPermissionComposeTest {
         assertEquals(2, notificationRequests)
         composeRule.onNodeWithTag("onboarding_step_notifications", useUnmergedTree = true)
             .assertExists()
-        composeRule.onNodeWithTag("onboarding_step_sms", useUnmergedTree = true).assertDoesNotExist()
     }
 
     @Test
@@ -185,26 +183,7 @@ class OnboardingPermissionComposeTest {
     }
 
     @Test
-    fun `a granted notification permission carries straight on to the sms step`() {
-        composeRule.setContent {
-            MyBingwaTheme {
-                OnboardingScreen(
-                    onCompleteOnboarding = { _, _ -> },
-                    notificationsGranted = true
-                )
-            }
-        }
-        tapCta()
-        tapCta()
-        fillSetup()
-        tapCta() // setup → notifications, which is already satisfied
-        settle()
-
-        composeRule.onNodeWithTag("onboarding_step_sms", useUnmergedTree = true).assertExists()
-    }
-
-    @Test
-    fun `granting both permissions completes onboarding with the entered details`() {
+    fun `granting the notification permission completes onboarding with the entered details`() {
         var completedName: String? = null
         var completedPhone: String? = null
         composeRule.setContent {
@@ -214,41 +193,18 @@ class OnboardingPermissionComposeTest {
                         completedName = name
                         completedPhone = phone
                     },
-                    notificationsGranted = true,
-                    smsGranted = true
+                    notificationsGranted = true
                 )
             }
         }
         tapCta()
         tapCta()
         fillSetup(name = "Asha", phone = "0712345678")
-        tapCta() // setup → both permission steps auto-continue → finish
+        tapCta() // setup → notifications, already satisfied → finish
         composeRule.mainClock.advanceTimeBy(2_000L)
 
         assertEquals("Asha", completedName)
         assertEquals("0712345678", completedPhone)
-    }
-
-    @Test
-    fun `the sms step is absent where the build does not ship the permission`() {
-        var completed = false
-        composeRule.setContent {
-            MyBingwaTheme {
-                OnboardingScreen(
-                    onCompleteOnboarding = { _, _ -> completed = true },
-                    notificationsGranted = true,
-                    smsSupported = false
-                )
-            }
-        }
-        tapCta()
-        tapCta()
-        fillSetup()
-        tapCta()
-        composeRule.mainClock.advanceTimeBy(2_000L)
-
-        composeRule.onNodeWithTag("onboarding_step_sms", useUnmergedTree = true).assertDoesNotExist()
-        assertTrue(completed)
     }
 
     @Test

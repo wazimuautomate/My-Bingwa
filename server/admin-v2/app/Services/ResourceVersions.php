@@ -31,8 +31,6 @@ final class ResourceVersions
         'categories'    => ['Categories', true],
         'billboards'    => ['Billboards', true],
         'notifications' => ['Notifications', true],
-        'smsRules'      => ['SMS rules', true],
-        'templates'     => ['Message templates (legacy)', false],
         'support'       => ['Payment & support details', false],
         'appConfig'     => ['App configuration', false],
         'featureFlags'  => ['Feature flags', false],
@@ -68,21 +66,14 @@ final class ResourceVersions
      * Make a section's shape identical whichever side it came from, so the checksum
      * describes the CONTENT and nothing else.
      *
-     * Two things would otherwise move a version without the content changing:
-     *
-     *  1. `templates.version` is set to the new config version on every publish, so hashing
-     *     it would make the legacy templates resource look changed every single time.
-     *  2. An empty map is `new stdClass()` in the working snapshot (so it publishes as the
-     *     `{}` a client expects) but comes back from json_decode(..., true) as `[]`. Hashing
-     *     those two gives different digests, so the resource would bump on every publish and
-     *     every device would re-download SMS rules for ever. Fold objects to arrays here;
-     *     the PUBLISHED bytes are untouched and still contain `{}`.
+     * An empty map is `new stdClass()` in the working snapshot (so it publishes as the `{}`
+     * a client expects) but comes back from json_decode(..., true) as `[]`. Hashing those two
+     * gives different digests, so the resource would bump on every publish and every device
+     * would re-download it for ever. Fold objects to arrays here; the PUBLISHED bytes are
+     * untouched and still contain `{}`.
      */
     private static function normalise(string $key, $section)
     {
-        if ($key === 'templates' && is_array($section)) {
-            unset($section['version']);
-        }
         return self::foldObjects($section);
     }
 

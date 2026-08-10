@@ -23,8 +23,8 @@ android {
     // GitHub and Play channels and updates supersede correctly (same signing
     // identity — see signingConfigs + docs/RELEASE_PLAYSTORE.md). Bump BOTH for
     // every release; versionCode must only ever increase.
-    versionCode = 7
-    versionName = "1.0.6"
+    versionCode = 8
+    versionName = "1.0.7"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -106,11 +106,9 @@ android {
   // Two distribution channels from one codebase and one signing identity.
   flavorDimensions += "distribution"
   productFlavors {
-    // GitHub / direct-download build. Keeps the local Safaricom SMS
-    // delivery-detection feature (RECEIVE_SMS), which Google Play restricts.
+    // GitHub / direct-download build.
     create("direct") {
       dimension = "distribution"
-      buildConfigField("boolean", "SMS_DETECTION_AVAILABLE", "true")
       // The GitHub updater is a DEBUG-ONLY development convenience, on both
       // flavours. This flavour default is what a `directDebug` build gets; the
       // `release` build type below overrides it to false, and a build type always
@@ -121,17 +119,10 @@ android {
       buildConfigField("boolean", "GITHUB_UPDATER_ENABLED", "true")
     }
     // Google Play build. Identical applicationId and signing identity as `direct`,
-    // so the two channels are update-compatible. It keeps RECEIVE_SMS by owner
-    // decision (see src/play/AndroidManifest.xml for what that costs at review
-    // time); the only thing it drops is REQUEST_INSTALL_PACKAGES, which Play
-    // builds never need.
-    //
-    // This flag is the single switch for the whole SMS feature: set it false and
-    // the Settings section disappears and onboarding stops asking, which is the
-    // clean fallback if Play refuses the permission declaration.
+    // so the two channels are update-compatible. The only thing it drops is
+    // REQUEST_INSTALL_PACKAGES, which Play builds never need.
     create("play") {
       dimension = "distribution"
-      buildConfigField("boolean", "SMS_DETECTION_AVAILABLE", "true")
       // Play distribution updates itself natively. Shipping a second, in-app
       // update channel there is redundant and violates Play policy, so the
       // GitHub updater is compiled out of this flavour. The implementation is

@@ -8,8 +8,7 @@
  *   { publishVersion, generatedAt,
  *     resources: { CONFIG:  { version, updatedAt, checksum },
  *                  OFFERS:  { ... }, BILLBOARDS: { ... },
- *                  NOTIFICATION_TEMPLATES: { ... }, REMOTE_NOTIFICATIONS: { ... },
- *                  SMS_RULES: { ... } } }
+ *                  NOTIFICATION_TEMPLATES: { ... }, REMOTE_NOTIFICATIONS: { ... } } }
  *
  * WHY IT MATTERS
  * --------------
@@ -42,7 +41,7 @@
  * Populated automatically by Preview & Publish (PublishingService::buildWorkingSnapshot):
  * `appConfig`/`support`/`version` → CONFIG, `offers`/`categories` → OFFERS,
  * `billboards` → BILLBOARDS, `notifications` → NOTIFICATION_TEMPLATES and
- * REMOTE_NOTIFICATIONS, `smsRules` → SMS_RULES. Nothing extra to fill in.
+ * REMOTE_NOTIFICATIONS. Nothing extra to fill in.
  */
 
 $config = require __DIR__ . '/config.php';
@@ -97,7 +96,6 @@ function manifest_resources(?array $snap, int $updatedAtMillis): array
         'BILLBOARDS'             => manifest_fingerprint($snap['billboards'] ?? [], $updatedAtMillis),
         'NOTIFICATION_TEMPLATES' => manifest_fingerprint($notifications, $updatedAtMillis),
         'REMOTE_NOTIFICATIONS'   => manifest_fingerprint($notifications, $updatedAtMillis),
-        'SMS_RULES'              => manifest_fingerprint($snap['smsRules'] ?? [], $updatedAtMillis),
     ];
 }
 

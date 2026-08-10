@@ -25,7 +25,6 @@ final class SettingsController extends Controller
         'offers'        => 'Offers',
         'billboards'    => 'Billboard adverts',
         'notifications' => 'Notifications',
-        'templates'     => 'SMS rules',
         'payments'      => 'Payments',
         'customers'     => 'Customers',
         'support'       => 'Support details',

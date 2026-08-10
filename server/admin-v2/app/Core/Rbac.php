@@ -44,7 +44,6 @@ final class Rbac
             'offers'        => 'offers',
             'billboards'    => 'billboards',
             'notifications' => 'notifications',
-            'templates'     => 'templates',
             'payments'      => 'payments',
             'support'       => 'support',
             'config'        => 'config',

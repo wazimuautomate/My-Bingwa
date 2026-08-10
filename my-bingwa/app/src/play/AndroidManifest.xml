@@ -2,18 +2,10 @@
 <!--
   Google Play flavor manifest overlay.
 
-  RECEIVE_SMS is KEPT in this flavour, by an explicit owner decision recorded in
-  memory.md: reading Safaricom's own delivery and balance messages is core to how
-  My Bingwa confirms a bundle arrived, so the feature ships on both channels.
-
-  That has a cost the release owner has accepted: RECEIVE_SMS is a Google Play
-  restricted permission. The Play Console submission MUST include a Permissions
-  Declaration explaining the use case, and Play may still reject it — a bundle
-  store is not one of Google's pre-approved SMS use cases. If that happens, the
-  fix is one line: restore `tools:node="remove"` for RECEIVE_SMS and the receiver
-  below, and flip `SMS_DETECTION_AVAILABLE` to false for this flavour in
-  build.gradle.kts. The app degrades cleanly without it — delivery detection
-  simply stays inactive.
+  The app no longer requests any SMS permission on either channel (removed
+  after a Play production rejection for RECEIVE_SMS). This file now only
+  strips the direct-channel self-update permission, which Play distribution
+  does not need.
 
   Everything else — applicationId, signing identity, versionCode/Name — is shared
   with the `direct` flavor, so the two channels remain update-compatible.

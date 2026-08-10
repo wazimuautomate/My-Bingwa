@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.NotificationsActive
-import androidx.compose.material.icons.outlined.Sms
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -38,16 +37,14 @@ import com.example.ui.theme.FieldButtonShape
  * away after onboarding — normally because the customer revoked it in Android's
  * own settings.
  *
- * Notifications and Safaricom bundle messages are required to use the app (owner
- * decision, enforced in onboarding too), so this is deliberately not dismissible:
- * the only ways out are granting the permission or closing the app. It re-uses the
- * shape of the "Update required" gate so the two blocking states feel like one
- * thing rather than two different apps.
+ * Notifications are required to use the app (owner decision, enforced in onboarding
+ * too), so this is deliberately not dismissible: the only ways out are granting the
+ * permission or closing the app. It re-uses the shape of the "Update required" gate
+ * so the two blocking states feel like one thing rather than two different apps.
  */
 @Composable
 fun PermissionRequiredScreen(
     missingNotifications: Boolean,
-    missingSms: Boolean,
     canAskAgain: Boolean,
     onAllow: () -> Unit,
     onOpenAppSettings: () -> Unit,
@@ -95,8 +92,8 @@ fun PermissionRequiredScreen(
             Spacer(Modifier.height(10.dp))
 
             Text(
-                text = "My Bingwa needs this to confirm your payments and keep your bundle " +
-                    "records right. Turn it back on to carry on using the app.",
+                text = "My Bingwa needs this to let you know about your payments. Turn it " +
+                    "back on to carry on using the app.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -117,14 +114,6 @@ fun PermissionRequiredScreen(
                             icon = Icons.Outlined.NotificationsActive,
                             title = "Notifications",
                             body = "Payment and delivery updates for what you buy."
-                        )
-                    }
-                    if (missingNotifications && missingSms) Spacer(Modifier.height(14.dp))
-                    if (missingSms) {
-                        MissingRow(
-                            icon = Icons.Outlined.Sms,
-                            title = "Safaricom bundle messages",
-                            body = "Read on this phone only, and never uploaded."
                         )
                     }
                 }

@@ -86,22 +86,17 @@ final class PublishingService
      * Serialise the current working state into the app-safe snapshot structure.
      *
      * Section keys are the synchronisation contract (see ResourceVersions::RESOURCES).
-     * Keys are only ever ADDED — `offers`, `billboards`, `templates`, `support`,
-     * `appConfig` and `version` keep the exact shape the shipped app already reads.
+     * Keys are only ever ADDED — `offers`, `billboards`, `support`, `appConfig` and
+     * `version` keep the exact shape the shipped app already reads.
      */
     public static function buildWorkingSnapshot(): array
     {
-        $smsRules = self::buildSmsRules();
         return [
             'schemaVersion' => self::SCHEMA_VERSION,
             'offers'        => self::buildOffers(),
             'categories'    => self::buildCategories(),
             'billboards'    => self::buildBillboards(),
             'notifications' => self::buildNotifications(),
-            'smsRules'      => $smsRules,
-            // Legacy view of the same rules, so apps shipped before SMS Rules existed keep
-            // recognising messages. Derived — never separately edited.
-            'templates'     => self::buildLegacyTemplates($smsRules),
             'support'       => self::buildSupport(),
             'appConfig'     => self::buildAppConfig(),
             'featureFlags'  => self::buildFeatureFlags(),
@@ -204,109 +199,6 @@ final class PublishingService
             ];
         }
         return $out;
-    }
-
-    /* --------------------------------------------------------------- SMS rules */
-
-    /**
-     * Every enabled SMS rule, strongest priority first. The app evaluates these locally:
-     * the server never sees a message, a number or a balance.
-     */
-    private static function buildSmsRules(): array
-    {
-        $rows = Database::fetchAll(
-            "SELECT * FROM " . Database::table('sms_rules') . "
-              WHERE enabled = 1 ORDER BY priority DESC, rule_key ASC"
-        );
-        $out = [];
-        foreach ($rows as $r) {
-            $captures = json_decode((string) $r['captures_json'], true);
-            $secondary = array_values(array_filter(array_map(
-                'trim',
-                explode(',', (string) $r['secondary_events'])
-            ), static fn($v) => $v !== ''));
-            $out[] = [
-                'id'             => $r['rule_key'],
-                'name'           => $r['name'],
-                'description'    => $r['description'],
-                'senderId'       => $r['sender_id'],
-                'patternType'    => $r['pattern_type'],
-                'pattern'        => $r['pattern'],
-                'caseSensitive'  => (int) $r['case_sensitive'] === 1,
-                'event'          => $r['event_type'],
-                'secondaryEvents'=> $secondary,
-                'category'       => $r['category'],
-                'bundleType'     => $r['bundle_type'],
-                'captures'       => is_array($captures) && $captures !== [] ? $captures : new \stdClass(),
-                'correlationWindowMinutes' => (int) $r['correlation_window_min'],
-                'priority'       => (int) $r['priority'],
-            ];
-        }
-        return $out;
-    }
-
-    /** Which legacy purpose an event belongs to, or null when it has no v1 equivalent. */
-    public static function legacyPurposeForEvent(string $event): ?string
-    {
-        static $map = [
-            'DATA_RECEIVED'    => 'delivery',
-            'SMS_RECEIVED'     => 'delivery',
-            'MINUTES_RECEIVED' => 'delivery',
-            'GIFT_RECEIVED'    => 'delivery',
-            'LOW_DATA'         => 'low_balance',
-            'LOW_SMS'          => 'low_balance',
-            'LOW_MINUTES'      => 'low_balance',
-            'VERY_LOW_DATA'    => 'very_low_balance',
-            'NO_DATA'          => 'very_low_balance',
-        ];
-        return $map[$event] ?? null;
-    }
-
-    /**
-     * The v1 `templates` section, derived from the SMS rules so an app shipped before SMS
-     * Rules existed keeps working. Only regex rules can be expressed here — v1 had no
-     * other pattern type — so a "contains" rule simply does not appear in this view.
-     */
-    private static function buildLegacyTemplates(array $smsRules): array
-    {
-        $delivery = [];
-        $lowBalance = [];
-        foreach ($smsRules as $rule) {
-            if ($rule['patternType'] !== 'regex') {
-                continue;
-            }
-            $purpose = self::legacyPurposeForEvent((string) $rule['event']);
-            if ($purpose === null) {
-                continue;
-            }
-            $entry = [
-                'id'          => $rule['id'],
-                'senderId'    => $rule['senderId'],
-                'category'    => $rule['category'] !== '' ? $rule['category'] : 'DATA',
-                'pattern'     => $rule['pattern'],
-                'description' => $rule['name'],
-                'purpose'     => $purpose,
-                // v1 read priority ascending; the new model is descending. Invert so the
-                // strongest rule still sorts first for an old client.
-                'priority'    => max(1, 1000 - (int) $rule['priority']),
-                'correlationWindowMinutes' => (int) $rule['correlationWindowMinutes'],
-            ];
-            if ($purpose === 'delivery') {
-                $delivery[] = $entry;
-            } else {
-                $lowBalance[] = $entry;
-            }
-        }
-        $sortByPriority = static function (array $a, array $b): int {
-            return $a['priority'] <=> $b['priority'] ?: strcmp($a['id'], $b['id']);
-        };
-        usort($delivery, $sortByPriority);
-        usort($lowBalance, $sortByPriority);
-        return [
-            'version'    => self::nextVersion(), // overwritten with the release version on publish
-            'delivery'   => $delivery,
-            'lowBalance' => $lowBalance,
-        ];
     }
 
     /* ----------------------------------------------------------- notifications */
@@ -538,8 +430,6 @@ final class PublishingService
                 $version = self::nextVersion();
                 $snapshot['configVersion'] = $version;
                 $snapshot['publishedAt'] = gmdate('Y-m-d\TH:i:s\Z');
-                // Keep the templates.version in step with the release version.
-                $snapshot['templates']['version'] = $version;
 
                 // Per-resource versions are derived from the section bytes, so they must be
                 // computed AFTER configVersion/publishedAt are set but they deliberately
@@ -844,33 +734,6 @@ final class PublishingService
             static fn(array $n): string => trim((string) ($n['name'] ?? '')) !== ''
                 ? (string) $n['name']
                 : ('Notification #' . (string) ($n['id'] ?? ''))
-        );
-
-        self::diffList(
-            $items,
-            'smsRules',
-            'smsRule',
-            $old['smsRules'] ?? [],
-            $new['smsRules'] ?? [],
-            static fn(array $r): string => trim((string) ($r['name'] ?? '')) !== ''
-                ? (string) $r['name']
-                : ('Rule ' . (string) ($r['id'] ?? ''))
-        );
-
-        // Legacy templates. `templates.version` always tracks the release number, so it is
-        // deliberately NOT compared — only the delivery / lowBalance entries are. Comparing
-        // it would make Preview show a phantom change before every single publish.
-        $oldTemplates = array_merge($old['templates']['delivery'] ?? [], $old['templates']['lowBalance'] ?? []);
-        $newTemplates = array_merge($new['templates']['delivery'] ?? [], $new['templates']['lowBalance'] ?? []);
-        self::diffList(
-            $items,
-            'templates',
-            'template',
-            $oldTemplates,
-            $newTemplates,
-            static fn(array $t): string => trim((string) ($t['description'] ?? '')) !== ''
-                ? (string) $t['description']
-                : ('Template ' . (string) ($t['id'] ?? ''))
         );
 
         // Singletons: one item whose `fields` are the changed keys inside the object.

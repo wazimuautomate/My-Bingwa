@@ -24,17 +24,10 @@ test('re-saving without editing produces no diff (key order is irrelevant)', fun
     eq(\App\Services\PublishingService::diffSnapshots($old, $new), []);
 });
 
-test('templates.version never registers as a change', function () {
-    $old = baseSnapshot();
-    $new = baseSnapshot();
-    $new['templates']['version'] = 99;   // always tracks the release number
-    eq(\App\Services\PublishingService::diffSnapshots($old, $new), []);
-});
-
 test('an empty captures object equals an empty captures array', function () {
     // The working snapshot uses stdClass so it serialises as {}; the published snapshot
     // decodes back to []. Those are the same value and must not look like an edit.
-    eq(\App\Services\ChangeDetector::compareItems('smsRule', ['captures' => []], ['captures' => new stdClass()]), []);
+    eq(\App\Services\ChangeDetector::compareItems('offer', ['captures' => []], ['captures' => new stdClass()]), []);
 });
 
 /* --------------------------------------------------------------- single change */
@@ -59,21 +52,6 @@ test('one changed field yields exactly one item with exactly one field', functio
 });
 
 /* -------------------------------------------------- added / removed per section */
-
-test('added SMS rule is detected in the smsRules module', function () {
-    $old = baseSnapshot();
-    $new = baseSnapshot();
-    $new['smsRules'][] = ['id' => 'r1', 'name' => 'Bundle received', 'pattern' => 'received'];
-
-    $items = \App\Services\PublishingService::diffSnapshots($old, $new);
-    eq(count($items), 1);
-    eq($items[0]['change_type'], 'added');
-    eq($items[0]['module'], 'smsRules');
-    eq($items[0]['entity_type'], 'smsRule');
-    eq($items[0]['entity_id'], 'r1');
-    eq($items[0]['entity_label'], 'Bundle received');
-    eq($items[0]['summary'], 'Added Bundle received');
-});
 
 test('removed category is detected in the categories module', function () {
     $old = baseSnapshot();
@@ -255,31 +233,12 @@ function richWorkingSnapshot(): array
             'frequencyCap' => 1, 'respectQuietHours' => true, 'suppressRecentPurchase' => true,
             'expiresAt' => null,
         ]],
-        'smsRules' => [
-            [
-                // captures present -> a real map
-                'id' => 'saf_data', 'name' => 'Data received', 'description' => '',
-                'senderId' => 'Safaricom', 'patternType' => 'regex', 'pattern' => 'received',
-                'caseSensitive' => false, 'event' => 'DATA_RECEIVED', 'secondaryEvents' => [],
-                'category' => 'DATA', 'bundleType' => '', 'captures' => ['amount' => 1],
-                'correlationWindowMinutes' => 30, 'priority' => 220,
-            ],
-            [
-                // captures ABSENT -> stdClass, which json_decode(assoc) turns into []
-                'id' => 'saf_none', 'name' => 'No captures', 'description' => '',
-                'senderId' => '', 'patternType' => 'contains', 'pattern' => 'gift',
-                'caseSensitive' => false, 'event' => 'GIFT_RECEIVED', 'secondaryEvents' => [],
-                'category' => '', 'bundleType' => '', 'captures' => new \stdClass(),
-                'correlationWindowMinutes' => 0, 'priority' => 150,
-            ],
-        ],
-        'templates' => ['version' => 7, 'delivery' => [], 'lowBalance' => []],
         'support' => ['tillNumber' => '4063396', 'paybillNumber' => '', 'supportNumber' => '',
                       'supportWhatsapp' => '', 'offlineSelfInstructions' => 'Buy Goods.',
                       'offlineOtherInstructions' => 'Pay Bill.', 'supportBanner' => '', 'workingHours' => ''],
         'appConfig' => ['maintenanceMode' => false, 'maintenanceMessage' => '',
                         'syncIntervalMinutes' => 360, 'generalSupportMessage' => ''],
-        'featureFlags' => ['offline_purchase' => true, 'billboards' => true, 'sms_rules' => false],
+        'featureFlags' => ['offline_purchase' => true, 'billboards' => true],
         'version' => ['latestVersionCode' => 3, 'latestVersionName' => '1.0.2',
                       'minSupportedVersionCode' => 1, 'mandatory' => false, 'updateSource' => 'github',
                       'playStoreUrl' => '', 'apkUrl' => 'https://x/y.apk', 'apkSha256' => '',
@@ -337,10 +296,10 @@ test('an empty map hashes the same whether it is an object or an array', functio
     // The exact production hazard: the working snapshot carries stdClass so the published
     // JSON contains {}, but a decoded snapshot yields []. If those hashed differently the
     // resource version would rise on every publish and every device would re-download.
-    $asObject = ['smsRules' => [['id' => 'r', 'captures' => new \stdClass()]]];
-    $asArray  = ['smsRules' => [['id' => 'r', 'captures' => []]]];
+    $asObject = ['notifications' => [['id' => 'r', 'captures' => new \stdClass()]]];
+    $asArray  = ['notifications' => [['id' => 'r', 'captures' => []]]];
     eq(
-        \App\Services\ResourceVersions::checksums($asObject)['smsRules'],
-        \App\Services\ResourceVersions::checksums($asArray)['smsRules']
+        \App\Services\ResourceVersions::checksums($asObject)['notifications'],
+        \App\Services\ResourceVersions::checksums($asArray)['notifications']
     );
 });

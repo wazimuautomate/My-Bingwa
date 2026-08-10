@@ -73,7 +73,7 @@ final class PreviewController extends Controller
      * "I changed nothing, so why are there changes?"
      *
      * After a server upgrade the working snapshot carries whole sections the last published
-     * release never had — SMS rules, categories, feature flags. Those are real, publishable
+     * release never had — categories, feature flags. Those are real, publishable
      * differences, not phantom ones, but to an operator who has edited nothing they look
      * like a fault. Detect that case so the page can say plainly what is happening and that
      * one publish clears it.

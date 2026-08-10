@@ -41,10 +41,7 @@ enum class SyncResource {
     NOTIFICATION_TEMPLATES,
 
     /** Admin-published in-app notifications (content, not sends). */
-    REMOTE_NOTIFICATIONS,
-
-    /** SMS recognition rules used by the on-device Safaricom message parser. */
-    SMS_RULES
+    REMOTE_NOTIFICATIONS
 }
 
 /**

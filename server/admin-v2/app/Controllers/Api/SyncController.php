@@ -82,9 +82,8 @@ final class SyncController
             Response::json([], 304, ['ETag' => $etag, 'Cache-Control' => 'no-cache']);
         }
         // snapshot_json is already canonical and app-safe: it contains configVersion,
-        // publishedAt, offers, billboards, templates, support, appConfig and version
-        // (the update info). Serve it verbatim so empty maps stay {} and the bytes match
-        // the checksum.
+        // publishedAt, offers, billboards, support, appConfig and version (the update
+        // info). Serve it verbatim so empty maps stay {} and the bytes match the checksum.
         $this->recordEvent($request, 'snapshot', '200');
         http_response_code(200);
         header('Content-Type: application/json; charset=utf-8');
@@ -310,7 +309,7 @@ final class SyncController
     /* ------------------------------------------------------------ pure helpers */
 
     /**
-     * Parse a `keys=offers,smsRules` parameter against the resources this release offers.
+     * Parse a `keys=offers,billboards` parameter against the resources this release offers.
      *
      * Pure and total: it never throws, never touches the database and never returns a
      * value that was not either a supported key or a sanitised echo of what was asked
