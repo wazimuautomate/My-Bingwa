@@ -52,14 +52,14 @@ fun MyBingwaTopAppBar(
         // Real approved brand mark (from the logo kit)
         Image(
             painter = painterResource(id = R.drawable.img_onboarding_logo),
-            contentDescription = "My Bingwa logo",
+            contentDescription = "Skylink Bingwa logo",
             modifier = Modifier.size(36.dp)
         )
 
         Spacer(modifier = Modifier.width(10.dp))
 
         Text(
-            text = "My Bingwa",
+            text = "Skylink Bingwa",
             style = TypographyPageHeading.copy(fontSize = 20.sp),
             color = MaterialTheme.colorScheme.onBackground
         )

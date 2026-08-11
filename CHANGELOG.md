@@ -10,6 +10,19 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-08-11
+
+### Changed
+
+- **The app is now called "Skylink Bingwa".** Name only: the launcher label
+  (`app_name` / the `appLabel` manifest placeholder, and the debug variant's
+  "Skylink Bingwa Dev"), the top app bar title, and every customer-facing string
+  that spoke the product's name — onboarding, the permission-required screen,
+  Settings, Help, Activity's empty state, and the notification channels/templates.
+  Nothing else changed: same `applicationId` (`com.bingwasokoni`), same signing
+  identity, same logo, same behaviour. `versionCode` 10 / `versionName` 1.0.9 for
+  the Play upload.
+
 ## [1.0.7] - 2026-08-10
 
 ### Removed

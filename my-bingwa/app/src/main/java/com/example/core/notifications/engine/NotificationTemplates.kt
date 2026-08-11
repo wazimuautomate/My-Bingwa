@@ -362,17 +362,17 @@ object DefaultNotificationTemplates {
             // ----- Admin-published general news --------------------------------
             t(
                 "general_1", NotificationCategory.GENERAL,
-                "From My Bingwa",
+                "From Skylink Bingwa",
                 "{greeting}. We've got a short update for you — tap to read it."
             ),
             t(
                 "general_2", NotificationCategory.GENERAL,
                 "A quick note",
-                "{name}, there's news from My Bingwa. Tap to have a look."
+                "{name}, there's news from Skylink Bingwa. Tap to have a look."
             ),
             t(
                 "general_3", NotificationCategory.GENERAL,
-                "News from My Bingwa",
+                "News from Skylink Bingwa",
                 "{greeting}. Something new to share with you 📣"
             ),
 
