@@ -144,6 +144,16 @@ class MyBingwaApplication : Application(), SyncOrchestratorProvider {
         // silently cancel the very notification it was about to show.
         runCatching { EngagementNotificationWorker.scheduleNext(this, policy = ExistingWorkPolicy.KEEP) }
             .onFailure { Log.w("MyBingwaApplication", "Engagement scheduling skipped: ${it.message}") }
+
+        // Fetch FCM token for remote admin push notifications (best-effort)
+        runCatching {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                .addOnSuccessListener { token ->
+                    if (!token.isNullOrBlank()) {
+                        repository.setFcmToken(token)
+                    }
+                }
+        }.onFailure { Log.w("MyBingwaApplication", "FCM token initialization skipped: ${it.message}") }
     }
 
     private fun buildRepository(): BingwaRepository {

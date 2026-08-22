@@ -62,6 +62,7 @@ import com.example.core.review.ReviewPolicy
 import com.example.core.personalization.suggestedPayerNumber
 import com.example.data.sync.ForceSyncWatcher
 import com.example.data.sync.SyncTrigger
+import com.example.core.update.PlayUpdateManager
 import com.example.core.update.UpdateChecker
 import com.example.core.update.UpdatePromotion
 import com.example.core.update.UpdateRequiredScreen
@@ -283,7 +284,11 @@ fun MyBingwaApp(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_START) permissionEpoch++
+            if (event == Lifecycle.Event.ON_START) {
+                permissionEpoch++
+            } else if (event == Lifecycle.Event.ON_RESUME) {
+                (context as? ComponentActivity)?.let { PlayUpdateManager.checkAndResume(it) }
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -752,10 +757,15 @@ fun MyBingwaApp(
     val newestReceivedId = purchases
         .firstOrNull { it.status == com.example.core.model.PaymentStatus.RECEIVED }?.id
 
-    LaunchedEffect(newestReceivedId, activeOfferForPurchase == null, lastReviewPrompt) {
+    LaunchedEffect(newestReceivedId) {
         val activity = activity ?: return@LaunchedEffect
         if (newestReceivedId == null) return@LaunchedEffect
-        // Never over the open checkout sheet.
+        // Wait while checkout sheet is still open (up to 15 seconds)
+        var waitCount = 0
+        while (activeOfferForPurchase != null && waitCount < 30) {
+            kotlinx.coroutines.delay(500)
+            waitCount++
+        }
         if (activeOfferForPurchase != null) return@LaunchedEffect
         if (!ReviewPolicy.shouldPrompt(purchases, lastReviewPrompt, System.currentTimeMillis())) {
             return@LaunchedEffect

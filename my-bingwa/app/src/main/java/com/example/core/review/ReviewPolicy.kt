@@ -27,10 +27,10 @@ import com.example.core.model.PurchaseRecord
 object ReviewPolicy {
 
     /** The customer must have completed at least this many purchases. */
-    const val MIN_SUCCESSFUL_PURCHASES = 2
+    const val MIN_SUCCESSFUL_PURCHASES = 1
 
     /** Never prompt twice inside this many days. */
-    const val MIN_DAYS_BETWEEN_PROMPTS = 60
+    const val MIN_DAYS_BETWEEN_PROMPTS = 30
 
     private const val DAY_MILLIS = 86_400_000L
 
@@ -43,7 +43,7 @@ object ReviewPolicy {
      * for the noise to pass, and short enough that the customer is still on the
      * screen where the good thing just happened.
      */
-    const val SETTLE_DELAY_MILLIS = 6_000L
+    const val SETTLE_DELAY_MILLIS = 3_000L
 
     /**
      * True when [nowMillis] is a fair moment to show the rating card.

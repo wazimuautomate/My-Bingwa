@@ -73,7 +73,6 @@ return [
         ['data_1',  'DATA', '1GB',           19,   '1 Hr',     'Hourly',  true],
         ['data_2',  'DATA', '250MB',         20,   '24 Hrs',   'Daily',   true],
         ['data_3',  'DATA', '1.5GB',         50,   '3 Hrs',    'Hourly',  true],
-        ['data_4',  'DATA', '1.25GB',        55,   'Midnight', 'Daily',   true],
         ['data_5',  'DATA', '1GB',           95,   '24 Hrs',   'Daily',   true],
         ['data_6',  'DATA', '2GB',           110,  '24 Hrs',   'Daily',   false],
         ['data_7',  'DATA', '350MB',         49,   '7 days',   'Weekly',  true],

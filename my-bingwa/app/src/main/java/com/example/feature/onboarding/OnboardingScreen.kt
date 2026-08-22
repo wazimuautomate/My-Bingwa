@@ -123,7 +123,7 @@ private val AccentSpecial = Color(0xFFFF8A00)
  * There is no skip past it and no way back — the only two outcomes are
  * "granted, continue" and "close the app".
  */
-private enum class OnboardingStep { PROMISE, GAINS, SETUP, NOTIFICATIONS }
+private enum class OnboardingStep { WELCOME, SETUP, NOTIFICATIONS }
 
 /**
  * First-run onboarding.
@@ -162,8 +162,7 @@ fun OnboardingScreen(
 
     val steps = remember {
         listOf(
-            OnboardingStep.PROMISE,
-            OnboardingStep.GAINS,
+            OnboardingStep.WELCOME,
             OnboardingStep.SETUP,
             OnboardingStep.NOTIFICATIONS
         )
@@ -285,8 +284,7 @@ fun OnboardingScreen(
                     .fillMaxWidth()
             ) { index ->
                 when (steps.getOrNull(index) ?: OnboardingStep.SETUP) {
-                    OnboardingStep.PROMISE -> StepPromise(reducedMotion = reducedMotion)
-                    OnboardingStep.GAINS -> StepGains(reducedMotion = reducedMotion)
+                    OnboardingStep.WELCOME -> StepWelcome(reducedMotion = reducedMotion)
                     OnboardingStep.NOTIFICATIONS -> StepNotifications(
                         granted = notificationsGranted,
                         refused = notificationAsks > 0 && !notificationsGranted,
@@ -312,8 +310,7 @@ fun OnboardingScreen(
             val lastStep = safeIndex == steps.lastIndex
             PrimaryCtaButton(
                 text = when (currentStep) {
-                    OnboardingStep.PROMISE -> "Get started"
-                    OnboardingStep.GAINS -> "I love it! Continue."
+                    OnboardingStep.WELCOME -> "Get started"
                     OnboardingStep.SETUP -> "Continue"
                     OnboardingStep.NOTIFICATIONS -> when {
                         notificationsGranted -> if (lastStep) "Start using Skylink Bingwa" else "Continue"
@@ -444,11 +441,20 @@ private fun AmbientBackdrop(reducedMotion: Boolean) {
 }
 
 // ---------------------------------------------------------------------------
-// Screen 1 — Main Promise: animated hero logo, staggered title/subtitle.
+// Screen 1 — Welcome & What You Gain: Logo, intro, category glyphs, benefits.
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun StepPromise(reducedMotion: Boolean) {
+private fun LogoHero(reducedMotion: Boolean) {
+    Image(
+        painter = painterResource(id = com.example.R.drawable.img_onboarding_logo),
+        contentDescription = "Skylink Bingwa Logo",
+        modifier = Modifier.size(80.dp)
+    )
+}
+
+@Composable
+private fun StepWelcome(reducedMotion: Boolean) {
     val intro = remember { Animatable(if (reducedMotion) 1f else 0f) }
     LaunchedEffect(Unit) {
         if (!reducedMotion) intro.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
@@ -457,147 +463,44 @@ private fun StepPromise(reducedMotion: Boolean) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
         LogoHero(reducedMotion = reducedMotion)
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(24.dp))
 
-        StaggeredItem(intro.value, 0.15f) {
+        StaggeredItem(intro.value, 0.10f) {
             Text(
                 text = "Welcome to Skylink Bingwa",
-                style = MaterialTheme.typography.displaySmall,
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center
             )
         }
-        Spacer(Modifier.height(14.dp))
-        StaggeredItem(intro.value, 0.32f) {
+        Spacer(Modifier.height(8.dp))
+        StaggeredItem(intro.value, 0.20f) {
             Text(
                 text = "Buy data, SMS and minutes — even with unpaid Okoa Jahazi.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 12.dp)
+                modifier = Modifier.padding(horizontal = 16.dp)
             )
         }
         Spacer(Modifier.height(24.dp))
-    }
-}
-
-@Composable
-private fun LogoHero(reducedMotion: Boolean) {
-    // Entrance: overshoot scale-in + upward settle.
-    val enter = remember { Animatable(if (reducedMotion) 1f else 0f) }
-    LaunchedEffect(Unit) {
-        if (!reducedMotion) {
-            enter.animateTo(
-                1f,
-                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
-            )
-        }
-    }
-    // Ambient: gentle float + a slowly rotating conic glow ring behind the mark.
-    val transition = rememberInfiniteTransition(label = "logo")
-    val float by if (reducedMotion) remember { mutableStateOf(0f) } else
-        transition.animateFloatAlt(0f, 1f, 3200, "float")
-    val spin by if (reducedMotion) remember { mutableStateOf(0f) } else
-        transition.animateFloatLinear(0f, 360f, 14000, "spin")
-
-    Box(contentAlignment = Alignment.Center) {
-        // Rotating glow ring.
-        Box(
-            modifier = Modifier
-                .size(250.dp)
-                .graphicsLayer {
-                    rotationZ = spin
-                    alpha = 0.9f * enter.value
-                }
-                .blur(18.dp, BlurredEdgeTreatment.Unbounded)
-                .background(
-                    Brush.sweepGradient(
-                        colors = listOf(
-                            BrandBrightGreen.copy(alpha = 0.0f),
-                            BrandBrightGreen.copy(alpha = 0.55f),
-                            AccentData.copy(alpha = 0.45f),
-                            AccentSpecial.copy(alpha = 0.40f),
-                            BrandBrightGreen.copy(alpha = 0.0f)
-                        )
-                    ),
-                    shape = CircleShape
-                )
-        )
-        // Soft halo.
-        Box(
-            modifier = Modifier
-                .size(200.dp)
-                .graphicsLayer { alpha = enter.value }
-                .blur(30.dp, BlurredEdgeTreatment.Unbounded)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(BrandBrightGreen.copy(alpha = 0.30f), Color.Transparent)
-                    ),
-                    shape = CircleShape
-                )
-        )
-        // The real brand mark.
-        Image(
-            painter = painterResource(id = R.drawable.img_onboarding_logo),
-            contentDescription = "Skylink Bingwa",
-            modifier = Modifier
-                .size(184.dp)
-                .graphicsLayer {
-                    val s = 0.6f + 0.4f * enter.value
-                    scaleX = s
-                    scaleY = s
-                    alpha = enter.value
-                    translationY = (1f - enter.value) * 40f + (float - 0.5f) * 16f
-                }
-        )
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Screen 2 — What You Gain: category glyphs with glow rings + glass benefits.
-// ---------------------------------------------------------------------------
-
-@Composable
-private fun StepGains(reducedMotion: Boolean) {
-    val intro = remember { Animatable(if (reducedMotion) 1f else 0f) }
-    LaunchedEffect(Unit) {
-        if (!reducedMotion) intro.animateTo(1f, tween(1000, easing = FastOutSlowInEasing))
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(8.dp))
-        StaggeredItem(intro.value, 0.05f) {
-            Text(
-                text = "Buy what you need, anytime, anywhere.",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                textAlign = TextAlign.Center
-            )
-        }
-        Spacer(Modifier.height(28.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            CategoryGlyph(Icons.Rounded.Wifi, "Data", AccentData, intro.value, 0.10f, reducedMotion)
-            CategoryGlyph(Icons.Rounded.Sms, "SMS", AccentSms, intro.value, 0.18f, reducedMotion)
-            CategoryGlyph(Icons.Rounded.Call, "Minutes", AccentMinutes, intro.value, 0.26f, reducedMotion)
-            CategoryGlyph(Icons.Rounded.AutoAwesome, "Special", AccentSpecial, intro.value, 0.34f, reducedMotion)
+            CategoryGlyph(Icons.Rounded.Wifi, "Data", AccentData, intro.value, 0.28f, reducedMotion)
+            CategoryGlyph(Icons.Rounded.Sms, "SMS", AccentSms, intro.value, 0.34f, reducedMotion)
+            CategoryGlyph(Icons.Rounded.Call, "Minutes", AccentMinutes, intro.value, 0.40f, reducedMotion)
+            CategoryGlyph(Icons.Rounded.AutoAwesome, "Special", AccentSpecial, intro.value, 0.46f, reducedMotion)
         }
 
-        Spacer(Modifier.height(30.dp))
+        Spacer(Modifier.height(24.dp))
 
         BenefitGlassCard(
             icon = Icons.Rounded.Payments,
@@ -605,25 +508,25 @@ private fun StepGains(reducedMotion: Boolean) {
             title = "Pay easily with M-Pesa",
             body = "Approve the payment directly from your phone.",
             progress = intro.value,
-            delay = 0.42f
+            delay = 0.52f
         )
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(12.dp))
         BenefitGlassCard(
             icon = Icons.Rounded.CardGiftcard,
             accent = AccentSpecial,
             title = "Gift others",
             body = "You can buy for another number with ease.",
             progress = intro.value,
-            delay = 0.54f
+            delay = 0.60f
         )
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(12.dp))
         BenefitGlassCard(
             icon = Icons.Rounded.WifiOff,
             accent = AccentData,
             title = "Buy even when offline",
             body = "Use Till number and Paybill to buy anytime when offline.",
             progress = intro.value,
-            delay = 0.66f
+            delay = 0.68f
         )
         Spacer(Modifier.height(16.dp))
     }
@@ -1065,22 +968,33 @@ private fun SlideIn(fromLeft: Boolean, reducedMotion: Boolean, content: @Composa
 private fun StepProgress(step: Int, total: Int) {
     val target = step.toFloat() / total.coerceAtLeast(1)
     val fill by animateFloatAsState(target, tween(500, easing = FastOutSlowInEasing), label = "progress")
-    Box(
-        modifier = Modifier
-            .width(120.dp)
-            .height(6.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        Text(
+            text = "$step of $total",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Box(
             modifier = Modifier
-                .fillMaxWidth(fill)
+                .width(100.dp)
                 .height(6.dp)
                 .clip(CircleShape)
-                .background(
-                    Brush.horizontalGradient(listOf(BrandDeepGreen, BrandBrightGreen))
-                )
-        )
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fill)
+                    .height(6.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.horizontalGradient(listOf(BrandDeepGreen, BrandBrightGreen))
+                    )
+            )
+        }
     }
 }
 

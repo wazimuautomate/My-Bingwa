@@ -66,6 +66,14 @@ return [
         'sync_api_key' => '',
     ],
 
+    // ---- Firebase Cloud Messaging (FCM HTTP v1 API) -----------------------------
+    // Path to the Firebase Service Account JSON credentials file on the server.
+    // Downloaded from Firebase Console -> Project Settings -> Service accounts.
+    // e.g. /home/cpaneluser/my-bingwa-b538e0f6c645.json (outside web root).
+    'fcm' => [
+        'service_account_file' => '', // Absolute path on server
+    ],
+
     // ---- Sync API limits --------------------------------------------------------
     'sync' => [
         'rate_limit_per_minute' => 60,   // per client IP

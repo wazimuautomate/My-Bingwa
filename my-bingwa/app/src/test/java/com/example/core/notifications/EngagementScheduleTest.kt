@@ -158,4 +158,39 @@ class EngagementScheduleTest {
         // A customer seeing these every day should not read the same line all week.
         assertTrue("copy did not rotate across days", seen.size > EngagementSlot.entries.size)
     }
+
+    @Test
+    fun `dynamic offers are substituted into copy when provided`() {
+        val testOffers = listOf(
+            com.example.core.model.OfferItem(
+                id = "d1",
+                name = "500MB",
+                allowance = "500MB",
+                priceKsh = 35,
+                validity = "24 Hrs",
+                validityBand = "Daily",
+                category = com.example.core.model.OfferCategory.DATA,
+                dailyRule = com.example.core.model.DailyRule.ONCE_PER_DAY,
+                isFavourite = false,
+                description = "500MB"
+            ),
+            com.example.core.model.OfferItem(
+                id = "m1",
+                name = "15 Min",
+                allowance = "15 Min",
+                priceKsh = 18,
+                validity = "Midnight",
+                validityBand = "Daily",
+                category = com.example.core.model.OfferCategory.MINUTES,
+                dailyRule = com.example.core.model.DailyRule.BUY_AGAIN_TODAY,
+                isFavourite = false,
+                description = "15 Min"
+            )
+        )
+        val morningData = EngagementSchedule.messageFor(EngagementSlot.MORNING_DATA, at(2026, 8, 1, 7, 0), testOffers)
+        assertTrue("Expected 35 in copy, got: ${morningData.body}", morningData.body.contains("35"))
+
+        val morningTalk = EngagementSchedule.messageFor(EngagementSlot.MORNING_TALK, at(2026, 8, 1, 7, 30), testOffers)
+        assertTrue("Expected 18 in copy, got: ${morningTalk.body}", morningTalk.body.contains("18"))
+    }
 }

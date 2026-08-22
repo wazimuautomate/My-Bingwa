@@ -43,6 +43,8 @@ $msisdn = '254' . $tail;
 // Trim to the column widths rather than rejecting: a long name is still a customer.
 $name = mb_substr($name, 0, 80);
 $appVersion = mb_substr($appVersion, 0, 24);
+$fcmToken = trim((string) ($body['fcm_token'] ?? $body['fcmToken'] ?? ''));
+$fcmToken = $fcmToken !== '' ? mb_substr($fcmToken, 0, 255) : null;
 
 $pdo = require __DIR__ . '/db.php';
 
@@ -56,6 +58,7 @@ try {
             msisdn        VARCHAR(16)  NOT NULL,
             name          VARCHAR(80)  NOT NULL DEFAULT \'\',
             app_version   VARCHAR(24)  NOT NULL DEFAULT \'\',
+            fcm_token     VARCHAR(255) NULL DEFAULT NULL,
             registrations INT          NOT NULL DEFAULT 1,
             created_at    DATETIME     NOT NULL,
             updated_at    DATETIME     NOT NULL,
@@ -63,23 +66,26 @@ try {
             KEY idx_customer_created (created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
     );
+    // Ensure fcm_token column exists if table was created previously
+    $pdo->exec('ALTER TABLE mb_customers ADD COLUMN fcm_token VARCHAR(255) NULL DEFAULT NULL');
 } catch (Throwable $e) {
-    // Already there, or this DB user cannot CREATE — the insert below decides.
+    // Already there, or this DB user cannot CREATE/ALTER — the insert below decides.
 }
 
 try {
-    // Idempotent on the number: a reinstall or a retried call updates the name and
+    // Idempotent on the number: a reinstall or a retried call updates the name, token and
     // counts the registration instead of creating a second customer.
     $stmt = $pdo->prepare(
-        'INSERT INTO mb_customers (msisdn, name, app_version, registrations, created_at, updated_at)
-              VALUES (?, ?, ?, 1, NOW(), NOW())
+        'INSERT INTO mb_customers (msisdn, name, app_version, fcm_token, registrations, created_at, updated_at)
+              VALUES (?, ?, ?, ?, 1, NOW(), NOW())
          ON DUPLICATE KEY UPDATE
               name = VALUES(name),
               app_version = VALUES(app_version),
+              fcm_token = COALESCE(VALUES(fcm_token), fcm_token),
               registrations = registrations + 1,
               updated_at = NOW()'
     );
-    $stmt->execute([$msisdn, $name, $appVersion]);
+    $stmt->execute([$msisdn, $name, $appVersion, $fcmToken]);
 } catch (Throwable $e) {
     json_out(['status' => 'REGISTER_FAILED', 'errorCode' => 'DB_WRITE_FAILED'], 500);
 }

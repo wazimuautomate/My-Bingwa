@@ -151,7 +151,6 @@ class FakeBingwaRepositoryImpl(
         dataOffer("data_1", "1GB", "1 Hr", "Hourly", 19, once = true),
         dataOffer("data_2", "250MB", "24 Hrs", "Daily", 20, once = true),
         dataOffer("data_3", "1.5GB", "3 Hrs", "Hourly", 50, once = true),
-        dataOffer("data_4", "1.25GB", "Midnight", "Daily", 55, once = true),
         dataOffer("data_5", "1GB", "24 Hrs", "Daily", 95, once = true),
         dataOffer("data_6", "2GB", "24 Hrs", "Daily", 110, once = false),
         dataOffer("data_7", "350MB", "7 days", "Weekly", 49, once = true),
@@ -689,6 +688,23 @@ class FakeBingwaRepositoryImpl(
      * This is the only customer detail that ever leaves the device. Purchases,
      * favourites and behaviour stay on the phone (CLAUDE.md §10).
      */
+    private val _fcmToken = MutableStateFlow<String?>(null)
+    override val fcmToken: StateFlow<String?> = _fcmToken.asStateFlow()
+
+    override fun setFcmToken(token: String) {
+        if (_fcmToken.value == token) return
+        _fcmToken.value = token
+        CoroutineScope(Dispatchers.IO).launch {
+            val source = customerSource ?: return@launch
+            val profile = _userProfile.value
+            if (!profile.isOnboardingCompleted) return@launch
+            val name = profile.name.trim()
+            val number = profile.primaryNumber.filter { it.isDigit() }
+            if (name.isEmpty() || number.length < 9) return@launch
+            source.register(name = name, msisdn = number, appVersion = BuildConfig.VERSION_NAME, fcmToken = token)
+        }
+    }
+
     override fun markReviewPrompted(nowMillis: Long) {
         _lastReviewPromptMillis.value = nowMillis
         persist()
@@ -708,7 +724,7 @@ class FakeBingwaRepositoryImpl(
         if (name.isEmpty() || number.length < 9) return
 
         val ok = try {
-            source.register(name = name, msisdn = number, appVersion = BuildConfig.VERSION_NAME)
+            source.register(name = name, msisdn = number, appVersion = BuildConfig.VERSION_NAME, fcmToken = _fcmToken.value)
         } catch (t: Throwable) {
             false
         }
@@ -818,6 +834,11 @@ class FakeBingwaRepositoryImpl(
     private fun AppConfig.isBlankConfig(): Boolean =
         tillNumber.isBlank() && paybillNumber.isBlank() &&
             supportNumber.isBlank() && supportWhatsapp.isBlank()
+
+    override fun addNotification(item: NotificationItem) {
+        _notifications.update { current -> listOf(item) + current.filterNot { it.id == item.id } }
+        persist()
+    }
 
     override fun markNotificationRead(id: String) {
         _notifications.update { list ->

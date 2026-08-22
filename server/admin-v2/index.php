@@ -109,6 +109,10 @@ $router->post('/notifications/{id}/test',[App\Controllers\NotificationsControlle
 $router->get('/notifications/import',    [App\Controllers\ImportController::class, 'notificationsForm']);
 $router->post('/notifications/import',   [App\Controllers\ImportController::class, 'importNotifications']);
 
+/* ------------------------------------------------------------- instant push */
+$router->get('/push',                      [App\Controllers\PushController::class, 'index']);
+$router->post('/push/send',                [App\Controllers\PushController::class, 'send']);
+
 /* ------------------------------------------------------------- customers */
 $router->get('/customers',                  [App\Controllers\CustomersController::class, 'index']);
 $router->get('/customers-export',           [App\Controllers\CustomersController::class, 'exportCsv']);

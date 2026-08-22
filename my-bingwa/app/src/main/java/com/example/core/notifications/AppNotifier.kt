@@ -68,6 +68,20 @@ class AppNotifier(private val context: Context) {
         deepLinkRoute = deepLinkRoute
     )
 
+    /** Remote push notification from Firebase / Admin on the NEWS channel. */
+    fun postPush(
+        title: String,
+        body: String,
+        deepLinkRoute: String = "home",
+        stableId: String = "push_${System.currentTimeMillis()}"
+    ): Boolean = post(
+        channelId = NotificationChannels.NEWS,
+        stableId = stableId,
+        title = title,
+        body = body,
+        deepLinkRoute = deepLinkRoute
+    )
+
     /**
      * Posts on behalf of the assistant engine
      * (`core/notifications/engine/NotificationEngine`).

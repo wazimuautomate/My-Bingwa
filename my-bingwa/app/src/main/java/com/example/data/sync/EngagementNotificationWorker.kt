@@ -72,8 +72,10 @@ class EngagementNotificationWorker(
         // paths already posted. `notifyRaw` keeps the wording authored here while still
         // passing the full policy check — the engine may well decide to stay silent, and
         // that is a correct outcome.
-        val engine = (applicationContext as? MyBingwaApplication)?.notificationEngine ?: return
-        val message = EngagementSchedule.messageFor(slot, now)
+        val app = applicationContext as? MyBingwaApplication ?: return
+        val engine = app.notificationEngine
+        val offers = app.repository.offers.value
+        val message = EngagementSchedule.messageFor(slot, now, offers)
         val posted = engine.notifyRaw(
             category = engagementCategory(slot),
             title = message.title,

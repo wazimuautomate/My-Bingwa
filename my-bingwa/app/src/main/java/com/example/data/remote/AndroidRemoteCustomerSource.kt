@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit
  */
 interface RemoteCustomerSource {
     /** True only when the backend confirmed the registration. Never throws. */
-    suspend fun register(name: String, msisdn: String, appVersion: String): Boolean
+    suspend fun register(name: String, msisdn: String, appVersion: String, fcmToken: String? = null): Boolean
 }
 
 class AndroidRemoteCustomerSource(
@@ -55,9 +55,9 @@ class AndroidRemoteCustomerSource(
         null
     }
 
-    override suspend fun register(name: String, msisdn: String, appVersion: String): Boolean {
+    override suspend fun register(name: String, msisdn: String, appVersion: String, fcmToken: String?): Boolean {
         val response = try {
-            api?.register(RegisterCustomerDto(name = name, msisdn = msisdn, appVersion = appVersion))
+            api?.register(RegisterCustomerDto(name = name, msisdn = msisdn, appVersion = appVersion, fcmToken = fcmToken))
                 ?: return false
         } catch (t: Throwable) {
             // Offline, a timeout, a 4xx/5xx — all the same to the caller: not yet
@@ -76,7 +76,8 @@ interface CustomerApi {
 data class RegisterCustomerDto(
     @Json(name = "name") val name: String,
     @Json(name = "msisdn") val msisdn: String,
-    @Json(name = "appVersion") val appVersion: String
+    @Json(name = "appVersion") val appVersion: String,
+    @Json(name = "fcm_token") val fcmToken: String? = null
 )
 
 data class RegisterCustomerResponseDto(

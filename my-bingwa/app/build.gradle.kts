@@ -2,6 +2,7 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.roborazzi)
+  alias(libs.plugins.google.services)
 }
 
 android {
@@ -23,8 +24,8 @@ android {
     // GitHub and Play channels and updates supersede correctly (same signing
     // identity — see signingConfigs + docs/RELEASE_PLAYSTORE.md). Bump BOTH for
     // every release; versionCode must only ever increase.
-    versionCode = 10
-    versionName = "1.0.9"
+    versionCode = 11
+    versionName = "1.0.10"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -137,10 +138,15 @@ android {
       // Release signing is supplied only in the protected CI release job via env vars.
       // No keystore is committed. Missing values are tolerated until a release variant is signed.
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      val keystoreFile = file(keystorePath)
+      if (keystoreFile.exists()) {
+        storeFile = keystoreFile
+        storePassword = System.getenv("STORE_PASSWORD")
+        keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
+        keyPassword = System.getenv("KEY_PASSWORD")
+      } else {
+        initWith(getByName("debug"))
+      }
     }
   }
 
@@ -232,12 +238,13 @@ dependencies {
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
   implementation(libs.retrofit)
-  // Google Play in-app review, PLAY FLAVOUR ONLY. The card is drawn by the Play
-  // Store over our activity, so the customer rates and comments without leaving the
-  // app. It only works for an install the Play Store made, which is exactly why the
-  // direct flavour does not carry the library at all — it has its own
-  // AppReviewLauncher that opens the Play listing instead (src/direct).
+  // Google Play in-app review, PLAY FLAVOUR ONLY.
   "playImplementation"("com.google.android.play:review-ktx:2.0.2")
+  // Google Play in-app updates (immediate non-dismissible modal), PLAY FLAVOUR ONLY.
+  "playImplementation"("com.google.android.play:app-update-ktx:2.1.0")
+  // Firebase Cloud Messaging (remote admin push notifications)
+  implementation(platform(libs.firebase.bom))
+  implementation(libs.firebase.messaging)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

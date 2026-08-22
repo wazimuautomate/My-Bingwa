@@ -10,11 +10,14 @@
 *.pem
 *.der
 *.key
+my-bingwa-b538e0f6c645.json
 google-services.json
 google-services*.json
 GoogleService-Info.plist
 service-account*.json
 play-service-account*.json
+my-bingwa-*.json
+*-*.json
 *.env
 .env
 .env.*

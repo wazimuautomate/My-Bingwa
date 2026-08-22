@@ -33,16 +33,15 @@ class ReviewPolicyTest {
     private fun received(count: Int) = (1..count).map { purchase(PaymentStatus.RECEIVED, "p$it") }
 
     @Test
-    fun `never asks before two received purchases`() {
+    fun `asks after one received purchase`() {
         assertFalse(ReviewPolicy.shouldPrompt(emptyList(), 0L, now))
-        assertFalse(ReviewPolicy.shouldPrompt(received(1), 0L, now))
+        assertTrue(ReviewPolicy.shouldPrompt(received(1), 0L, now))
         assertTrue(ReviewPolicy.shouldPrompt(received(2), 0L, now))
     }
 
     @Test
     fun `only received purchases count towards the threshold`() {
         val mixed = listOf(
-            purchase(PaymentStatus.RECEIVED, "a"),
             purchase(PaymentStatus.FAILED, "b"),
             purchase(PaymentStatus.WAITING_VERIFY, "c"),
             purchase(PaymentStatus.CANCELLED, "d")
@@ -51,15 +50,15 @@ class ReviewPolicyTest {
     }
 
     @Test
-    fun `will not ask twice inside sixty days`() {
+    fun `will not ask twice inside thirty days`() {
         val yesterday = now - day
         assertFalse(ReviewPolicy.shouldPrompt(received(5), yesterday, now))
 
-        val fiftyNineDaysAgo = now - 59 * day
-        assertFalse(ReviewPolicy.shouldPrompt(received(5), fiftyNineDaysAgo, now))
+        val twentyNineDaysAgo = now - 29 * day
+        assertFalse(ReviewPolicy.shouldPrompt(received(5), twentyNineDaysAgo, now))
 
-        val sixtyDaysAgo = now - 60 * day
-        assertTrue(ReviewPolicy.shouldPrompt(received(5), sixtyDaysAgo, now))
+        val thirtyDaysAgo = now - 30 * day
+        assertTrue(ReviewPolicy.shouldPrompt(received(5), thirtyDaysAgo, now))
     }
 
     @Test

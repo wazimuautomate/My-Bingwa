@@ -5,6 +5,7 @@ $nav = [
     ['offers',        'Offers',            '/offers',           'offers.view',         'offers'],
     ['billboards',    'Billboard adverts', '/billboards',       'billboards.manage',   'billboards'],
     ['notifications', 'Notifications',     '/notifications',    'notifications.create','notifications'],
+    ['send',          'Instant Push',      '/push',             'notifications.create','push'],
     ['payments',      'Payments',          '/payments',         'payments.view',       'payments'],
     ['user',          'Customers',         '/customers',        'customers.view',      'customers'],
     ['support',       'Support details',   '/support',          'support.edit',        'support'],

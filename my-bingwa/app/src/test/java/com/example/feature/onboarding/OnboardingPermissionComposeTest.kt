@@ -76,8 +76,7 @@ class OnboardingPermissionComposeTest {
                 OnboardingScreen(onCompleteOnboarding = { _, _ -> })
             }
         }
-        tapCta() // promise
-        tapCta() // gains
+        tapCta() // welcome → setup
         composeRule.onNodeWithTag("onboarding_step_setup", useUnmergedTree = true).assertExists()
     }
 
@@ -88,8 +87,7 @@ class OnboardingPermissionComposeTest {
                 OnboardingScreen(onCompleteOnboarding = { _, _ -> })
             }
         }
-        tapCta()
-        tapCta()
+        tapCta() // welcome → setup
         // Tapping Continue with empty fields keeps the customer on the setup step.
         tapCta()
         composeRule.onNodeWithTag("onboarding_step_setup", useUnmergedTree = true).assertExists()
@@ -110,8 +108,7 @@ class OnboardingPermissionComposeTest {
                 )
             }
         }
-        tapCta()
-        tapCta()
+        tapCta() // welcome → setup
         fillSetup()
         tapCta() // setup → notifications
         composeRule.onNodeWithTag("onboarding_step_notifications", useUnmergedTree = true)
@@ -142,10 +139,9 @@ class OnboardingPermissionComposeTest {
                 )
             }
         }
-        tapCta()
-        tapCta()
+        tapCta() // welcome → setup
         fillSetup()
-        tapCta()
+        tapCta() // setup → notifications
 
         tapCta() // ask 1
         tapCta() // ask 2
@@ -169,10 +165,9 @@ class OnboardingPermissionComposeTest {
                 )
             }
         }
-        tapCta()
-        tapCta()
+        tapCta() // welcome → setup
         fillSetup()
-        tapCta()
+        tapCta() // setup → notifications
 
         composeRule.onNodeWithTag("onboarding_permission_exit").performClick()
         settle()
@@ -197,8 +192,7 @@ class OnboardingPermissionComposeTest {
                 )
             }
         }
-        tapCta()
-        tapCta()
+        tapCta() // welcome → setup
         fillSetup(name = "Asha", phone = "0712345678")
         tapCta() // setup → notifications, already satisfied → finish
         composeRule.mainClock.advanceTimeBy(2_000L)
@@ -215,8 +209,7 @@ class OnboardingPermissionComposeTest {
             }
         }
         composeRule.onNodeWithTag("onboarding_skip_to_setup").assertDoesNotExist()
-        tapCta()
-        tapCta()
+        tapCta() // welcome → setup
         fillSetup()
         tapCta()
         composeRule.onNodeWithTag("onboarding_permission_skip").assertDoesNotExist()

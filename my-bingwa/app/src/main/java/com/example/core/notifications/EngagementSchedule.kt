@@ -146,15 +146,146 @@ object EngagementSchedule {
     /**
      * Pick the message for [slot] on the day containing [nowMillis].
      *
-     * Several wordings per slot, rotated by day, so a customer who sees these every
-     * morning is not read the same sentence twice in a row. Every line is plain and
-     * light — it names what is on sale and leaves the decision alone. No line claims a
-     * balance is low, recommends based on usage, or nags (CLAUDE.md §8).
+     * When [offers] is provided, uses the live/cached catalogue to dynamically
+     * substitute current real prices and allowances into the message copy.
+     * Otherwise rotates through verified default variations.
      */
-    fun messageFor(slot: EngagementSlot, nowMillis: Long): EngagementMessage {
+    fun messageFor(
+        slot: EngagementSlot,
+        nowMillis: Long,
+        offers: List<com.example.core.model.OfferItem> = emptyList()
+    ): EngagementMessage {
+        val dynamic = buildDynamicMessage(slot, nowMillis, offers)
+        if (dynamic != null) return dynamic
+
         val variations = VARIATIONS.getValue(slot)
         val index = (nairobiDayIndex(nowMillis) % variations.size).toInt()
         return variations[index]
+    }
+
+    private fun buildDynamicMessage(
+        slot: EngagementSlot,
+        nowMillis: Long,
+        offers: List<com.example.core.model.OfferItem>
+    ): EngagementMessage? {
+        if (offers.isEmpty()) return null
+        val dayIdx = nairobiDayIndex(nowMillis)
+
+        return when (slot) {
+            EngagementSlot.MORNING_DATA -> {
+                val dataOffers = offers.filter { it.category == com.example.core.model.OfferCategory.DATA }
+                    .sortedBy { it.priceKsh }
+                if (dataOffers.isEmpty()) return null
+                val cheapest = dataOffers.first()
+                val popular = dataOffers.firstOrNull { it.isPopular } ?: dataOffers.getOrNull(1) ?: cheapest
+                val alt = dataOffers.getOrNull(1) ?: cheapest
+                val variant = (dayIdx % 3).toInt()
+                when (variant) {
+                    0 -> EngagementMessage(
+                        title = "No bundle this morning?",
+                        body = "Data starts at KSh ${cheapest.priceKsh} here. One tap and you are back online.",
+                        deepLinkRoute = "offers"
+                    )
+                    1 -> EngagementMessage(
+                        title = "Morning. Still offline?",
+                        body = "${cheapest.allowance} for KSh ${cheapest.priceKsh}, ${alt.allowance} for KSh ${alt.priceKsh}. Buy with Till, no internet needed.",
+                        deepLinkRoute = "offers"
+                    )
+                    else -> EngagementMessage(
+                        title = "The day is up, your data is not",
+                        body = "Bundles from KSh ${cheapest.priceKsh} (${popular.allowance} for KSh ${popular.priceKsh}). Pay by M-Pesa even while offline.",
+                        deepLinkRoute = "offers"
+                    )
+                }
+            }
+            EngagementSlot.MORNING_TALK -> {
+                val minOffers = offers.filter { it.category == com.example.core.model.OfferCategory.MINUTES }
+                    .sortedBy { it.priceKsh }
+                val smsOffers = offers.filter { it.category == com.example.core.model.OfferCategory.SMS }
+                    .sortedBy { it.priceKsh }
+                val min = minOffers.firstOrNull()
+                val sms = smsOffers.firstOrNull()
+                if (min == null && sms == null) return null
+                val minPrice = min?.priceKsh ?: 22
+                val smsPrice = sms?.priceKsh ?: 5
+                val minName = min?.allowance ?: "20 Min"
+                val smsName = sms?.allowance ?: "200 SMS"
+                val variant = (dayIdx % 3).toInt()
+                when (variant) {
+                    0 -> EngagementMessage(
+                        title = "Data sorted. Minutes?",
+                        body = "Talk from KSh $minPrice and SMS from KSh $smsPrice, whenever you want them.",
+                        deepLinkRoute = "offers"
+                    )
+                    1 -> EngagementMessage(
+                        title = "More than data in here",
+                        body = "Minutes from KSh $minPrice and SMS bundles from KSh $smsPrice are one tap away.",
+                        deepLinkRoute = "offers"
+                    )
+                    else -> EngagementMessage(
+                        title = "Someone is waiting for that call",
+                        body = "$minName for KSh $minPrice, $smsName for KSh $smsPrice. Your move.",
+                        deepLinkRoute = "offers"
+                    )
+                }
+            }
+            EngagementSlot.EVENING_DATA -> {
+                val dataOffers = offers.filter { it.category == com.example.core.model.OfferCategory.DATA }
+                    .sortedBy { it.priceKsh }
+                if (dataOffers.isEmpty()) return null
+                val cheapest = dataOffers.first()
+                val mid = dataOffers.firstOrNull { it.priceKsh in 50..110 } ?: dataOffers.last()
+                val variant = (dayIdx % 3).toInt()
+                when (variant) {
+                    0 -> EngagementMessage(
+                        title = "Evening without data?",
+                        body = "${mid.allowance} for KSh ${mid.priceKsh}. Buy it offline with the Till.",
+                        deepLinkRoute = "offers"
+                    )
+                    1 -> EngagementMessage(
+                        title = "Long evening ahead",
+                        body = "Bundles from KSh ${cheapest.priceKsh}. Grab one and get back online.",
+                        deepLinkRoute = "offers"
+                    )
+                    else -> EngagementMessage(
+                        title = "Still offline this evening?",
+                        body = "${mid.allowance} for KSh ${mid.priceKsh}. No internet needed to pay.",
+                        deepLinkRoute = "offers"
+                    )
+                }
+            }
+            EngagementSlot.EVENING_TALK -> {
+                val minOffers = offers.filter { it.category == com.example.core.model.OfferCategory.MINUTES }
+                    .sortedBy { it.priceKsh }
+                val smsOffers = offers.filter { it.category == com.example.core.model.OfferCategory.SMS }
+                    .sortedBy { it.priceKsh }
+                val min = minOffers.firstOrNull()
+                val sms = smsOffers.firstOrNull()
+                if (min == null && sms == null) return null
+                val minPrice = min?.priceKsh ?: 22
+                val smsPrice = sms?.priceKsh ?: 5
+                val minName = min?.allowance ?: "20 Min"
+                val smsName = sms?.allowance ?: "200 SMS"
+                val variant = (dayIdx % 3).toInt()
+                when (variant) {
+                    0 -> EngagementMessage(
+                        title = "Before the day ends",
+                        body = "Minutes from KSh $minPrice, SMS from KSh $smsPrice. Whenever you need them.",
+                        deepLinkRoute = "offers"
+                    )
+                    1 -> EngagementMessage(
+                        title = "Talk is not free. It is KSh $minPrice",
+                        body = "$minName for KSh $minPrice, or $smsName for KSh $smsPrice. Both are in the app.",
+                        deepLinkRoute = "offers"
+                    )
+                    else -> EngagementMessage(
+                        title = "Call home this evening",
+                        body = "Minutes from KSh $minPrice and SMS bundles from KSh $smsPrice. Two taps, done.",
+                        deepLinkRoute = "offers"
+                    )
+                }
+            }
+        }
     }
 
     private val VARIATIONS: Map<EngagementSlot, List<EngagementMessage>> = mapOf(
@@ -195,7 +326,7 @@ object EngagementSchedule {
         EngagementSlot.EVENING_DATA to listOf(
             EngagementMessage(
                 title = "Evening without data?",
-                body = "1.25GB till midnight for KSh 55. Buy it offline with the Till.",
+                body = "1.5GB for KSh 50. Buy it offline with the Till.",
                 deepLinkRoute = "offers",
             ),
             EngagementMessage(

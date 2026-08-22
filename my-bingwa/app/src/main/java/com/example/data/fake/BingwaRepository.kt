@@ -217,6 +217,10 @@ interface BingwaRepository : SyncTargets {
     /** Record the latest observed connectivity state (from [ConnectivityObserver]). */
     fun setConnectionState(state: ConnectionState)
 
+    val fcmToken: StateFlow<String?>
+    fun setFcmToken(token: String)
+
+    fun addNotification(item: NotificationItem)
     fun markNotificationRead(id: String)
     fun markAllNotificationsRead()
     /** Remove a single notification from the local centre (customer "clear"). */
