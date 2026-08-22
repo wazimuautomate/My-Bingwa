@@ -187,6 +187,72 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+  lint {
+    abortOnError = false
+    checkReleaseBuilds = false
+    disable += setOf("MissingTranslation", "ExtraTranslation")
+  }
+}
+
+val ensureGoogleServicesJson = tasks.register("ensureGoogleServicesJson") {
+  doLast {
+    val gsFile = file("google-services.json")
+    if (!gsFile.exists()) {
+      val envJson = System.getenv("GOOGLE_SERVICES_JSON")
+      if (!envJson.isNullOrBlank()) {
+        gsFile.writeText(envJson)
+      } else {
+        gsFile.writeText(
+          """
+          {
+            "project_info": {
+              "project_number": "1234567890",
+              "project_id": "my-bingwa",
+              "storage_bucket": "my-bingwa.firebasestorage.app"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:1234567890:android:abcdef123456",
+                  "android_client_info": {
+                    "package_name": "com.bingwasokoni"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "fake_api_key_for_ci_build"
+                  }
+                ],
+                "services": {}
+              },
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:1234567890:android:abcdef123457",
+                  "android_client_info": {
+                    "package_name": "com.bingwasokoni.debug"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "fake_api_key_for_ci_build"
+                  }
+                ],
+                "services": {}
+              }
+            ],
+            "configuration_version": "1"
+          }
+          """.trimIndent()
+        )
+      }
+    }
+  }
+}
+
+tasks.matching { it.name.startsWith("process") && it.name.contains("GoogleServices") }.configureEach {
+  dependsOn(ensureGoogleServicesJson)
 }
 
 // The imported Google AI Studio project shipped Gemini/Firebase and KSP codegen

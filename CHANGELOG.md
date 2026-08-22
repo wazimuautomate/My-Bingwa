@@ -10,6 +10,38 @@ Sections used: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Internal`
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-08-22
+
+### Added
+
+- **Instant Admin Push Notifications via Firebase FCM HTTP v1**:
+  - Integrated Firebase Cloud Messaging SDK (`firebase-messaging-ktx`).
+  - Added Android `MyBingwaFirebaseService` to receive push payloads in foreground and background, post local system notifications, and sync into the in-app notification center.
+  - Implemented pure PHP `FcmService` supporting Google Service Account OAuth2 JWT authorization with OpenSSL (`RS256`).
+  - Added Admin Dashboard "Instant Push" module at `/push` to compose and broadcast push notifications to registered customers with audit history.
+  - Created migration `021_fcm_push.sql` adding `fcm_token` column to `mb_customers` and `mb_push_broadcasts` log table.
+- **Google Play In-App Updates**:
+  - Integrated Google Play In-App Update API (`com.google.android.play:app-update-ktx:2.1.0`) on the `play` flavor with `AppUpdateType.IMMEDIATE` ensuring non-dismissible prompt for critical updates.
+  - Maintained dev updater strictly for debug/direct builds.
+
+### Changed
+
+- **Streamlined 3-Step Onboarding Flow**:
+  - Combined intro and benefits into a single Welcome card (`1 of 3`), followed by Details Setup (`2 of 3`) and Notification Permission (`3 of 3`).
+  - Added textual step counter `"$step of $total"` alongside the animated progress bar.
+- **Dynamic Catalogue Notifications**:
+  - Offline and online morning/evening engagement notifications now dynamically bind real active catalogue prices and allowances from cached storage.
+- **In-App Review Pop-up Policy**:
+  - Fires after **1** successful online purchase (`MIN_SUCCESSFUL_PURCHASES = 1`) with a **3-second delay** after checkout sheet dismissal and a **30-day** prompt interval.
+
+### Removed
+
+- **1.25GB Offer Discontinued**: Removed `1.25GB for KSh 55` (`data_4`) across all repository seeds, database scripts, and notification copy.
+
+### Internal
+
+- `versionCode` 10 → 11, `versionName` 1.0.9 → 1.0.10.
+
 ## [1.0.9] - 2026-08-11
 
 ### Changed

@@ -90,6 +90,14 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      - name: Configure google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
+          fi
+
       # Decode the permanent upload keystore from the protected secret into the
       # runner's temp dir (outside the workspace so it is never uploaded with any
       # artifact). It is removed again in the always() cleanup step below.
